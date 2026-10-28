@@ -189,3 +189,44 @@ public sealed class UpdateProjectRequest
     /// </summary>
     public IReadOnlyList<string>? ReferencePaths { get; init; }
 }
+
+/// <summary>
+/// The options of the <c>reference add</c> command, which adds <c>CsComReference</c> items to a project file or updates them.
+/// The options are written as metadata of the items; those that are not specified are not written, so that the <c>CsCom*</c>
+/// properties of the project apply.
+/// </summary>
+public sealed class AddReferencesRequest
+{
+    /// <summary>The project file, or a directory that contains a single project file; the current directory by default.</summary>
+    public string? Project { get; init; }
+
+    /// <summary>
+    /// The sources of the interop types: type library files, registered LIBIDs or ProgIDs, or .NET interop assemblies, see
+    /// <see cref="TypeLibraries.TypeLibrarySource"/>. Files are relative to the current directory.
+    /// </summary>
+    public required IReadOnlyList<string> Sources { get; init; }
+
+    /// <summary>The namespace of a single source.</summary>
+    public string? Namespace { get; init; }
+
+    /// <summary>The configuration file with the transformers of the sources, relative to the current directory.</summary>
+    public string? ConfigurationPath { get; init; }
+
+    /// <summary>
+    /// For interop assemblies, the assemblies or directories that contain the assemblies they reference, relative to the
+    /// current directory.
+    /// </summary>
+    public IReadOnlyList<string> ReferencePaths { get; init; } = [];
+
+    /// <summary>How <c>DATE</c>, <c>CURRENCY</c> and <c>VARIANT_BOOL</c> values, <c>BSTR</c>s and typed <c>SAFEARRAY</c>s are represented.</summary>
+    public MarshallingOverrides Marshalling { get; init; } = new();
+
+    /// <summary>The code generated for the event (source) interfaces.</summary>
+    public EventStyle? EventStyle { get; init; }
+
+    /// <summary>Whether the members of the generated structures are public fields or properties.</summary>
+    public StructProperties? StructProperties { get; init; }
+
+    /// <summary>Whether overloads are generated for the default values that C# cannot express.</summary>
+    public bool? OverloadsForDefaultValues { get; init; }
+}

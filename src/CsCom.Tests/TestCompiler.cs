@@ -60,3 +60,19 @@ internal sealed class WarningCollector<T> : ILogger<T>
         }
     }
 }
+
+/// <summary>
+/// A logger factory whose loggers are all the same logger, e.g. a <see cref="WarningCollector{T}"/>.
+/// </summary>
+internal sealed class CollectorFactory(ILogger logger) : ILoggerFactory
+{
+    public void AddProvider(ILoggerProvider provider)
+    {
+    }
+
+    public ILogger CreateLogger(string categoryName) => logger;
+
+    public void Dispose()
+    {
+    }
+}

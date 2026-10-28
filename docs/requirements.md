@@ -22,6 +22,9 @@ so they can be used with Native AOT as well.
     + The sources are added to the project as `CsComReference` items; a project can have several of them.
     + Each source is generated into its own namespace, `Interop.<SourceName>` by default, which the `Namespace` metadata of the item can override.
     + The types coming from implicitly (transitively) referenced sources are generated into their own namespaces with the same naming convention, `Interop.<SourceName>`.
+8. The `reference add`, `reference list` and `reference remove` commands manage the `CsComReference` items of a project file.
+    + `reference add` adds a reference to the CsCom.Build package when the project has none, and writes the specified options as metadata of the items.
+    + `reference list` lists the items written in the project file, without evaluating the project.
 
 ## Libraries to Use
 
@@ -62,6 +65,13 @@ cscom assembly build [<OPTIONS>] <Source>
 Packing the .Net assembly into a NuGet package:
 ```powershell
 cscom assembly pack [<OPTIONS>] <Source>
+```
+
+Managing the `CsComReference` items of a project (`--project <PATH>`, the current directory by default):
+```powershell
+cscom reference add [<OPTIONS>] <Source>
+cscom reference list [<OPTIONS>]
+cscom reference remove [<OPTIONS>] <Source>
 ```
 
 ### Well-known options:

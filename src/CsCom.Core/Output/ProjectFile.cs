@@ -1,6 +1,7 @@
 using System.Security;
 using System.Text;
 using System.Text.RegularExpressions;
+using System.Xml;
 using System.Xml.Linq;
 using CsCom.CodeGeneration;
 
@@ -93,7 +94,7 @@ internal static partial class ProjectFile
     /// <returns>Whether the file was changed.</returns>
     public static bool Update(string path, int languageVersion, string runtimePackageVersion)
     {
-        var document = XDocument.Load(path, LoadOptions.PreserveWhitespace);
+        var document = Load(path);
         bool changed = false;
         string version = languageVersion.ToString(System.Globalization.CultureInfo.InvariantCulture);
         foreach (var element in document.Descendants().Where(static e => e.Name.LocalName == "LangVersion"))
@@ -116,12 +117,62 @@ internal static partial class ProjectFile
 
         if (changed)
         {
-            var settings = new System.Xml.XmlWriterSettings { OmitXmlDeclaration = document.Declaration is null, Encoding = new UTF8Encoding(false) };
-            using var writer = System.Xml.XmlWriter.Create(path, settings);
-            document.Save(writer);
+            Save(document, path);
         }
 
         return changed;
+    }
+
+    /// <summary>
+    /// Loads a project file with its whitespace, so that <see cref="Save"/> changes only the edited elements.
+    /// </summary>
+    /// <exception cref="CsComException">The file is not a valid MSBuild project.</exception>
+    public static XDocument Load(string path)
+    {
+        try
+        {
+            var document = XDocument.Load(path, LoadOptions.PreserveWhitespace);
+            return document.Root?.Name.LocalName == "Project"
+                ? document
+                : throw new CsComException($"'{path}' is not an MSBuild project: its root element is not <Project>.");
+        }
+        catch (XmlException e)
+        {
+            throw new CsComException($"'{path}' is not a valid project file: {e.Message}", e);
+        }
+    }
+
+    /// <summary>
+    /// Saves a project file loaded with <see cref="Load"/>, keeping the XML declaration, the byte order mark and the line
+    /// endings of the existing file.
+    /// </summary>
+    public static void Save(XDocument document, string path)
+    {
+        byte[] existing = File.ReadAllBytes(path);
+        Encoding encoding = existing switch
+        {
+            [0xEF, 0xBB, 0xBF, ..] => new UTF8Encoding(true),
+            [0xFF, 0xFE, ..] => Encoding.Unicode,
+            [0xFE, 0xFF, ..] => Encoding.BigEndianUnicode,
+            _ => new UTF8Encoding(false),
+        };
+
+        // The parser turns the line endings into \n, which the writer turns into those of the file. The whitespace around the
+        // root element is part of the document, so only the declaration is written separately.
+        var settings = new XmlWriterSettings
+        {
+            OmitXmlDeclaration = true,
+            NewLineChars = encoding.GetString(existing).Contains("\r\n", StringComparison.Ordinal) ? "\r\n" : "\n",
+            NewLineHandling = NewLineHandling.Replace,
+        };
+        var builder = new StringBuilder();
+        builder.Append(document.Declaration?.ToString());
+        using (var writer = XmlWriter.Create(builder, settings))
+        {
+            document.Save(writer);
+        }
+
+        File.WriteAllText(path, builder.ToString(), encoding);
     }
 
     /// <summary>

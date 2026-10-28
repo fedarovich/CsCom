@@ -392,6 +392,37 @@ public sealed class CommandLineTests
         Assert.AreNotEqual(0, Run("new", "config"));
     }
 
+    [TestMethod]
+    public void ManagesTheReferencesOfProjects()
+    {
+        string directory = TestEnvironment.CreateDirectory("cli-reference");
+        File.WriteAllText(Path.Combine(directory, "Directory.Packages.props"), "<Project />");
+        string project = Path.Combine(directory, "App.csproj");
+        File.WriteAllText(project, "<Project Sdk=\"Microsoft.NET.Sdk\">\n</Project>\n");
+
+        // Only the specified options are written as metadata, with the values of the CsCom* properties.
+        Assert.AreEqual(0, Run(
+            "reference", "add", "Scripting.Dictionary", "--project", directory,
+            "-e", "observable", "--safearray-marshalling", "sysarray", "--overloads-for-default-values", "-v", "quiet"));
+        Assert.AreEqual(0, Run("reference", "add", TestEnvironment.StdOle, "--project", project, "--ns", "Ole.Interop", "-c", Path.Combine(directory, "stdole.xml"), "-v", "quiet"));
+        var (exitCode, output) = RunWithOutput("reference", "list", "--project", project);
+        Assert.AreEqual(0, exitCode);
+        Assert.AreEqual(
+            $"Scripting.Dictionary EventStyle=observable OverloadsForDefaultValues=true SafeArrayMarshalling=sysarray\n{TestEnvironment.StdOle} Namespace=Ole.Interop Config=stdole.xml\n",
+            output.ReplaceLineEndings("\n"));
+        StringAssert.Contains(File.ReadAllText(project), $"<PackageReference Include=\"CsCom.Build\" Version=\"{ToolInfo.Version}\" />");
+
+        Assert.AreEqual(1, Run("reference", "add", "Scripting.Dictionary", TestEnvironment.StdOle, "--project", project, "--ns", "Ole.Interop", "-v", "quiet"));
+        Assert.AreEqual(1, Run("reference", "add", "Scripting.Dictionary", "--project", project, "--event-style", "delegates", "-v", "quiet"));
+        Assert.AreEqual(1, Run("reference", "remove", "Scripting.Dictionary", "Excel.Application", "--project", project, "-v", "quiet"));
+        Assert.AreEqual(1, Run("reference", "list", "--project", Path.Combine(directory, "Missing"), "-v", "quiet"));
+
+        Assert.AreEqual(0, Run("reference", "remove", "Scripting.Dictionary", TestEnvironment.StdOle, "--project", directory, "-v", "quiet"));
+        (exitCode, output) = RunWithOutput("reference", "list", "--project", directory, "-v", "quiet");
+        Assert.AreEqual(0, exitCode);
+        Assert.AreEqual(string.Empty, output);
+    }
+
     // Writes a request as the MSBuild task of CsCom.Build does.
     private static string WriteBuildRequest(string project, string config)
     {

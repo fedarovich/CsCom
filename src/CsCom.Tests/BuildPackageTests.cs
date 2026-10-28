@@ -98,6 +98,32 @@ public sealed class BuildPackageTests
     }
 
     [TestMethod]
+    public void BuildsTheReferencesAddedByTheCommands()
+    {
+        // 'cscom reference add' also adds the reference to CsCom.Build.
+        string project = CreateConsumer("build-package-commands", references: string.Empty, program: """
+            using Interop.Scripting;
+
+            var dictionary = Dictionary.Create();
+            dictionary.Add("a", "one");
+            dictionary.Add("b", "two");
+            Console.WriteLine($"Count={dictionary.Count}");
+            Console.WriteLine(typeof(Dictionary).Assembly.GetType("Interop.CsComTest.IShape") is not null);
+            """, withPackage: false);
+        string directory = Path.GetDirectoryName(project)!;
+        File.Copy(TestEnvironment.TestTypeLibrary, Path.Combine(directory, "CsComTest.tlb"));
+
+        Assert.AreEqual(0, RunCommand("reference", "add", Path.Combine(directory, "CsComTest.tlb"), "Scripting.Dictionary", "--project", project, "--event-style", "none"));
+
+        StringAssert.Contains(File.ReadAllText(project), """<CsComReference Include="CsComTest.tlb" EventStyle="none" />""");
+        CollectionAssert.AreEqual(new[] { "Count=2", "True" }, Run(project).TakeLast(2).ToArray());
+
+        // The generated files of a removed reference are removed too.
+        Assert.AreEqual(0, RunCommand("reference", "remove", "CsComTest.tlb", "--project", project));
+        CollectionAssert.AreEqual(new[] { "Count=2", "False" }, Run(project).TakeLast(2).ToArray());
+    }
+
+    [TestMethod]
     [DataRow(false)]
     [DataRow(true)]
     public void BuildsWithTheMSBuildOfVisualStudio(bool is64Bit)
@@ -125,8 +151,9 @@ public sealed class BuildPackageTests
 
     // A console application in an isolated directory, which restores CsCom.Build and CsCom.Runtime from the local feed. It
     // generates documentation and treats warnings as errors, like strict projects.
-    private static string CreateConsumer(string name, string references, string program = Program, string properties = "")
+    private static string CreateConsumer(string name, string references, string program = Program, string properties = "", bool withPackage = true)
     {
+        string package = withPackage ? $"<PackageReference Include=\"CsCom.Build\" Version=\"{ToolInfo.Version}\" />" : string.Empty;
         string directory = TestEnvironment.CreateDirectory(name);
         File.WriteAllText(Path.Combine(directory, "nuget.config"), ProjectFile.CreateNuGetConfig(TestEnvironment.LocalPackages, TestEnvironment.GlobalPackagesFolder));
         File.WriteAllText(Path.Combine(directory, "Directory.Build.props"), "<Project />");
@@ -145,7 +172,7 @@ public sealed class BuildPackageTests
                 {properties}
               </PropertyGroup>
               <ItemGroup>
-                <PackageReference Include="CsCom.Build" Version="{ToolInfo.Version}" />
+                {package}
                 {references}
               </ItemGroup>
             </Project>
@@ -163,6 +190,12 @@ public sealed class BuildPackageTests
         Assert.IsFalse(output.Any(static line => line.Contains(": warning ", StringComparison.Ordinal)), text);
         return text;
     }
+
+    private static int RunCommand(params string[] args) => CommandLine.Create().Parse([.. args, "-v", "quiet"]).Invoke(new System.CommandLine.InvocationConfiguration
+    {
+        Output = TextWriter.Null,
+        Error = TextWriter.Null,
+    });
 
     private static List<string> Run(string project)
     {

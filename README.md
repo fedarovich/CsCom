@@ -31,6 +31,9 @@ cscom assembly pack C:\Windows\System32\scrrun.dll -o packages --package-version
 
 # List the types and members of a type library
 cscom list Scripting.Dictionary --type ^IDictionary$
+
+# Generate the interop code during the build of an existing project, with the CsCom.Build package
+cscom reference add Excel.Application --namespace Office.Excel
 ```
 
 A source (`Source`, which can be repeated, see [Several sources](#several-sources)) can be:
@@ -259,6 +262,39 @@ of the items override them for a reference:
   is `false`. The `internal` support code has neither.
 - **Errors:** the errors and warnings are reported in the format of MSBuild, with the location of errors in configuration files,
   e.g. `cscom.xml(3,6): error CSCOM1000: Unknown model transformer <Rename>.`
+
+### Managing references
+
+The `reference` commands edit the `CsComReference` items of a project file, like `dotnet add package` does for packages:
+
+```powershell
+cscom reference add Excel.Application --namespace Office.Excel --config excel.cscom.xml
+cscom reference add libs\Legacy.Interop.dll --reference-path libs --event-style none
+cscom reference list
+cscom reference remove Excel.Application
+```
+
+- **Project:** `--project <PATH>` selects the project file, or a directory with a single `.csproj`; the current directory by
+  default.
+- **`reference add <Source>...`:** adds an item for each source, after the existing `CsComReference` items or in a new
+  `ItemGroup`. The item of a source that the project already has is updated.
+  - **The CsCom.Build package:** a `PackageReference` to it is added too if the project file has none. With central package
+    management, it has no version, and a warning gives the `PackageVersion` to add to `Directory.Packages.props`.
+  - **Options:** `--namespace` (only with a single source), `--config`, `--reference-path` and the options of the generated
+    code (`--event-style`, `--struct-properties`, `--overloads-for-default-values` and the `--*-marshalling` options) are
+    written as the metadata of the table above. The options that are not specified are not written, so the `CsCom*`
+    properties of the project apply to them.
+  - **Sources:** files are written relative to the project, except those that share only the drive with it, such as system
+    files, which keep their full paths. LIBIDs are normalized, and ProgIDs are written as is. A source that is not found on
+    this machine gives a warning but is added, e.g. a library that is only registered on the build machines.
+- **`reference list`:** writes each item of the project file with its metadata, e.g.
+  `Excel.Application Namespace=Office.Excel Config=excel.cscom.xml`. The project is not evaluated: the items of imported
+  files and of targets are not listed.
+- **`reference remove <Source>...`:** removes the items of the sources, given as `reference list` shows them or as files
+  relative to the current directory, and the item groups that become empty. If the project has no item for one of the
+  sources, nothing is removed. The reference to CsCom.Build is kept.
+- **Formatting:** only the edited elements change. The indentation, the line endings, the byte order mark and the XML
+  declaration of the file are kept, and the elements of old-style projects get the MSBuild namespace.
 
 ## Configuration file
 
@@ -768,6 +804,7 @@ For CsCom.Build, `LibrarySetGenerator` generates several libraries into one proj
 that they import from other libraries into a model per library, transforms each library with its options and configuration, and
 emits it with the namespaces of all the libraries. The commands and CsCom.Build both use it: `LibrarySetBuild` runs the request
 of the MSBuild task, which the task passes to the hidden `build-generate` command of the bundled cscom tool.
+`CsComReferenceEditor` edits the `CsComReference` items of project files for the `reference` commands.
 
 | Project | Description |
 | --- | --- |

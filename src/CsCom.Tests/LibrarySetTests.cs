@@ -1,6 +1,5 @@
 using CsCom.CodeGeneration;
 using CsCom.LibrarySets;
-using Microsoft.Extensions.Logging;
 
 namespace CsCom.Tests;
 
@@ -217,17 +216,4 @@ public sealed class LibrarySetTests : VerifyBase
 
     private static IEnumerable<Target> ToTargets(IEnumerable<GeneratedDocument> documents) =>
         documents.Select(static d => new Target("cs", d.GetText(), Path.ChangeExtension(d.RelativePath, null).Replace('/', '_')));
-
-    private sealed class CollectorFactory(ILogger logger) : ILoggerFactory
-    {
-        public void AddProvider(ILoggerProvider provider)
-        {
-        }
-
-        public ILogger CreateLogger(string categoryName) => logger;
-
-        public void Dispose()
-        {
-        }
-    }
 }

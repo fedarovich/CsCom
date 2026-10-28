@@ -36,6 +36,18 @@ internal static class CommandLine
         Arity = ArgumentArity.ZeroOrMore,
     };
 
+    private static readonly Argument<string[]> ReferenceSourceArgument = new("Source")
+    {
+        Description = SourceDescription + " A file is written relative to the project, unless it only shares the drive with it, e.g. a system file.",
+        Arity = ArgumentArity.OneOrMore,
+    };
+
+    private static readonly Argument<string[]> RemoveSourceArgument = new("Source")
+    {
+        Description = "The source of an item to remove, as the project file or 'cscom reference list' shows it; a file can also be relative to the current directory.",
+        Arity = ArgumentArity.OneOrMore,
+    };
+
     private static readonly Argument<string> RequestArgument = new("Request")
     {
         Description = "The request that the MSBuild task of CsCom.Build writes.",
@@ -77,6 +89,18 @@ internal static class CommandLine
     {
         Description = NamespaceDescription + " The namespaces recorded in cscom.json by default; LIBRARY= removes the namespace of a library.",
         HelpName = "[LIBRARY=]NAMESPACE",
+    };
+
+    private static readonly Option<string?> ReferenceNamespaceOption = new("--namespace", "--ns")
+    {
+        Description = "The namespace of a single source. Interop.<Library> by default.",
+        HelpName = "NAMESPACE",
+    };
+
+    private static readonly Option<string?> ProjectOption = new("--project")
+    {
+        Description = "The project file, or a directory that contains a single project file; the current directory by default.",
+        HelpName = "PATH",
     };
 
     private static readonly Option<string[]> FrameworkOption = new("--framework", "-f")
@@ -131,6 +155,12 @@ internal static class CommandLine
         HelpName = "events|observable|interface|none",
     };
 
+    private static readonly Option<EventStyle?> ReferenceEventStyleOption = new("--event-style", "-e")
+    {
+        Description = EventStyleDescription,
+        HelpName = "events|observable|interface|none",
+    };
+
     private const string StructPropertiesDescription =
         "Whether structure members converted to .NET types are generated as properties over private fields of the COM types (auto), " +
         "or all members are public fields of the COM types (never).";
@@ -148,6 +178,12 @@ internal static class CommandLine
         HelpName = "auto|never",
     };
 
+    private static readonly Option<StructProperties?> ReferenceStructPropertiesOption = new("--struct-properties")
+    {
+        Description = StructPropertiesDescription,
+        HelpName = "auto|never",
+    };
+
     private const string OverloadsDescription =
         "Generates overloads for the methods whose optional parameters have default values that C# cannot express (e.g. ComBool.True or a DateTime), so that these parameters can be omitted.";
 
@@ -159,6 +195,12 @@ internal static class CommandLine
     private static readonly Option<bool?> UpdateOverloadsOption = new("--overloads-for-default-values")
     {
         Description = OverloadsDescription + " The value recorded in cscom.json by default.",
+        Arity = ArgumentArity.ZeroOrOne,
+    };
+
+    private static readonly Option<bool?> ReferenceOverloadsOption = new("--overloads-for-default-values")
+    {
+        Description = OverloadsDescription,
         Arity = ArgumentArity.ZeroOrOne,
     };
 
@@ -175,6 +217,12 @@ internal static class CommandLine
     {
         Description = ConfigDescription + " The files recorded in cscom.json by default; LIBRARY= removes the file of a library, and an empty value removes all of them.",
         HelpName = "[LIBRARY=]PATH",
+    };
+
+    private static readonly Option<string?> ReferenceConfigOption = new("--config", "-c")
+    {
+        Description = "An XML file that adds and configures the model and syntax transformers of the sources, written relative to the project.",
+        HelpName = "PATH",
     };
 
     private const string ReferencePathDescription =
@@ -369,6 +417,50 @@ internal static class CommandLine
         list.Options.Add(ReferencePathOption);
         list.SetAction(static result => Run(result, (pipeline, loggerFactory) => List(result, pipeline, loggerFactory), quietByDefault: true));
 
+        var addReference = new Command(
+            "add",
+            "Adds CsComReference items for type libraries or interop assemblies to a project, whose interop code the CsCom.Build package generates during the build, " +
+            "and a reference to CsCom.Build if the project has none. The items of sources that the project has are updated. Only the specified options are written " +
+            "as metadata of the items, so that the CsCom* properties of the project apply to the others.")
+        {
+            ReferenceSourceArgument,
+            ProjectOption,
+            ReferenceNamespaceOption,
+        };
+        UpdateMarshallingOptions.AddTo(addReference);
+        addReference.Options.Add(ReferenceEventStyleOption);
+        addReference.Options.Add(ReferenceStructPropertiesOption);
+        addReference.Options.Add(ReferenceOverloadsOption);
+        addReference.Options.Add(ReferenceConfigOption);
+        addReference.Options.Add(ReferencePathOption);
+        addReference.SetAction(static result => Run(result, (_, loggerFactory) =>
+            new CsComReferenceEditor(loggerFactory).Add(new AddReferencesRequest
+            {
+                Project = result.GetValue(ProjectOption),
+                Sources = result.GetRequiredValue(ReferenceSourceArgument),
+                Namespace = result.GetValue(ReferenceNamespaceOption),
+                ConfigurationPath = result.GetValue(ReferenceConfigOption),
+                ReferencePaths = result.GetValue(ReferencePathOption) ?? [],
+                Marshalling = UpdateMarshallingOptions.GetOverrides(result),
+                EventStyle = result.GetValue(ReferenceEventStyleOption),
+                StructProperties = result.GetValue(ReferenceStructPropertiesOption),
+                OverloadsForDefaultValues = GetFlag(result, ReferenceOverloadsOption),
+            })));
+
+        var listReferences = new Command("list", "Lists the CsComReference items written in a project file with their metadata.")
+        {
+            ProjectOption,
+        };
+        listReferences.SetAction(static result => Run(result, (_, loggerFactory) => ListReferences(result, loggerFactory)));
+
+        var removeReference = new Command("remove", "Removes CsComReference items from a project. The reference to the CsCom.Build package is kept.")
+        {
+            RemoveSourceArgument,
+            ProjectOption,
+        };
+        removeReference.SetAction(static result => Run(result, (_, loggerFactory) =>
+            new CsComReferenceEditor(loggerFactory).Remove(result.GetValue(ProjectOption), result.GetRequiredValue(RemoveSourceArgument))));
+
         // The generator of the MSBuild task of CsCom.Build, which bundles the tool.
         var buildGenerate = new Command(BuildGenerateCommandName, "Generates the code of the CsComReference items of a project for the MSBuild task of CsCom.Build.")
         {
@@ -384,6 +476,12 @@ internal static class CommandLine
             new Command("project", "Creates or updates an interop project.") { createProject, updateProject },
             new Command("assembly", "Builds or packs an interop assembly.") { buildAssembly, packAssembly },
             new Command("config", "Creates configuration files.") { createConfig },
+            new Command("reference", "Manages the CsComReference items of a project, whose interop code the CsCom.Build package generates during the build.")
+            {
+                addReference,
+                listReferences,
+                removeReference,
+            },
             list,
             buildGenerate,
         };
@@ -464,6 +562,20 @@ internal static class CommandLine
         }
 
         return true;
+    }
+
+    // Writes a line per item: the source and the metadata, e.g. "Excel.Application Namespace=Office.Excel EventStyle=none".
+    private static bool ListReferences(ParseResult result, ILoggerFactory loggerFactory)
+    {
+        var output = result.InvocationConfiguration.Output;
+        foreach (var item in new CsComReferenceEditor(loggerFactory).List(result.GetValue(ProjectOption)))
+        {
+            output.WriteLine(string.Join(' ', item.Metadata.Select(static m => $"{m.Key}={Quote(m.Value)}").Prepend(Quote(item.Source))));
+        }
+
+        return true;
+
+        static string Quote(string value) => value.Contains(' ', StringComparison.Ordinal) ? $"\"{value}\"" : value;
     }
 
     private static void AddCreateOptions(Command command, bool withRuntimes = true)
