@@ -88,7 +88,7 @@ public sealed record CsComManifest
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     WriteIndented = true,
     DefaultIgnoreCondition = JsonIgnoreCondition.Never,
-    Converters = [typeof(CamelCaseEnumConverter<ParameterMarshalling>), typeof(CamelCaseEnumConverter<FieldMarshalling>)])]
+    Converters = [typeof(CamelCaseEnumConverter<ParameterMarshalling>), typeof(CamelCaseEnumConverter<FieldMarshalling>), typeof(CamelCaseEnumConverter<SafeArrayMarshalling>)])]
 [JsonSerializable(typeof(CsComManifest))]
 internal sealed partial class CsComJsonContext : JsonSerializerContext
 {

@@ -37,6 +37,7 @@ The type library can be a `.tlb` file or a `.dll`, `.ocx` or `.exe` file with an
 | `--support-code <package\|public\|internal>` | Where the support code comes from, see below. `package` by default. |
 | `--date-parameter-marshalling`, `--currency-parameter-marshalling`, `--bool-parameter-marshalling` | How `DATE`, `CURRENCY` and `VARIANT_BOOL` parameters and return values are represented: `managed` (default), `com` or `wrapper`, see [Marshalling options](#marshalling-options). |
 | `--date-field-marshalling`, `--currency-field-marshalling`, `--bool-field-marshalling` | How `DATE`, `CURRENCY` and `VARIANT_BOOL` structure fields are represented: `com` (default) or `wrapper`. |
+| `--safearray-marshalling <array\|sysarray\|wrapper\|none>` | How typed `SAFEARRAY(T)` parameters and return values are represented: `array` (default, `T[]`), `sysarray`, `wrapper` or `none`, see [SAFEARRAYs](#safearrays). |
 | `--event-style <events\|observable\|interface\|none>` | The code generated for the events of coclasses: `events` (default), `observable`, `interface` or `none`, see [Events](#events). |
 | `--package-source <PATH>` | An additional NuGet source with the CsCom.Runtime package. |
 | `--keep-temp` | `new assembly` only: keeps the temporary project used to build the assembly. |
@@ -95,13 +96,58 @@ foreach (object? key in dictionary)                 // _NewEnum via IEnumVARIANT
 | `DECIMAL` | `decimal` |
 | `CURRENCY` | `decimal` (`CurrencyMarshaller`; configurable, see below) |
 | `DATE` | `DateTime` (`DateMarshaller`; configurable, see below) |
-| `SAFEARRAY(T)` | `T[]?` (`SafeArrayMarshaller<T>`), see below |
+| `SAFEARRAY(T)` | `T[]?` (`SafeArrayMarshaller<T>`; configurable, see [SAFEARRAYs](#safearrays)) |
 | `[out] T*`, `[in, out] T*` | `out T`, `ref T` |
 
-`SAFEARRAY`s of `VARIANT`, `BSTR`, `VARIANT_BOOL`, integers, floating-point numbers, `DECIMAL`, `DATE`, enums, `IUnknown*`
-(`UnknownSafeArrayMarshaller`), `IDispatch*` and interfaces are marshalled as zero-based one-dimensional .NET arrays, and so are
-arrays inside `VARIANT`s. `SAFEARRAY`s of structs, `CURRENCY`, `SCODE` and dispinterfaces are passed as raw `SAFEARRAY*` (`nint`).
-Multi-dimensional `SAFEARRAY`s are not supported.
+### SAFEARRAYs
+
+`SAFEARRAY`s of `VARIANT`, `BSTR`, `VARIANT_BOOL`, integers, floating-point numbers, `DECIMAL`, `DATE`, enums, `IUnknown*`,
+`IDispatch*` and interfaces are supported; `SAFEARRAY`s of structs, `CURRENCY`, `SCODE` and dispinterfaces are always passed as
+raw `SAFEARRAY*` (`nint`).
+
+Arrays inside `VARIANT`s (`object` parameters, `dynamic` and late-bound wrappers) can have up to three dimensions: Excel's
+`Range.Value2` returns an `object[,]`, and `T[,]` and `T[,,]` can be passed. The elements keep their indices: the element
+`(i, j)` of the `SAFEARRAY` is `[i, j]` of the .NET array, although `SAFEARRAY`s store the first index and .NET arrays the last index
+fastest. The .NET arrays are **zero-based**, because Native AOT does not support other lower bounds, so the 1-based arrays of
+Visual Basic and Excel start at `[0, 0]`.
+
+Type libraries do not record the rank of `SAFEARRAY(T)` parameters, so their representation is selected by `--safearray-marshalling`:
+
+| Value | `SAFEARRAY(T)` | Ranks |
+| --- | --- | --- |
+| `array` (default) | `T[]?` (`SafeArrayMarshaller<T>`) | 1 |
+| `sysarray` | `System.Array?` (`SafeArrayMarshaller`), e.g. a `double[,]` | 1–3 |
+| `wrapper` | `ComSafeArray<T>?` | any |
+| `none` | the `SAFEARRAY*` (`nint`) | any |
+
+- **`sysarray` mode:** the element type of the arrays passed to COM methods determines the element type of the `SAFEARRAY`, so pass
+  e.g. a `string[,]` to a `SAFEARRAY(BSTR)`.
+- **Other places:** `SAFEARRAY(IUnknown*)` stays `object?[]` (`UnknownSafeArrayMarshaller`) in the `array` and `sysarray` modes.
+  Late-bound wrappers use `System.Array?` in all modes other than `array`.
+
+`ComSafeArray<T>` wraps the `SAFEARRAY` and converts the elements to and from `T` on each access. Unlike the .NET arrays, it keeps
+the **native bounds**:
+
+```csharp
+// --safearray-marshalling wrapper
+using ComSafeArray<double>? matrix = engine.GetMatrix("A");
+double first = matrix![1, 1];           // indexers with 1, 2 and 3 indices; GetValue/SetValue for any rank
+double[,] copy = matrix.ToArray2D();    // zero-based copy
+
+using var input = ComSafeArray<double>.Create(new double[3, 3]);  // or Create(VarEnum.VT_R8, lengths, lowerBounds)
+engine.PutMatrix("B", input);
+```
+
+It is disposable and follows the COM ownership rules:
+- **Passed arrays:** they stay owned by the caller.
+- **Returned arrays:** they are owned by the receiver; dispose them.
+- **`[in, out]` parameters:** an array replaced by the callee is detached from its old wrapper.
+- **COM objects implemented in .NET:**
+  - The arrays they receive are views that are only valid during the call.
+  - An owned array they return is detached and transferred to the caller; a returned view is copied.
+
+A finalizer destroys the arrays that are not disposed. `ComSafeArray<T>.FromPointer` wraps a `SAFEARRAY*`, e.g. a structure
+field or a parameter in the `none` mode, and `Detach` gives the pointer up.
 
 ### Marshalling options
 
@@ -128,7 +174,7 @@ Boolean operators `!`, `&`, `|` and `^`, which return `ComBool.True` or `ComBool
 with `&&` and `||` (`if (record.Flag && !other.Flag)`). Passed to `VARIANT` parameters or `dynamic` calls,
 the wrappers become `VT_DATE`, `VT_CY` and `VT_BOOL` values. A wrapper parameter can only have its default value as a C# default
 value, so optional parameters whose default is `true` or non-zero become required. The options do not affect late-bound
-dispinterface wrappers, constants and `SAFEARRAY`s, which use the .NET types.
+dispinterface wrappers, constants and the elements of `SAFEARRAY`s, which use the .NET types.
 
 ### Late binding with `dynamic`
 
@@ -221,7 +267,8 @@ The generated projects disable runtime marshalling, which source-generated COM i
 - Events cannot be handled through `dynamic`, and they are connected through the sink classes rather than through events of the
   COM interfaces as with TlbImp (`app.WorkbookOpen += ...`), because C# has no extension events.
 - Structure fields stay blittable, so `BSTR`, `SAFEARRAY` and interface pointer fields are raw values.
-- `SAFEARRAY`s are converted to zero-based one-dimensional arrays; their lower bounds are not preserved.
+- `SAFEARRAY`s are converted to zero-based .NET arrays of up to three dimensions; only `ComSafeArray<T>` keeps their bounds and
+  supports more dimensions.
 - Types imported from other type libraries are always generated into the project; referencing other interop assemblies is not supported yet.
 - CsCom.Runtime only targets `net10.0` for now. Source-generated COM expects a base interface from another assembly (`IDispatch`)
   to be compiled for the same target framework, so a `net11.0` build of CsCom.Runtime should be added together with .NET 11 support.

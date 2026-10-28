@@ -116,6 +116,9 @@ public sealed record MarshallingOverrides
     /// <summary>The new representation of <c>VARIANT_BOOL</c> structure fields.</summary>
     public FieldMarshalling? BoolFields { get; init; }
 
+    /// <summary>The new representation of typed <c>SAFEARRAY(T)</c> parameters and return values.</summary>
+    public SafeArrayMarshalling? SafeArrays { get; init; }
+
     /// <summary>Applies the changes to the options.</summary>
     public MarshallingOptions Apply(MarshallingOptions options) => options with
     {
@@ -125,5 +128,6 @@ public sealed record MarshallingOverrides
         CurrencyFields = CurrencyFields ?? options.CurrencyFields,
         BoolParameters = BoolParameters ?? options.BoolParameters,
         BoolFields = BoolFields ?? options.BoolFields,
+        SafeArrays = SafeArrays ?? options.SafeArrays,
     };
 }

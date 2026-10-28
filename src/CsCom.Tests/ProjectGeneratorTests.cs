@@ -209,6 +209,7 @@ public sealed class ProjectGeneratorTests
 
         var manifest = CsComManifest.Read(directory);
         Assert.AreEqual(new MarshallingOptions(), manifest.Marshalling);
+        Assert.AreEqual(SafeArrayMarshalling.Array, manifest.Marshalling.SafeArrays);
         Assert.AreEqual(EventStyle.Events, manifest.EventStyle);
     }
 

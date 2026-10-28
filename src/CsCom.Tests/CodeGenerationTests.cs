@@ -119,6 +119,23 @@ public sealed class CodeGenerationTests : VerifyBase
     }
 
     [TestMethod]
+    [DataRow(SafeArrayMarshalling.SysArray)]
+    [DataRow(SafeArrayMarshalling.Wrapper)]
+    [DataRow(SafeArrayMarshalling.None)]
+    public Task GeneratesSafeArrayMarshalling(SafeArrayMarshalling mode)
+    {
+        var documents = Generate(new CodeGenerationOptions
+        {
+            Namespace = "Interop.CsComTest",
+            ToolVersion = TestEnvironment.ToolVersion,
+            Marshalling = new MarshallingOptions { SafeArrays = mode },
+        });
+
+        return Verify(ToTargets(documents.Where(static d => d.RelativePath is "IArrays.cs" or "IMarshalling.cs" or "DShapeEvents.cs")))
+            .UseParameters(mode);
+    }
+
+    [TestMethod]
     [DataRow(EventStyle.Observable)]
     [DataRow(EventStyle.Interface)]
     public Task GeneratesEventCode(EventStyle style)

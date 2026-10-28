@@ -158,6 +158,18 @@ library CsComTest
     };
 
     [
+        object,
+        uuid(6B1F2D2A-4C1E-4B71-9D0B-7B7C2E0A1018),
+        helpstring("Covers the SAFEARRAYs of any rank")
+    ]
+    interface IArrays : IUnknown
+    {
+        HRESULT Matrix([in] SAFEARRAY(double) values, [out, retval] SAFEARRAY(double)* result);
+        HRESULT Names([in, out] SAFEARRAY(BSTR)* names);
+        HRESULT Values([in] VARIANT value, [out, retval] VARIANT* result);
+    };
+
+    [
         uuid(6B1F2D2A-4C1E-4B71-9D0B-7B7C2E0A1013),
         helpstring("The events of a shape")
     ]

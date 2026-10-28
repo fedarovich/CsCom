@@ -16,6 +16,7 @@ internal static unsafe partial class OleNativeMethods
     public const int DISP_E_PARAMNOTFOUND = unchecked((int)0x80020004);
     public const int DISP_E_MEMBERNOTFOUND = unchecked((int)0x80020003);
     public const int DISP_E_UNKNOWNNAME = unchecked((int)0x80020006);
+    public const int DISP_E_BADINDEX = unchecked((int)0x8002000B);
     public const int CO_E_CLASSSTRING = unchecked((int)0x800401F3);
     public const uint COINIT_MULTITHREADED = 0x0;
     public const uint LOCALE_USER_DEFAULT = 0x0400;
@@ -54,8 +55,27 @@ internal static unsafe partial class OleNativeMethods
     [LibraryImport("oleaut32.dll")]
     public static partial nint SafeArrayCreateVector(ushort vt, int lLbound, uint cElements);
 
+    /// <summary>Creates a <c>SAFEARRAY</c>; the bounds are in the order of the indices, the first (fastest-varying) dimension first.</summary>
+    [LibraryImport("oleaut32.dll")]
+    public static partial nint SafeArrayCreate(ushort vt, uint cDims, SafeArrayBound* rgsabound);
+
     [LibraryImport("oleaut32.dll")]
     public static partial int SafeArrayDestroy(nint psa);
+
+    [LibraryImport("oleaut32.dll")]
+    public static partial int SafeArrayCopy(nint psa, out nint ppsaOut);
+
+    [LibraryImport("oleaut32.dll")]
+    public static partial int SafeArrayLock(nint psa);
+
+    [LibraryImport("oleaut32.dll")]
+    public static partial int SafeArrayUnlock(nint psa);
+
+    [LibraryImport("oleaut32.dll")]
+    public static partial int SafeArrayPtrOfIndex(nint psa, int* rgIndices, out void* ppvData);
+
+    [LibraryImport("oleaut32.dll")]
+    public static partial uint SafeArrayGetElemsize(nint psa);
 
     [LibraryImport("oleaut32.dll")]
     public static partial int VariantChangeType(ComVariant* pvargDest, ComVariant* pvarSrc, ushort wFlags, ushort vt);
@@ -65,4 +85,17 @@ internal static unsafe partial class OleNativeMethods
 
     [LibraryImport("oleaut32.dll")]
     public static partial int VariantClear(ComVariant* pvarg);
+}
+
+/// <summary>
+/// The OLE Automation <c>SAFEARRAYBOUND</c> structure.
+/// </summary>
+[StructLayout(LayoutKind.Sequential)]
+internal struct SafeArrayBound
+{
+    /// <summary>The number of elements in the dimension.</summary>
+    public uint cElements;
+
+    /// <summary>The lower bound of the dimension.</summary>
+    public int lLbound;
 }

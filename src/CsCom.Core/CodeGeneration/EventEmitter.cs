@@ -66,7 +66,7 @@ internal sealed partial class EventEmitter
         var signatures = new SignatureBuilder(_context, new TypeMapper(_context, @namespace), @namespace);
         var source = definition.InterfaceKind == InterfaceKind.Dispatch
             ? CreateDispatchSource(definition, guid, signatures)
-            : CreateVtableSource(definition, guid, signatures);
+            : CreateVtableSource(definition, guid, signatures, _context.Options.Marshalling.SafeArrays);
 
         var members = new List<MemberDeclarationSyntax> { EmitHandlerInterface(source) };
         switch (_context.Options.EventStyle)
@@ -95,7 +95,7 @@ internal sealed partial class EventEmitter
         return new Source(definition, guid, AssignNames(definition, events), [], IsDispatch: true, IsDual: false);
     }
 
-    private static Source CreateVtableSource(InterfaceDefinition definition, Guid guid, SignatureBuilder signatures)
+    private static Source CreateVtableSource(InterfaceDefinition definition, Guid guid, SignatureBuilder signatures, SafeArrayMarshalling safeArrays)
     {
         // The sink implements the methods of the base interfaces as well.
         var hierarchy = new List<InterfaceDefinition>();
@@ -125,8 +125,14 @@ internal sealed partial class EventEmitter
             var (returnType, parameters) = signatures.MapComSignature(method);
             var @event = new Event(method, SignatureBuilder.GetMethodName(method), returnType.Name, parameters, IsDispatched: false);
 
-            // Dual interfaces are also invoked through IDispatch::Invoke, which cannot pass pointers.
-            @event = @event with { IsDispatched = isDual && method.InvokeKind == InvokeKind.Method && !@event.HasPointers && dispIds.Add(method.MemberId) };
+            // Dual interfaces are also invoked through IDispatch::Invoke, which cannot pass pointers. It passes SAFEARRAYs in
+            // VARIANTs, which are converted to .NET arrays rather than to ComSafeArray<T> or SAFEARRAY pointers.
+            bool passesSafeArrays = safeArrays is SafeArrayMarshalling.Wrapper or SafeArrayMarshalling.None
+                && method.Parameters.Any(static p => (TypeMapper.TryGetByRefElement(p.Type, out var element) ? element : p.Type) is SafeArrayTypeReference);
+            @event = @event with
+            {
+                IsDispatched = isDual && method.InvokeKind == InvokeKind.Method && !@event.HasPointers && !passesSafeArrays && dispIds.Add(method.MemberId),
+            };
             events.Add(@event);
         }
 

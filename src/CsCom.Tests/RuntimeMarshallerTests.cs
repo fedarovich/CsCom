@@ -247,9 +247,9 @@ public sealed class RuntimeMarshallerTests
     }
 
     [TestMethod]
-    public void RejectsMultidimensionalArrays()
+    public void RejectsArraysWithMoreThanThreeDimensions()
     {
-        Assert.ThrowsExactly<NotSupportedException>(() => VariantMarshaller.ConvertToUnmanaged(new int[1, 1]));
+        Assert.ThrowsExactly<NotSupportedException>(() => VariantMarshaller.ConvertToUnmanaged(new int[1, 1, 1, 1]));
     }
 
     private static void AssertRoundTrip<T>(T[] values, Action<T[], T[]>? assert = null)

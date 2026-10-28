@@ -11,7 +11,7 @@ namespace CsCom.Runtime;
 /// <remarks>
 /// Extends <see cref="ComVariantMarshaller"/> with support for enums, <see cref="ComDate"/>, <see cref="ComCurrency"/> and <see cref="ComBool"/>, COM objects (passed as <c>VT_DISPATCH</c> when
 /// they implement <c>IDispatch</c>), late-bound dispinterface wrappers and <c>dynamic</c> objects, <see cref="Missing"/> (passed as an omitted
-/// optional argument) and one-dimensional arrays (passed as <c>SAFEARRAY</c>s).
+/// optional argument), arrays of up to three dimensions and <see cref="ComSafeArray{T}"/> (passed as <c>SAFEARRAY</c>s).
 /// </remarks>
 [CustomMarshaller(typeof(object), MarshalMode.Default, typeof(VariantMarshaller))]
 public static unsafe class VariantMarshaller
@@ -35,6 +35,8 @@ public static unsafe class VariantMarshaller
                 return ConvertEnum(value);
             case Array array:
                 return SafeArrayConverter.ToVariant(array);
+            case ISafeArrayProvider provider:
+                return CreateSafeArrayVariant(provider.Pointer);
             case IDispatchProvider provider:
                 return CreateObjectVariant(provider.Dispatch);
         }
@@ -86,6 +88,13 @@ public static unsafe class VariantMarshaller
     {
         nint pointer = ComObjects.QueryDispatch(unknown, out bool isDispatch);
         return ComVariant.CreateRaw(isDispatch ? VarEnum.VT_DISPATCH : VarEnum.VT_UNKNOWN, pointer);
+    }
+
+    // The VARIANT holds a copy, so that the wrapper keeps owning its SAFEARRAY.
+    private static ComVariant CreateSafeArrayVariant(nint psa)
+    {
+        Marshal.ThrowExceptionForHR(OleNativeMethods.SafeArrayGetVartype(psa, out ushort vt));
+        return ComVariant.CreateRaw(VarEnum.VT_ARRAY | (VarEnum)vt, SafeArrayConverter.Copy(psa));
     }
 
     private static ComVariant ConvertEnum(Enum value)

@@ -601,6 +601,22 @@ namespace Interop.CsComTest
     }
 
     /// <summary>
+    /// Covers the SAFEARRAYs of any rank
+    /// </summary>
+    [global::System.Runtime.InteropServices.Marshalling.GeneratedComInterface(StringMarshalling = global::System.Runtime.InteropServices.StringMarshalling.Custom, StringMarshallingCustomType = typeof(global::System.Runtime.InteropServices.Marshalling.BStrStringMarshaller))]
+    [global::System.Runtime.InteropServices.Guid("6B1F2D2A-4C1E-4B71-9D0B-7B7C2E0A1018")]
+    public partial interface IArrays
+    {
+        [return: global::System.Runtime.InteropServices.Marshalling.MarshalUsing(typeof(global::CsCom.Runtime.SafeArrayMarshaller<double>))]
+        double[]? Matrix([global::System.Runtime.InteropServices.Marshalling.MarshalUsing(typeof(global::CsCom.Runtime.SafeArrayMarshaller<double>))] double[]? Values);
+
+        void Names([global::System.Runtime.InteropServices.Marshalling.MarshalUsing(typeof(global::CsCom.Runtime.SafeArrayMarshaller<string>))] ref string?[]? Names);
+
+        [return: global::System.Runtime.InteropServices.Marshalling.MarshalUsing(typeof(global::CsCom.Runtime.VariantMarshaller))]
+        object? Values([global::System.Runtime.InteropServices.Marshalling.MarshalUsing(typeof(global::CsCom.Runtime.VariantMarshaller))] object? Value);
+    }
+
+    /// <summary>
     /// The events of a shape, raised through IDispatch::Invoke
     /// </summary>
     [global::System.Runtime.InteropServices.Marshalling.NativeMarshalling(typeof(global::CsCom.Runtime.DispatchWrapperMarshaller<_ShapeEvents>))]

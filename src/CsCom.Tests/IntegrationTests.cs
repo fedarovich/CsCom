@@ -24,6 +24,9 @@ public sealed class IntegrationTests
     [DataRow(SupportCodeMode.Public, true, "default", EventStyle.Observable)]
     [DataRow(SupportCodeMode.Internal, false, "wrapper", EventStyle.Interface)]
     [DataRow(SupportCodeMode.Package, false, "default", EventStyle.None)]
+    [DataRow(SupportCodeMode.Package, false, "safearray-sysarray", EventStyle.Events)]
+    [DataRow(SupportCodeMode.Internal, true, "safearray-wrapper", EventStyle.Events)]
+    [DataRow(SupportCodeMode.Public, false, "safearray-none", EventStyle.Events)]
     public void GeneratedTestProjectBuildsWithoutWarnings(SupportCodeMode supportCode, bool singleFile, string marshalling, EventStyle eventStyle)
     {
         string directory = TestEnvironment.CreateDirectory($"build-{supportCode}-{marshalling}-{eventStyle}");
@@ -31,6 +34,9 @@ public sealed class IntegrationTests
         {
             "com" => new MarshallingOptions { DateParameters = ParameterMarshalling.Com, CurrencyParameters = ParameterMarshalling.Com, BoolParameters = ParameterMarshalling.Com },
             "wrapper" => AllWrappers,
+            "safearray-sysarray" => new MarshallingOptions { SafeArrays = SafeArrayMarshalling.SysArray },
+            "safearray-wrapper" => AllWrappers with { SafeArrays = SafeArrayMarshalling.Wrapper },
+            "safearray-none" => new MarshallingOptions { SafeArrays = SafeArrayMarshalling.None },
             _ => new MarshallingOptions(),
         };
         string project = CreateProject(TestEnvironment.TestTypeLibrary, directory, supportCode, singleFile, options, eventStyle);
@@ -346,6 +352,218 @@ public sealed class IntegrationTests
             expected,
             output.ToArray(),
             string.Join(Environment.NewLine, output));
+    }
+
+    [TestMethod]
+    [DataRow(SafeArrayMarshalling.Array)]
+    [DataRow(SafeArrayMarshalling.SysArray)]
+    [DataRow(SafeArrayMarshalling.Wrapper)]
+    [DataRow(SafeArrayMarshalling.None)]
+    public void SafeArraysRoundTripThroughComWrappers(SafeArrayMarshalling mode)
+    {
+        // Like MarshallersRoundTripThroughComWrappers, the consumer implements IArrays and calls it through a runtime callable
+        // wrapper of its own COM callable wrapper, so that the arrays and their ownership go through both directions of the
+        // generated stubs. VARIANTs hold SAFEARRAYs of any rank in every mode.
+        string root = TestEnvironment.CreateDirectory($"safearrays-{mode}");
+        string interop = CreateProject(
+            TestEnvironment.TestTypeLibrary,
+            Path.Combine(root, "Interop"),
+            SupportCodeMode.Package,
+            singleFile: false,
+            new MarshallingOptions { SafeArrays = mode });
+
+        string program = """
+            using System.Globalization;
+            using System.Runtime.InteropServices;
+            using System.Runtime.InteropServices.Marshalling;
+            using CsCom.Runtime;
+            using Interop.CsComTest;
+
+            CultureInfo.CurrentCulture = CultureInfo.InvariantCulture;
+            var wrappers = new StrategyBasedComWrappers();
+            var implementation = new ArraysImpl();
+            nint unknown = wrappers.GetOrCreateComInterfaceForObject(implementation, CreateComInterfaceFlags.None);
+            var proxy = (IArrays)wrappers.GetOrCreateObjectForComInstance(unknown, CreateObjectFlags.UniqueInstance);
+            Marshal.Release(unknown);
+
+            var cells = (object?[,])proxy.Values(new object?[,] { { 1, "a" }, { 2.5, null } })!;
+            Console.WriteLine($"Values={cells.GetLength(0)}x{cells.GetLength(1)}|{Join(cells)}");
+            var cube = new int[2, 3, 4];
+            for (int i = 0; i < 2; i++) for (int j = 0; j < 3; j++) for (int k = 0; k < 4; k++) cube[i, j, k] = (i * 100) + (j * 10) + k;
+            var cubeResult = (int[,,])proxy.Values(cube)!;
+            Console.WriteLine($"Cube={cubeResult.GetLength(0)}x{cubeResult.GetLength(1)}x{cubeResult.GetLength(2)}|{cubeResult[1, 2, 3]}|{cubeResult[0, 1, 2]}");
+
+            __CALLS__
+
+            static string Join(Array array) => string.Join(",", array.Cast<object?>().Select(static v => v?.ToString() ?? "<null>"));
+
+            [GeneratedComClass]
+            internal sealed partial class ArraysImpl : IArrays
+            {
+                __IMPL__
+
+                public object? Values(object? value) => value;
+            }
+            """;
+
+        (string calls, string implementation, string[] expected) = mode switch
+        {
+            SafeArrayMarshalling.Array => (
+                """
+                Console.WriteLine($"Matrix={Join(proxy.Matrix([1, 2, 3])!)}");
+                string?[]? names = ["a", "b"];
+                proxy.Names(ref names);
+                Console.WriteLine($"Names={Join(names!)}");
+                """,
+                """
+                public double[]? Matrix(double[]? values) => values?.Select(static v => v * 2).ToArray();
+
+                public void Names(ref string?[]? names) => names = names?.Select(static n => n + "!").ToArray();
+                """,
+                new[] { "Matrix=2,4,6", "Names=a!,b!" }),
+            SafeArrayMarshalling.SysArray => (
+                """
+                var matrix = (double[,])proxy.Matrix(new double[,] { { 1, 2, 3 }, { 10, 20, 30 } })!;
+                Console.WriteLine($"Matrix={matrix.GetLength(0)}x{matrix.GetLength(1)}|{Join(matrix)}");
+                Array? names = new string?[,] { { "a", "b" }, { "c", null } };
+                proxy.Names(ref names);
+                Console.WriteLine($"Names={Join(names!)}");
+                names = new string?[] { "one" };
+                proxy.Names(ref names);
+                Console.WriteLine($"Replaced={names!.Rank}|{Join(names)}");
+                """,
+                """
+                public Array? Matrix(Array? values)
+                {
+                    var matrix = (double[,])values!;
+                    var result = new double[matrix.GetLength(0), matrix.GetLength(1)];
+                    for (int i = 0; i < matrix.GetLength(0); i++) for (int j = 0; j < matrix.GetLength(1); j++) result[i, j] = matrix[i, j] * 2;
+                    return result;
+                }
+
+                public void Names(ref Array? names)
+                {
+                    if (names is string?[,] grid)
+                    {
+                        grid[0, 1] = "changed";
+                    }
+                    else
+                    {
+                        names = new[] { "new" };
+                    }
+                }
+                """,
+                new[] { "Matrix=2x3|2,4,6,20,40,60", "Names=a,changed,c,<null>", "Replaced=1|new" }),
+            SafeArrayMarshalling.Wrapper => (
+                """
+                using var input = ComSafeArray<double>.Create(new double[,] { { 1, 2, 3 }, { 10, 20, 30 } });
+                using var result = proxy.Matrix(input)!;
+                Console.WriteLine($"Matrix={result.Rank}|{result.GetLowerBound(0)}|{result[2, 3]}|{Join(result.ToArray2D())}");
+                Console.WriteLine($"InputAlive={input.Length}|ViewInvalid={IsDisposed(ArraysImpl.View!)}");
+                var names = ComSafeArray<string?>.Create(new string?[,] { { "a", "b" }, { "c", null } });
+                var original = names;
+                proxy.Names(ref names);
+                Console.WriteLine($"Names={ReferenceEquals(original, names)}|{Join(names!.ToArray2D())}");
+                names.Dispose();
+                names = ComSafeArray<string?>.Create(["one"]);
+                original = names;
+                proxy.Names(ref names);
+                Console.WriteLine($"Replaced={ReferenceEquals(original, names)}|{IsDisposed(original)}|{Join(names!.ToArray())}");
+                names.Dispose();
+
+                static bool IsDisposed<T>(ComSafeArray<T> array)
+                {
+                    try
+                    {
+                        _ = array.Pointer;
+                        return false;
+                    }
+                    catch (ObjectDisposedException)
+                    {
+                        return true;
+                    }
+                }
+                """,
+                """
+                public static ComSafeArray<double>? View { get; private set; }
+
+                // Returns a 1-based array, like Visual Basic and Excel.
+                public ComSafeArray<double>? Matrix(ComSafeArray<double>? values)
+                {
+                    View = values;
+                    int rows = values!.GetLength(0);
+                    int columns = values.GetLength(1);
+                    var result = ComSafeArray<double>.Create(VarEnum.VT_R8, [rows, columns], [1, 1]);
+                    for (int i = 0; i < rows; i++) for (int j = 0; j < columns; j++) result[i + 1, j + 1] = values[i, j] * 2;
+                    return result;
+                }
+
+                public void Names(ref ComSafeArray<string?>? names)
+                {
+                    if (names!.Rank == 2)
+                    {
+                        names[0, 1] = "changed";
+                    }
+                    else
+                    {
+                        names = ComSafeArray<string?>.Create(["new"]);
+                    }
+                }
+                """,
+                new[] { "Matrix=2|1|60|2,4,6,20,40,60", "InputAlive=6|ViewInvalid=True", "Names=True|a,changed,c,<null>", "Replaced=False|True|new" }),
+            _ => (
+                """
+                using var input = ComSafeArray<double>.Create(new double[,] { { 1, 2, 3 }, { 10, 20, 30 } });
+                using var result = ComSafeArray<double>.FromPointer(proxy.Matrix(input.Pointer), ownsArray: true)!;
+                Console.WriteLine($"Matrix={result.Rank}|{Join(result.ToArray2D())}");
+                nint names = ComSafeArray<string?>.Create(new string?[,] { { "a", "b" }, { "c", null } }).Detach();
+                proxy.Names(ref names);
+                using (var grid = ComSafeArray<string?>.FromPointer(names, ownsArray: true)!)
+                {
+                    Console.WriteLine($"Names={Join(grid.ToArray2D())}");
+                }
+
+                names = ComSafeArray<string?>.Create(["one"]).Detach();
+                proxy.Names(ref names);
+                using (var replaced = ComSafeArray<string?>.FromPointer(names, ownsArray: true)!)
+                {
+                    Console.WriteLine($"Replaced={Join(replaced.ToArray())}");
+                }
+                """,
+                """
+                public nint Matrix(nint values)
+                {
+                    double[,] matrix = ComSafeArray<double>.FromPointer(values, ownsArray: false)!.ToArray2D();
+                    var result = new double[matrix.GetLength(0), matrix.GetLength(1)];
+                    for (int i = 0; i < matrix.GetLength(0); i++) for (int j = 0; j < matrix.GetLength(1); j++) result[i, j] = matrix[i, j] * 2;
+                    return ComSafeArray<double>.Create(result).Detach();
+                }
+
+                // The callee destroys the array it replaces.
+                public void Names(ref nint names)
+                {
+                    var view = ComSafeArray<string?>.FromPointer(names, ownsArray: false)!;
+                    if (view.Rank == 2)
+                    {
+                        view[0, 1] = "changed";
+                    }
+                    else
+                    {
+                        ComSafeArray<string?>.FromPointer(names, ownsArray: true)!.Dispose();
+                        names = ComSafeArray<string?>.Create(["new"]).Detach();
+                    }
+                }
+                """,
+                new[] { "Matrix=2|2,4,6,20,40,60", "Names=a,changed,c,<null>", "Replaced=new" }),
+        };
+
+        program = program
+            .Replace("__CALLS__", calls, StringComparison.Ordinal)
+            .Replace("__IMPL__", implementation, StringComparison.Ordinal);
+        var output = RunConsumer(root, interop, program, allowUnsafe: true);
+
+        string[] lines = ["Values=2x2|1,a,2.5,<null>", "Cube=2x3x4|123|12", .. expected];
+        CollectionAssert.IsSubsetOf(lines, output.ToArray(), string.Join(Environment.NewLine, output));
     }
 
     [TestMethod]

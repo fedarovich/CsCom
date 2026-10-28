@@ -173,6 +173,31 @@ public sealed class DynamicDispatchObject : DynamicObject, IDispatchProvider, IE
                 }
 
                 return result;
+            case object?[,] array2D when array2D.GetType() == typeof(object[,]):
+                var result2D = new object?[array2D.GetLength(0), array2D.GetLength(1)];
+                for (int i = 0; i < array2D.GetLength(0); i++)
+                {
+                    for (int j = 0; j < array2D.GetLength(1); j++)
+                    {
+                        result2D[i, j] = Wrap(array2D[i, j]);
+                    }
+                }
+
+                return result2D;
+            case object?[,,] array3D when array3D.GetType() == typeof(object[,,]):
+                var result3D = new object?[array3D.GetLength(0), array3D.GetLength(1), array3D.GetLength(2)];
+                for (int i = 0; i < array3D.GetLength(0); i++)
+                {
+                    for (int j = 0; j < array3D.GetLength(1); j++)
+                    {
+                        for (int k = 0; k < array3D.GetLength(2); k++)
+                        {
+                            result3D[i, j, k] = Wrap(array3D[i, j, k]);
+                        }
+                    }
+                }
+
+                return result3D;
             case IDispatch dispatch:
                 return new DynamicDispatchObject(dispatch);
             default:

@@ -260,8 +260,8 @@ internal static class CommandLine
     }
 
     /// <summary>
-    /// The options that select how DATE, CURRENCY and VARIANT_BOOL values are represented. The options of the 'new' commands
-    /// have default values; the options of 'update project' only override the values recorded in cscom.json.
+    /// The options that select how DATE, CURRENCY and VARIANT_BOOL values and typed SAFEARRAYs are represented. The options
+    /// of the 'new' commands have default values; the options of 'update project' only override the values recorded in cscom.json.
     /// </summary>
     private sealed record MarshallingCommandOptions(
         Option<ParameterMarshalling?> DateParameters,
@@ -269,7 +269,8 @@ internal static class CommandLine
         Option<ParameterMarshalling?> CurrencyParameters,
         Option<FieldMarshalling?> CurrencyFields,
         Option<ParameterMarshalling?> BoolParameters,
-        Option<FieldMarshalling?> BoolFields)
+        Option<FieldMarshalling?> BoolFields,
+        Option<SafeArrayMarshalling?> SafeArrays)
     {
         public static MarshallingCommandOptions Create(bool withDefaults) => new(
             Parameter("date", "DATE", "DateTime", "double", "ComDate", withDefaults),
@@ -277,7 +278,8 @@ internal static class CommandLine
             Parameter("currency", "CURRENCY", "decimal", "long", "ComCurrency", withDefaults),
             Field("currency", "CURRENCY", "long", "ComCurrency", withDefaults),
             Parameter("bool", "VARIANT_BOOL", "bool", "short", "ComBool", withDefaults),
-            Field("bool", "VARIANT_BOOL", "short", "ComBool", withDefaults));
+            Field("bool", "VARIANT_BOOL", "short", "ComBool", withDefaults),
+            SafeArray(withDefaults));
 
         public void AddTo(Command command)
         {
@@ -287,6 +289,7 @@ internal static class CommandLine
             command.Options.Add(CurrencyFields);
             command.Options.Add(BoolParameters);
             command.Options.Add(BoolFields);
+            command.Options.Add(SafeArrays);
         }
 
         public MarshallingOverrides GetOverrides(ParseResult result) => new()
@@ -297,7 +300,25 @@ internal static class CommandLine
             CurrencyFields = result.GetValue(CurrencyFields),
             BoolParameters = result.GetValue(BoolParameters),
             BoolFields = result.GetValue(BoolFields),
+            SafeArrays = result.GetValue(SafeArrays),
         };
+
+        private static Option<SafeArrayMarshalling?> SafeArray(bool withDefaults)
+        {
+            var option = new Option<SafeArrayMarshalling?>("--safearray-marshalling")
+            {
+                Description = "How typed SAFEARRAY(T) parameters and return values are represented: array (one-dimensional T[]), " +
+                    "sysarray (System.Array of up to three dimensions), wrapper (ComSafeArray<T>) or none (the SAFEARRAY pointer).",
+                HelpName = "array|sysarray|wrapper|none",
+            };
+
+            if (withDefaults)
+            {
+                option.DefaultValueFactory = static _ => SafeArrayMarshalling.Array;
+            }
+
+            return option;
+        }
 
         private static Option<ParameterMarshalling?> Parameter(string name, string type, string managed, string com, string wrapper, bool withDefaults)
         {

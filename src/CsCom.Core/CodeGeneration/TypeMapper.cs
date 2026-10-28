@@ -181,6 +181,9 @@ internal sealed class TypeMapper
 
             case PointerTypeReference pointer when IsInterfaceLike(pointer.ElementType):
                 return MapLateBoundInterface(pointer.ElementType);
+            case SafeArrayTypeReference when _context.Options.Marshalling.SafeArrays != SafeArrayMarshalling.Array:
+                // The values of late-bound calls are copies in VARIANTs, which can hold SAFEARRAYs of any rank.
+                return new LateBoundType("global::System.Array?", static x => $"(global::System.Array?){x}");
             case SafeArrayTypeReference array:
             {
                 LateBoundType element = MapLateBound(array.ElementType);
@@ -258,19 +261,33 @@ internal sealed class TypeMapper
         $"{Syntax.MarshallingNamespace}.MarshalUsing(typeof({Syntax.MarshallingNamespace}.ComInterfaceMarshaller<object>))";
 
     /// <summary>
-    /// Maps a <c>SAFEARRAY</c> to a one-dimensional array marshalled by <c>SafeArrayMarshaller&lt;T&gt;</c>, or to a raw
-    /// <c>SAFEARRAY*</c> when the elements cannot be marshalled (records, <c>CURRENCY</c>, dispinterfaces).
+    /// Maps a <c>SAFEARRAY</c> as selected by <see cref="MarshallingOptions.SafeArrays"/>: to a one-dimensional array marshalled
+    /// by <c>SafeArrayMarshaller&lt;T&gt;</c>, a <see cref="System.Array"/>, a <c>ComSafeArray&lt;T&gt;</c> or the <c>SAFEARRAY*</c>.
+    /// <c>SAFEARRAY</c>s whose elements cannot be marshalled (records, <c>CURRENCY</c>, dispinterfaces) are always passed as raw <c>SAFEARRAY*</c>.
     /// </summary>
     private ManagedType MapSafeArray(SafeArrayTypeReference array)
     {
+        var marshalling = _context.Options.Marshalling.SafeArrays;
+        string? element = array.ElementType is PrimitiveTypeReference { VarType: VarEnum.VT_UNKNOWN } ? "object?" : GetSafeArrayElement(array.ElementType);
+        if (element is null || marshalling == SafeArrayMarshalling.None)
+        {
+            return ManagedType.IntPtr;
+        }
+
+        if (marshalling == SafeArrayMarshalling.Wrapper)
+        {
+            return new ManagedType($"{_context.Support}.ComSafeArray<{element}>?");
+        }
+
+        // Arrays of objects would become SAFEARRAYs of VARIANTs, so IUnknown pointers need their own marshaller.
         if (array.ElementType is PrimitiveTypeReference { VarType: VarEnum.VT_UNKNOWN })
         {
             return new ManagedType("object?[]?", $"{Syntax.MarshallingNamespace}.MarshalUsing(typeof({_context.Support}.UnknownSafeArrayMarshaller))");
         }
 
-        if (GetSafeArrayElement(array.ElementType) is not { } element)
+        if (marshalling == SafeArrayMarshalling.SysArray)
         {
-            return ManagedType.IntPtr;
+            return new ManagedType("global::System.Array?", $"{Syntax.MarshallingNamespace}.MarshalUsing(typeof({_context.Support}.SafeArrayMarshaller))");
         }
 
         string typeArgument = element.TrimEnd('?');

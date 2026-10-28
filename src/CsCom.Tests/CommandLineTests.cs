@@ -44,6 +44,7 @@ public sealed class CommandLineTests
             "--date-parameter-marshalling", "wrapper",
             "--currency-parameter-marshalling", "Com",
             "--bool-field-marshalling", "wrapper",
+            "--safearray-marshalling", "wrapper",
             "-v", "quiet"));
         Assert.AreEqual(
             new CodeGeneration.MarshallingOptions
@@ -51,14 +52,17 @@ public sealed class CommandLineTests
                 DateParameters = CodeGeneration.ParameterMarshalling.Wrapper,
                 CurrencyParameters = CodeGeneration.ParameterMarshalling.Com,
                 BoolFields = CodeGeneration.FieldMarshalling.Wrapper,
+                SafeArrays = CodeGeneration.SafeArrayMarshalling.Wrapper,
             },
             CsComManifest.Read(directory).Marshalling);
+        StringAssert.Contains(File.ReadAllText(Path.Combine(directory, CsComManifest.FileName)), "\"safeArrays\": \"wrapper\"");
 
         Assert.AreEqual(0, Run(
             "update", "project", TestEnvironment.TestTypeLibrary, "-o", directory,
             "--date-parameter-marshalling", "managed",
             "--date-field-marshalling", "wrapper",
             "--bool-parameter-marshalling", "com",
+            "--safearray-marshalling", "sysarray",
             "-v", "quiet"));
         Assert.AreEqual(
             new CodeGeneration.MarshallingOptions
@@ -67,8 +71,11 @@ public sealed class CommandLineTests
                 CurrencyParameters = CodeGeneration.ParameterMarshalling.Com,
                 BoolParameters = CodeGeneration.ParameterMarshalling.Com,
                 BoolFields = CodeGeneration.FieldMarshalling.Wrapper,
+                SafeArrays = CodeGeneration.SafeArrayMarshalling.SysArray,
             },
             CsComManifest.Read(directory).Marshalling);
+        StringAssert.Contains(File.ReadAllText(Path.Combine(directory, CsComManifest.FileName)), "\"safeArrays\": \"sysarray\"");
+        StringAssert.Contains(File.ReadAllText(Path.Combine(directory, "Generated", "IArrays.cs")), "global::System.Array? Matrix(");
     }
 
     [TestMethod]
@@ -93,6 +100,7 @@ public sealed class CommandLineTests
     {
         Assert.AreNotEqual(0, Run("new", "project", TestEnvironment.TestTypeLibrary, "--date-field-marshalling", "managed"));
         Assert.AreNotEqual(0, Run("new", "project", TestEnvironment.TestTypeLibrary, "--bool-parameter-marshalling", "raw"));
+        Assert.AreNotEqual(0, Run("new", "project", TestEnvironment.TestTypeLibrary, "--safearray-marshalling", "vector"));
     }
 
     [TestMethod]
