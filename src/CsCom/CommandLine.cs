@@ -175,7 +175,7 @@ internal static class CommandLine
         Description = "Keeps the temporary project used to build the assembly.",
     };
 
-    private static readonly MarshallingCommandOptions NewMarshallingOptions = MarshallingCommandOptions.Create(withDefaults: true);
+    private static readonly MarshallingCommandOptions CreateMarshallingOptions = MarshallingCommandOptions.Create(withDefaults: true);
 
     private static readonly MarshallingCommandOptions UpdateMarshallingOptions = MarshallingCommandOptions.Create(withDefaults: false);
 
@@ -189,10 +189,10 @@ internal static class CommandLine
 
     public static RootCommand Create()
     {
-        var newProject = new Command("project", "Generates a new C# project with the interop types of a type library or an interop assembly.");
-        AddNewOptions(newProject);
-        newProject.SetAction(static result => Run(result, (pipeline, loggerFactory) =>
-            new ProjectGenerator(pipeline, loggerFactory).CreateProject(new NewProjectRequest
+        var createProject = new Command("create", "Generates a new C# project with the interop types of a type library or an interop assembly.");
+        AddCreateOptions(createProject);
+        createProject.SetAction(static result => Run(result, (pipeline, loggerFactory) =>
+            new ProjectGenerator(pipeline, loggerFactory).CreateProject(new CreateProjectRequest
             {
                 TypeLibraryPath = result.GetRequiredValue(TypeLibraryArgument),
                 OutputDirectory = result.GetValue(OutputOption),
@@ -203,7 +203,7 @@ internal static class CommandLine
                 LanguageVersion = result.GetValue(LanguageVersionOption),
                 SingleFile = result.GetValue(SingleFileOption),
                 SupportCode = result.GetValue(SupportCodeOption),
-                Marshalling = NewMarshallingOptions.GetOverrides(result).Apply(new MarshallingOptions()),
+                Marshalling = CreateMarshallingOptions.GetOverrides(result).Apply(new MarshallingOptions()),
                 EventStyle = result.GetValue(EventStyleOption),
                 StructProperties = result.GetValue(StructPropertiesOption),
                 OverloadsForDefaultValues = result.GetValue(OverloadsOption),
@@ -212,11 +212,11 @@ internal static class CommandLine
                 PackageSource = result.GetValue(PackageSourceOption),
             })));
 
-        var newAssembly = new Command("assembly", "Builds a ready-to-use interop assembly from a type library or an interop assembly.");
-        AddNewOptions(newAssembly);
-        newAssembly.Options.Add(KeepTempOption);
-        newAssembly.SetAction(static result => Run(result, (pipeline, loggerFactory) =>
-            new AssemblyGenerator(pipeline, loggerFactory).CreateAssembly(new NewAssemblyRequest
+        var buildAssembly = new Command("build", "Builds a ready-to-use interop assembly from a type library or an interop assembly.");
+        AddCreateOptions(buildAssembly);
+        buildAssembly.Options.Add(KeepTempOption);
+        buildAssembly.SetAction(static result => Run(result, (pipeline, loggerFactory) =>
+            new AssemblyGenerator(pipeline, loggerFactory).BuildAssembly(new BuildAssemblyRequest
             {
                 TypeLibraryPath = result.GetRequiredValue(TypeLibraryArgument),
                 OutputDirectory = result.GetValue(OutputOption),
@@ -227,7 +227,7 @@ internal static class CommandLine
                 LanguageVersion = result.GetValue(LanguageVersionOption),
                 SingleFile = result.GetValue(SingleFileOption),
                 SupportCode = result.GetValue(SupportCodeOption),
-                Marshalling = NewMarshallingOptions.GetOverrides(result).Apply(new MarshallingOptions()),
+                Marshalling = CreateMarshallingOptions.GetOverrides(result).Apply(new MarshallingOptions()),
                 EventStyle = result.GetValue(EventStyleOption),
                 StructProperties = result.GetValue(StructPropertiesOption),
                 OverloadsForDefaultValues = result.GetValue(OverloadsOption),
@@ -237,7 +237,7 @@ internal static class CommandLine
                 KeepTemporaryFiles = result.GetValue(KeepTempOption),
             })));
 
-        var updateProject = new Command("project", "Regenerates the C# files of a project created with 'cscom new project'.")
+        var updateProject = new Command("update", "Regenerates the C# files of a project created with 'cscom project create'.")
         {
             UpdateTypeLibraryArgument,
             OutputOption,
@@ -269,11 +269,11 @@ internal static class CommandLine
                     : null,
             })));
 
-        var newConfig = new Command("config", "Writes a starter cscom.xml configuration file, unless it exists, and the cscom.xsd schema that gives IntelliSense in XML editors.")
+        var createConfig = new Command("create", "Writes a starter cscom.xml configuration file, unless it exists, and the cscom.xsd schema that gives IntelliSense in XML editors.")
         {
             OutputOption,
         };
-        newConfig.SetAction(static result => Run(result, (_, loggerFactory) =>
+        createConfig.SetAction(static result => Run(result, (_, loggerFactory) =>
         {
             var logger = loggerFactory.CreateLogger("cscom");
             var (path, created) = PipelineConfiguration.WriteStarterFiles(Path.GetFullPath(result.GetValue(OutputOption) ?? Environment.CurrentDirectory));
@@ -293,8 +293,9 @@ internal static class CommandLine
         return new RootCommand("Generates COM interop code from type libraries and interop assemblies using source-generated COM interop.")
         {
             VerbosityOption,
-            new Command("new", "Creates a new interop project or assembly, or a configuration file.") { newProject, newAssembly, newConfig },
-            new Command("update", "Updates an interop project.") { updateProject },
+            new Command("project", "Creates or updates an interop project.") { createProject, updateProject },
+            new Command("assembly", "Builds an interop assembly.") { buildAssembly },
+            new Command("config", "Creates configuration files.") { createConfig },
             list,
         };
     }
@@ -323,7 +324,7 @@ internal static class CommandLine
         return true;
     }
 
-    private static void AddNewOptions(Command command)
+    private static void AddCreateOptions(Command command)
     {
         command.Arguments.Add(TypeLibraryArgument);
         command.Options.Add(OutputOption);
@@ -334,7 +335,7 @@ internal static class CommandLine
         command.Options.Add(LanguageVersionOption);
         command.Options.Add(SingleFileOption);
         command.Options.Add(SupportCodeOption);
-        NewMarshallingOptions.AddTo(command);
+        CreateMarshallingOptions.AddTo(command);
         command.Options.Add(EventStyleOption);
         command.Options.Add(StructPropertiesOption);
         command.Options.Add(OverloadsOption);
@@ -343,7 +344,7 @@ internal static class CommandLine
         command.Options.Add(PackageSourceOption);
     }
 
-    // A flag of 'update project' without a value means true; when the option is omitted, the recorded value is kept.
+    // A flag of 'project update' without a value means true; when the option is omitted, the recorded value is kept.
     private static bool? GetFlag(ParseResult result, Option<bool?> flag) =>
         result.GetResult(flag) is { Implicit: false } option ? option.GetValueOrDefault<bool?>() ?? true : null;
 
@@ -408,7 +409,8 @@ internal static class CommandLine
 
     /// <summary>
     /// The options that select how DATE, CURRENCY and VARIANT_BOOL values and typed SAFEARRAYs are represented. The options
-    /// of the 'new' commands have default values; the options of 'update project' only override the values recorded in cscom.json.
+    /// of 'project create' and 'assembly build' have default values; the options of 'project update' only override the values
+    /// recorded in cscom.json.
     /// </summary>
     private sealed record MarshallingCommandOptions(
         Option<ValueMarshalling?> Dates,

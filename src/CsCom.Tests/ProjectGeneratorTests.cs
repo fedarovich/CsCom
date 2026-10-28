@@ -13,7 +13,7 @@ public sealed class ProjectGeneratorTests
     {
         string directory = Path.Combine(TestEnvironment.CreateDirectory("defaults"), "Project");
 
-        string project = _generator.CreateProject(new NewProjectRequest { TypeLibraryPath = TestEnvironment.TestTypeLibrary, OutputDirectory = directory });
+        string project = _generator.CreateProject(new CreateProjectRequest { TypeLibraryPath = TestEnvironment.TestTypeLibrary, OutputDirectory = directory });
 
         Assert.AreEqual(Path.Combine(directory, "Interop.CsComTest.csproj"), project);
         string text = File.ReadAllText(project);
@@ -37,7 +37,7 @@ public sealed class ProjectGeneratorTests
     {
         string directory = TestEnvironment.CreateDirectory("options");
 
-        string project = _generator.CreateProject(new NewProjectRequest
+        string project = _generator.CreateProject(new CreateProjectRequest
         {
             TypeLibraryPath = TestEnvironment.TestTypeLibrary,
             OutputDirectory = directory,
@@ -67,7 +67,7 @@ public sealed class ProjectGeneratorTests
         string root = TestEnvironment.CreateDirectory("cpm");
         File.WriteAllText(Path.Combine(root, "Directory.Packages.props"), "<Project><PropertyGroup><ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally></PropertyGroup></Project>");
 
-        string project = _generator.CreateProject(new NewProjectRequest { TypeLibraryPath = TestEnvironment.TestTypeLibrary, OutputDirectory = Path.Combine(root, "src", "Interop") });
+        string project = _generator.CreateProject(new CreateProjectRequest { TypeLibraryPath = TestEnvironment.TestTypeLibrary, OutputDirectory = Path.Combine(root, "src", "Interop") });
 
         StringAssert.Contains(File.ReadAllText(project), "<PackageReference Include=\"CsCom.Runtime\" />");
     }
@@ -76,11 +76,11 @@ public sealed class ProjectGeneratorTests
     public void RefusesToOverwriteProjects()
     {
         string directory = TestEnvironment.CreateDirectory("overwrite");
-        _generator.CreateProject(new NewProjectRequest { TypeLibraryPath = TestEnvironment.TestTypeLibrary, OutputDirectory = directory });
+        _generator.CreateProject(new CreateProjectRequest { TypeLibraryPath = TestEnvironment.TestTypeLibrary, OutputDirectory = directory });
 
         var exception = Assert.ThrowsExactly<CsComException>(() =>
-            _generator.CreateProject(new NewProjectRequest { TypeLibraryPath = TestEnvironment.TestTypeLibrary, OutputDirectory = directory }));
-        StringAssert.Contains(exception.Message, "cscom update project");
+            _generator.CreateProject(new CreateProjectRequest { TypeLibraryPath = TestEnvironment.TestTypeLibrary, OutputDirectory = directory }));
+        StringAssert.Contains(exception.Message, "cscom project update");
     }
 
     [TestMethod]
@@ -89,7 +89,7 @@ public sealed class ProjectGeneratorTests
     [DataRow("net11.0-windows", 14, "C# 15 or later is required")]
     public void ValidatesTargetFrameworksAndLanguageVersions(string targetFramework, int? languageVersion, string message)
     {
-        var exception = Assert.ThrowsExactly<CsComException>(() => _generator.CreateProject(new NewProjectRequest
+        var exception = Assert.ThrowsExactly<CsComException>(() => _generator.CreateProject(new CreateProjectRequest
         {
             TypeLibraryPath = TestEnvironment.TestTypeLibrary,
             OutputDirectory = TestEnvironment.CreateDirectory("invalid"),
@@ -106,7 +106,7 @@ public sealed class ProjectGeneratorTests
     [DataRow("My..Namespace")]
     public void ValidatesNamespaces(string @namespace)
     {
-        Assert.ThrowsExactly<CsComException>(() => _generator.CreateProject(new NewProjectRequest
+        Assert.ThrowsExactly<CsComException>(() => _generator.CreateProject(new CreateProjectRequest
         {
             TypeLibraryPath = TestEnvironment.TestTypeLibrary,
             OutputDirectory = TestEnvironment.CreateDirectory("namespace"),
@@ -118,7 +118,7 @@ public sealed class ProjectGeneratorTests
     public void UpdatesGeneratedFilesAndKeepsUserFiles()
     {
         string directory = TestEnvironment.CreateDirectory("update");
-        string project = _generator.CreateProject(new NewProjectRequest { TypeLibraryPath = TestEnvironment.TestTypeLibrary, OutputDirectory = directory });
+        string project = _generator.CreateProject(new CreateProjectRequest { TypeLibraryPath = TestEnvironment.TestTypeLibrary, OutputDirectory = directory });
         string userFile = Path.Combine(directory, "Extensions.cs");
         File.WriteAllText(userFile, "// user code");
         File.WriteAllText(Path.Combine(directory, "Generated", "Stale.cs"), "// stale");
@@ -147,7 +147,7 @@ public sealed class ProjectGeneratorTests
     public void UpdateKeepsTheRecordedOptions()
     {
         string directory = TestEnvironment.CreateDirectory("update-defaults");
-        _generator.CreateProject(new NewProjectRequest
+        _generator.CreateProject(new CreateProjectRequest
         {
             TypeLibraryPath = TestEnvironment.TestTypeLibrary,
             OutputDirectory = directory,
@@ -167,7 +167,7 @@ public sealed class ProjectGeneratorTests
     public void RecordsAndUpdatesMarshallingOptions()
     {
         string directory = TestEnvironment.CreateDirectory("marshalling");
-        _generator.CreateProject(new NewProjectRequest
+        _generator.CreateProject(new CreateProjectRequest
         {
             TypeLibraryPath = TestEnvironment.TestTypeLibrary,
             OutputDirectory = directory,
@@ -236,7 +236,7 @@ public sealed class ProjectGeneratorTests
             """);
         string generated = Path.Combine(directory, "Generated");
 
-        generator.CreateProject(new NewProjectRequest
+        generator.CreateProject(new CreateProjectRequest
         {
             TypeLibraryPath = TestEnvironment.TestTypeLibrary,
             OutputDirectory = directory,
@@ -267,7 +267,7 @@ public sealed class ProjectGeneratorTests
         string configuration = Path.Combine(directory, "cscom.xml");
         File.WriteAllText(configuration, "<CsCom><ModelTransformers><Rename /></ModelTransformers></CsCom>");
 
-        var exception = Assert.ThrowsExactly<CsComException>(() => _generator.CreateProject(new NewProjectRequest
+        var exception = Assert.ThrowsExactly<CsComException>(() => _generator.CreateProject(new CreateProjectRequest
         {
             TypeLibraryPath = TestEnvironment.TestTypeLibrary,
             OutputDirectory = directory,
@@ -283,7 +283,7 @@ public sealed class ProjectGeneratorTests
     public void RecordsAndUpdatesTheEventStyle()
     {
         string directory = TestEnvironment.CreateDirectory("event-style");
-        _generator.CreateProject(new NewProjectRequest
+        _generator.CreateProject(new CreateProjectRequest
         {
             TypeLibraryPath = TestEnvironment.TestTypeLibrary,
             OutputDirectory = directory,
@@ -305,7 +305,7 @@ public sealed class ProjectGeneratorTests
     public void UpdatesFromTheRecordedTypeLibrary()
     {
         string directory = TestEnvironment.CreateDirectory("recorded-tlb");
-        _generator.CreateProject(new NewProjectRequest { TypeLibraryPath = TestEnvironment.TestTypeLibrary, OutputDirectory = directory });
+        _generator.CreateProject(new CreateProjectRequest { TypeLibraryPath = TestEnvironment.TestTypeLibrary, OutputDirectory = directory });
         File.Delete(Path.Combine(directory, "Generated", "IShape.cs"));
 
         _generator.UpdateProject(new UpdateProjectRequest { ProjectDirectory = directory });
@@ -318,7 +318,7 @@ public sealed class ProjectGeneratorTests
     public void RecordsRegisteredTypeLibraries()
     {
         string directory = TestEnvironment.CreateDirectory("progid");
-        _generator.CreateProject(new NewProjectRequest { TypeLibraryPath = "Scripting.Dictionary", OutputDirectory = directory });
+        _generator.CreateProject(new CreateProjectRequest { TypeLibraryPath = "Scripting.Dictionary", OutputDirectory = directory });
 
         Assert.AreEqual("Scripting.Dictionary", CsComManifest.Read(directory).TypeLibrary);
         Assert.IsTrue(File.Exists(Path.Combine(directory, "Interop.Scripting.csproj")));

@@ -40,18 +40,18 @@ The tool accept a TLB file as an input and runs it through the processing pipeli
 Generating a new C# project:
 
 ```powershell
-cscom new project [<OPTIONS>] <TlbPath>
+cscom project create [<OPTIONS>] <TlbPath>
 ```
 
 Updating generated C# files in the project:
 
 ```powershell
-cscom update project [<OPTIONS>] <TlbPath>
+cscom project update [<OPTIONS>] <TlbPath>
 ```
 
 Generating a .Net assembly:
 ```powershell
-cscom new project [<OPTIONS>] <TlbPath>
+cscom assembly build [<OPTIONS>] <TlbPath>
 ```
 
 ### Well-known options:

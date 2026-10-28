@@ -80,7 +80,7 @@ public sealed record CsComManifest
         string path = Path.Combine(projectDirectory, FileName);
         if (!File.Exists(path))
         {
-            throw new CsComException($"'{path}' was not found. Only the projects created with 'cscom new project' can be updated.");
+            throw new CsComException($"'{path}' was not found. Only the projects created with 'cscom project create' can be updated.");
         }
 
         try

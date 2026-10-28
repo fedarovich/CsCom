@@ -29,7 +29,7 @@ public sealed partial class ProjectGenerator
     /// Creates a new project.
     /// </summary>
     /// <returns>The path to the project file.</returns>
-    public string CreateProject(NewProjectRequest request)
+    public string CreateProject(CreateProjectRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);
 
@@ -39,7 +39,7 @@ public sealed partial class ProjectGenerator
         if (Directory.Exists(directory)
             && (Directory.EnumerateFiles(directory, "*.csproj").Any() || File.Exists(Path.Combine(directory, CsComManifest.FileName))))
         {
-            throw new CsComException($"The directory '{directory}' already contains a project. Use 'cscom update project' to update it.");
+            throw new CsComException($"The directory '{directory}' already contains a project. Use 'cscom project update' to update it.");
         }
 
         var configuration = LoadConfiguration(manifest.Configuration);
@@ -173,7 +173,7 @@ public sealed partial class ProjectGenerator
     /// <summary>
     /// Validates the options of a new project or assembly and applies the defaults. The configuration file is recorded with its full path.
     /// </summary>
-    internal CsComManifest ResolveSettings(NewOutputRequest request, TypeLibrary library)
+    internal CsComManifest ResolveSettings(OutputRequest request, TypeLibrary library)
     {
         var targetFrameworks = request.TargetFrameworks.Count > 0
             ? request.TargetFrameworks.Distinct(StringComparer.OrdinalIgnoreCase).ToList()

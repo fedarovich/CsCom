@@ -3,9 +3,9 @@ using CsCom.CodeGeneration;
 namespace CsCom.Output;
 
 /// <summary>
-/// The options shared by the commands that create a new project or assembly.
+/// The options shared by the <c>project create</c> and <c>assembly build</c> commands, which create a new project or assembly.
 /// </summary>
-public abstract class NewOutputRequest
+public abstract class OutputRequest
 {
     /// <summary>The type library: a file, a registered LIBID or a ProgID, see <see cref="TypeLibraries.TypeLibrarySource"/>.</summary>
     public required string TypeLibraryPath { get; init; }
@@ -63,16 +63,16 @@ public abstract class NewOutputRequest
 }
 
 /// <summary>
-/// The options of the <c>new project</c> command.
+/// The options of the <c>project create</c> command.
 /// </summary>
-public sealed class NewProjectRequest : NewOutputRequest
+public sealed class CreateProjectRequest : OutputRequest
 {
 }
 
 /// <summary>
-/// The options of the <c>new assembly</c> command.
+/// The options of the <c>assembly build</c> command.
 /// </summary>
-public sealed class NewAssemblyRequest : NewOutputRequest
+public sealed class BuildAssemblyRequest : OutputRequest
 {
     /// <summary>Whether the temporary project is kept after the assembly is built.</summary>
     public bool KeepTemporaryFiles { get; init; }
@@ -82,7 +82,7 @@ public sealed class NewAssemblyRequest : NewOutputRequest
 }
 
 /// <summary>
-/// The options of the <c>update project</c> command. The options that are not specified are taken from the project's <c>cscom.json</c>.
+/// The options of the <c>project update</c> command. The options that are not specified are taken from the project's <c>cscom.json</c>.
 /// </summary>
 public sealed class UpdateProjectRequest
 {

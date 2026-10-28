@@ -167,7 +167,7 @@ public sealed class IntegrationTests
             </CsCom>
             """);
 
-        string project = new ProjectGenerator(_pipeline).CreateProject(new NewProjectRequest
+        string project = new ProjectGenerator(_pipeline).CreateProject(new CreateProjectRequest
         {
             TypeLibraryPath = TestEnvironment.TestTypeLibrary,
             OutputDirectory = directory,
@@ -195,7 +195,7 @@ public sealed class IntegrationTests
         }
 
         string directory = TestEnvironment.CreateDirectory("build-csharp15");
-        string project = new ProjectGenerator(_pipeline).CreateProject(new NewProjectRequest
+        string project = new ProjectGenerator(_pipeline).CreateProject(new CreateProjectRequest
         {
             TypeLibraryPath = TestEnvironment.TestTypeLibrary,
             OutputDirectory = directory,
@@ -263,7 +263,7 @@ public sealed class IntegrationTests
         var pipeline = new InteropPipeline();
         pipeline.ModelTransformers.Add(new LateBindingTransformer());
         string root = TestEnvironment.CreateDirectory("late-bound");
-        string interop = new ProjectGenerator(pipeline).CreateProject(new NewProjectRequest
+        string interop = new ProjectGenerator(pipeline).CreateProject(new CreateProjectRequest
         {
             TypeLibraryPath = TestEnvironment.ScriptingRuntime,
             OutputDirectory = Path.Combine(root, "Interop"),
@@ -708,7 +708,7 @@ public sealed class IntegrationTests
         // With the wrappers, the BSTR and VARIANT_BOOL default values of IShape.Move have no C# constants; the overloads
         // generated with OverloadsForDefaultValues allow omitting them, and the full method stays available.
         string root = TestEnvironment.CreateDirectory("default-overloads");
-        string interop = new ProjectGenerator(_pipeline).CreateProject(new NewProjectRequest
+        string interop = new ProjectGenerator(_pipeline).CreateProject(new CreateProjectRequest
         {
             TypeLibraryPath = TestEnvironment.TestTypeLibrary,
             OutputDirectory = Path.Combine(root, "Interop"),
@@ -758,7 +758,7 @@ public sealed class IntegrationTests
               </ModelTransformers>
             </CsCom>
             """);
-        string interop = new ProjectGenerator(_pipeline).CreateProject(new NewProjectRequest
+        string interop = new ProjectGenerator(_pipeline).CreateProject(new CreateProjectRequest
         {
             TypeLibraryPath = TestEnvironment.TestTypeLibrary,
             OutputDirectory = Path.Combine(root, "Interop"),
@@ -1257,11 +1257,11 @@ public sealed class IntegrationTests
         """;
 
     [TestMethod]
-    public void NewAssemblyCopiesTheOutputsOfEachRuntime()
+    public void BuildAssemblyCopiesTheOutputsOfEachRuntime()
     {
         string output = TestEnvironment.CreateDirectory("assembly");
 
-        var files = new AssemblyGenerator(_pipeline).CreateAssembly(new NewAssemblyRequest
+        var files = new AssemblyGenerator(_pipeline).BuildAssembly(new BuildAssemblyRequest
         {
             TypeLibraryPath = TestEnvironment.TestTypeLibrary,
             OutputDirectory = output,
@@ -1282,11 +1282,11 @@ public sealed class IntegrationTests
     }
 
     [TestMethod]
-    public void NewAssemblyUsesFlatLayoutForSingleTarget()
+    public void BuildAssemblyUsesFlatLayoutForSingleTarget()
     {
         string output = TestEnvironment.CreateDirectory("assembly-flat");
 
-        new AssemblyGenerator(_pipeline).CreateAssembly(new NewAssemblyRequest
+        new AssemblyGenerator(_pipeline).BuildAssembly(new BuildAssemblyRequest
         {
             TypeLibraryPath = TestEnvironment.TestTypeLibrary,
             OutputDirectory = output,
@@ -1346,7 +1346,7 @@ public sealed class IntegrationTests
         MarshallingOptions? marshalling = null,
         EventStyle eventStyle = EventStyle.Events,
         StructProperties structProperties = StructProperties.Auto) =>
-        new ProjectGenerator(_pipeline).CreateProject(new NewProjectRequest
+        new ProjectGenerator(_pipeline).CreateProject(new CreateProjectRequest
         {
             TypeLibraryPath = typeLibrary,
             OutputDirectory = directory,

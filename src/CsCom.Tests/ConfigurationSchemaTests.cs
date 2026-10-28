@@ -6,7 +6,7 @@ using CsCom.Configuration;
 namespace CsCom.Tests;
 
 /// <summary>
-/// Tests of the XML schema of the configuration files and of the starter files written by <c>cscom new config</c>.
+/// Tests of the XML schema of the configuration files and of the starter files written by <c>cscom config create</c>.
 /// </summary>
 [TestClass]
 public sealed class ConfigurationSchemaTests

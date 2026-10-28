@@ -15,13 +15,13 @@ added in .NET 8, so the interop assemblies can be trimmed and used with Native A
 
 ```powershell
 # Generate a C# project with the interop types
-cscom new project C:\Windows\System32\scrrun.dll -o Interop.Scripting
+cscom project create C:\Windows\System32\scrrun.dll -o Interop.Scripting
 
-# Regenerate the C# files of a project created with 'new project' (from the type library recorded in cscom.json)
-cscom update project -o Interop.Scripting
+# Regenerate the C# files of a project created with 'project create' (from the type library recorded in cscom.json)
+cscom project update -o Interop.Scripting
 
 # Build a ready-to-use interop assembly
-cscom new assembly C:\Windows\System32\scrrun.dll -o bin
+cscom assembly build C:\Windows\System32\scrrun.dll -o bin
 
 # List the types and members of a type library
 cscom list Scripting.Dictionary --type ^IDictionary$
@@ -37,12 +37,12 @@ The type library (`TlbPath`) can be:
   [Interop assemblies](#interop-assemblies).
 
 Registered type libraries are found in the registry, so Office type libraries don't have to be looked up inside the Office
-installation. `cscom.json` records the LIBID or the ProgID rather than the path, and `update project` looks it up again, e.g.
+installation. `cscom.json` records the LIBID or the ProgID rather than the path, and `project update` looks it up again, e.g.
 after an Office update.
 
 | Option | Description |
 | --- | --- |
-| `-o`, `--output <PATH>` | The output directory: `./<Name>` for `new project`, the current directory for `new assembly`, and the project directory for `update project`. |
+| `-o`, `--output <PATH>` | The output directory: `./<Name>` for `project create`, the current directory for `assembly build`, and the project directory for `project update`. |
 | `-n`, `--name <NAME>` | The project and assembly name. `Interop.<TlbName>` by default. |
 | `--ns`, `--namespace <NAMESPACE>` | The namespace of the generated types. `Interop.<TlbName>` by default. |
 | `-f`, `--framework <TFM>` | The target framework; can be specified multiple times. `net10.0-windows` by default. |
@@ -59,15 +59,15 @@ after an Office update.
 | `--config <PATH>` | An XML file that adds and configures model and syntax transformers, see [Configuration file](#configuration-file). |
 | `--reference-path <PATH>` | For interop assemblies: an assembly they reference, or a directory of such assemblies; can be specified multiple times, see [Interop assemblies](#interop-assemblies). |
 | `--package-source <PATH>` | An additional NuGet source with the CsCom.Runtime package. |
-| `--keep-temp` | `new assembly` only: keeps the temporary project used to build the assembly. |
+| `--keep-temp` | `assembly build` only: keeps the temporary project used to build the assembly. |
 | `-v`, `--verbosity <LEVEL>` | `quiet`, `minimal`, `normal` (default), `detailed` or `diagnostic`. |
 
-`new project` writes `<Name>.csproj`, a `cscom.json` file with the options it was generated with, and the C# files into the
-`Generated` folder. `update project` replaces the C# files of the `Generated` folder using the type library and the options recorded
+`project create` writes `<Name>.csproj`, a `cscom.json` file with the options it was generated with, and the C# files into the
+`Generated` folder. `project update` replaces the C# files of the `Generated` folder using the type library and the options recorded
 in `cscom.json`; a `TlbPath` replaces the recorded type library. It accepts `--namespace`, `--csharp-version`, `--single-file [true|false]`, the marshalling options, `--event-style`, `--struct-properties`, `--overloads-for-default-values [true|false]`, `--config`
 (an empty value removes the file) and `--reference-path` (an empty value removes the paths) to change them. Code outside of the `Generated` folder, e.g. partial classes, is not touched.
 
-`new assembly` generates the project in a temporary directory, builds it with `dotnet build` once per runtime identifier and copies
+`assembly build` generates the project in a temporary directory, builds it with `dotnet build` once per runtime identifier and copies
 the assemblies, PDBs and XML documentation (and `CsCom.Runtime.dll`) to the output directory. With a single target framework and at
 most one runtime identifier, the files are copied directly into the output directory; otherwise into `<TFM>\<RID>` subfolders.
 
@@ -95,7 +95,7 @@ global assembly cache, or an assembly that TlbImp imported from a type library. 
 so projects can be generated on build machines:
 
 ```powershell
-cscom new project Microsoft.Office.Interop.Excel.dll --reference-path C:\packages\office -o Interop.Excel
+cscom project create Microsoft.Office.Interop.Excel.dll --reference-path C:\packages\office -o Interop.Excel
 ```
 
 The model is rebuilt from the metadata of the assembly, which is not loaded for execution, following the conventions of TlbImp:
@@ -158,11 +158,11 @@ other value types become `void*`, and explicit layouts other than unions become 
   before the names are sanitized, so they see the resolved aliases and the names they produce are made valid and unique.
 - **Validation:** unknown transformers, attributes and child elements are reported with their location, e.g.
   `cscom.xml(3,6): Unknown model transformer <Rename>.` Nothing is written when the file is not valid.
-- **`update project`:** `new project` records the file in `cscom.json`, relative to the project directory, and `update project` applies
-  it again. `--config` replaces it, and `--config ""` removes it.
+- **`project update`:** `project create` records the file in `cscom.json`, relative to the project directory, and `project update`
+  applies it again. `--config` replaces it, and `--config ""` removes it.
 - **Custom transformers:** they are registered through the API with `InteropPipeline.Registry.AddModelTransformer(name, element => ...)`
   and `AddSyntaxTransformer`, whose factories read their element with `ConfigurationElement`.
-- **Schema and starter file:** `cscom new config [-o <dir>]` writes `cscom.xsd`, the schema of the configuration files, and a
+- **Schema and starter file:** `cscom config create [-o <dir>]` writes `cscom.xsd`, the schema of the configuration files, and a
   `cscom.xml` with commented examples of every transformer, unless it already exists (the schema is always written again). The
   starter file refers to the schema with `xsi:noNamespaceSchemaLocation`, which gives IntelliSense in Visual Studio, VS Code and
   other XML editors.

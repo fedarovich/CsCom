@@ -47,7 +47,7 @@ public sealed partial class AssemblyGenerator
     /// Generates and builds the interop assembly and copies it into the output directory.
     /// </summary>
     /// <returns>The paths of the copied files.</returns>
-    public IReadOnlyList<string> CreateAssembly(NewAssemblyRequest request)
+    public IReadOnlyList<string> BuildAssembly(BuildAssemblyRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);
 

@@ -6,12 +6,12 @@ namespace CsCom.Tests;
 public sealed class CommandLineTests
 {
     [TestMethod]
-    public void NewProjectPassesTheOptions()
+    public void ProjectCreatePassesTheOptions()
     {
         string directory = TestEnvironment.CreateDirectory("cli-new");
 
         int exitCode = Run(
-            "new", "project", TestEnvironment.TestTypeLibrary,
+            "project", "create", TestEnvironment.TestTypeLibrary,
             "-o", directory,
             "-n", "Cli.Interop",
             "--ns", "Cli.Namespace",
@@ -40,7 +40,7 @@ public sealed class CommandLineTests
         string directory = TestEnvironment.CreateDirectory("cli-marshalling");
 
         Assert.AreEqual(0, Run(
-            "new", "project", TestEnvironment.TestTypeLibrary, "-o", directory,
+            "project", "create", TestEnvironment.TestTypeLibrary, "-o", directory,
             "--date-marshalling", "wrapper",
             "--currency-marshalling", "None",
             "--bstr-marshalling", "wrapper",
@@ -60,7 +60,7 @@ public sealed class CommandLineTests
         StringAssert.Contains(File.ReadAllText(Path.Combine(directory, CsComManifest.FileName)), "\"safeArrays\": \"wrapper\"");
 
         Assert.AreEqual(0, Run(
-            "update", "project", TestEnvironment.TestTypeLibrary, "-o", directory,
+            "project", "update", TestEnvironment.TestTypeLibrary, "-o", directory,
             "--date-marshalling", "bcl",
             "--bool-marshalling", "none",
             "--bstr-marshalling", "none",
@@ -85,16 +85,16 @@ public sealed class CommandLineTests
     {
         string directory = TestEnvironment.CreateDirectory("cli-events");
 
-        Assert.AreEqual(0, Run("new", "project", TestEnvironment.TestTypeLibrary, "-o", directory, "-v", "quiet"));
+        Assert.AreEqual(0, Run("project", "create", TestEnvironment.TestTypeLibrary, "-o", directory, "-v", "quiet"));
         Assert.AreEqual(CodeGeneration.EventStyle.Events, CsComManifest.Read(directory).EventStyle);
 
-        Assert.AreEqual(0, Run("update", "project", TestEnvironment.TestTypeLibrary, "-o", directory, "--event-style", "interface", "-v", "quiet"));
+        Assert.AreEqual(0, Run("project", "update", TestEnvironment.TestTypeLibrary, "-o", directory, "--event-style", "interface", "-v", "quiet"));
         Assert.AreEqual(CodeGeneration.EventStyle.Interface, CsComManifest.Read(directory).EventStyle);
 
-        Assert.AreEqual(0, Run("update", "project", TestEnvironment.TestTypeLibrary, "-o", directory, "-v", "quiet"));
+        Assert.AreEqual(0, Run("project", "update", TestEnvironment.TestTypeLibrary, "-o", directory, "-v", "quiet"));
         Assert.AreEqual(CodeGeneration.EventStyle.Interface, CsComManifest.Read(directory).EventStyle);
 
-        Assert.AreNotEqual(0, Run("new", "project", TestEnvironment.TestTypeLibrary, "--event-style", "delegates"));
+        Assert.AreNotEqual(0, Run("project", "create", TestEnvironment.TestTypeLibrary, "--event-style", "delegates"));
     }
 
     [TestMethod]
@@ -105,25 +105,25 @@ public sealed class CommandLineTests
         string manifest = Path.Combine(directory, CsComManifest.FileName);
         string record = Path.Combine(directory, "Generated", "Record.cs");
 
-        Assert.AreEqual(0, Run("new", "project", TestEnvironment.TestTypeLibrary, "-o", directory, "-v", "quiet"));
+        Assert.AreEqual(0, Run("project", "create", TestEnvironment.TestTypeLibrary, "-o", directory, "-v", "quiet"));
         Assert.AreEqual(CodeGeneration.StructProperties.Auto, CsComManifest.Read(directory).StructProperties);
         StringAssert.Contains(File.ReadAllText(manifest), "\"structProperties\": \"auto\"");
         StringAssert.Contains(File.ReadAllText(record), "private short _flag;");
 
-        Assert.AreEqual(0, Run("update", "project", TestEnvironment.TestTypeLibrary, "-o", directory, "--struct-properties", "never", "-v", "quiet"));
+        Assert.AreEqual(0, Run("project", "update", TestEnvironment.TestTypeLibrary, "-o", directory, "--struct-properties", "never", "-v", "quiet"));
         Assert.AreEqual(CodeGeneration.StructProperties.Never, CsComManifest.Read(directory).StructProperties);
         StringAssert.Contains(File.ReadAllText(record), "public short Flag;");
 
-        Assert.AreEqual(0, Run("update", "project", TestEnvironment.TestTypeLibrary, "-o", directory, "-v", "quiet"));
+        Assert.AreEqual(0, Run("project", "update", TestEnvironment.TestTypeLibrary, "-o", directory, "-v", "quiet"));
         Assert.AreEqual(CodeGeneration.StructProperties.Never, CsComManifest.Read(directory).StructProperties);
 
         // The values of earlier versions are read as auto.
         File.WriteAllText(manifest, File.ReadAllText(manifest).Replace("\"structProperties\": \"never\"", "\"structProperties\": \"always\"", StringComparison.Ordinal));
-        Assert.AreEqual(0, Run("update", "project", "-o", directory, "-v", "quiet"));
+        Assert.AreEqual(0, Run("project", "update", "-o", directory, "-v", "quiet"));
         StringAssert.Contains(File.ReadAllText(manifest), "\"structProperties\": \"auto\"");
 
-        Assert.AreNotEqual(0, Run("new", "project", TestEnvironment.TestTypeLibrary, "--struct-properties", "always"));
-        Assert.AreNotEqual(0, Run("new", "project", TestEnvironment.TestTypeLibrary, "--struct-properties", "sometimes"));
+        Assert.AreNotEqual(0, Run("project", "create", TestEnvironment.TestTypeLibrary, "--struct-properties", "always"));
+        Assert.AreNotEqual(0, Run("project", "create", TestEnvironment.TestTypeLibrary, "--struct-properties", "sometimes"));
     }
 
     [TestMethod]
@@ -134,19 +134,19 @@ public sealed class CommandLineTests
         string configuration = Path.Combine(root, "cscom.xml");
         File.WriteAllText(configuration, "<CsCom><ModelTransformers /><SyntaxTransformers /></CsCom>");
 
-        Assert.AreEqual(0, Run("new", "project", TestEnvironment.TestTypeLibrary, "-o", directory, "--config", configuration, "-v", "quiet"));
+        Assert.AreEqual(0, Run("project", "create", TestEnvironment.TestTypeLibrary, "-o", directory, "--config", configuration, "-v", "quiet"));
         Assert.AreEqual(@"..\cscom.xml", CsComManifest.Read(directory).Configuration);
 
-        Assert.AreEqual(0, Run("update", "project", TestEnvironment.TestTypeLibrary, "-o", directory, "-v", "quiet"));
+        Assert.AreEqual(0, Run("project", "update", TestEnvironment.TestTypeLibrary, "-o", directory, "-v", "quiet"));
         Assert.AreEqual(@"..\cscom.xml", CsComManifest.Read(directory).Configuration);
 
         // A file with an unknown transformer is rejected before anything is written.
         File.WriteAllText(configuration, "<CsCom><ModelTransformers><Unknown /></ModelTransformers></CsCom>");
-        Assert.AreEqual(1, Run("update", "project", TestEnvironment.TestTypeLibrary, "-o", directory, "-v", "quiet"));
-        Assert.AreEqual(1, Run("new", "project", TestEnvironment.TestTypeLibrary, "-o", Path.Combine(root, "Failed"), "--config", configuration, "-v", "quiet"));
+        Assert.AreEqual(1, Run("project", "update", TestEnvironment.TestTypeLibrary, "-o", directory, "-v", "quiet"));
+        Assert.AreEqual(1, Run("project", "create", TestEnvironment.TestTypeLibrary, "-o", Path.Combine(root, "Failed"), "--config", configuration, "-v", "quiet"));
         Assert.IsFalse(Directory.Exists(Path.Combine(root, "Failed")));
 
-        Assert.AreEqual(0, Run("update", "project", TestEnvironment.TestTypeLibrary, "-o", directory, "--config", "", "-v", "quiet"));
+        Assert.AreEqual(0, Run("project", "update", TestEnvironment.TestTypeLibrary, "-o", directory, "--config", "", "-v", "quiet"));
         Assert.IsNull(CsComManifest.Read(directory).Configuration);
     }
 
@@ -157,17 +157,17 @@ public sealed class CommandLineTests
         string directory = Path.Combine(root, "Project");
         string references = Directory.CreateDirectory(Path.Combine(root, "References")).FullName;
 
-        Assert.AreEqual(0, Run("new", "project", TestEnvironment.TestInteropAssembly, "-o", directory, "--reference-path", references, "-v", "quiet"));
+        Assert.AreEqual(0, Run("project", "create", TestEnvironment.TestInteropAssembly, "-o", directory, "--reference-path", references, "-v", "quiet"));
         var manifest = CsComManifest.Read(directory);
         Assert.AreEqual(Path.GetFullPath(TestEnvironment.TestInteropAssembly), manifest.TypeLibrary);
         Assert.AreEqual("Interop.CsComTest", manifest.Name);
         CollectionAssert.AreEqual(new[] { @"..\References" }, manifest.ReferencePaths!.ToList());
         Assert.IsTrue(File.Exists(Path.Combine(directory, "Generated", "IShape.cs")));
 
-        Assert.AreEqual(0, Run("update", "project", "-o", directory, "-v", "quiet"));
+        Assert.AreEqual(0, Run("project", "update", "-o", directory, "-v", "quiet"));
         CollectionAssert.AreEqual(new[] { @"..\References" }, CsComManifest.Read(directory).ReferencePaths!.ToList());
 
-        Assert.AreEqual(0, Run("update", "project", "-o", directory, "--reference-path", "", "-v", "quiet"));
+        Assert.AreEqual(0, Run("project", "update", "-o", directory, "--reference-path", "", "-v", "quiet"));
         Assert.IsNull(CsComManifest.Read(directory).ReferencePaths);
         Assert.IsFalse(File.ReadAllText(Path.Combine(directory, CsComManifest.FileName)).Contains("referencePaths", StringComparison.Ordinal));
 
@@ -180,10 +180,10 @@ public sealed class CommandLineTests
     public void UpdatesWithoutTheTypeLibrary()
     {
         string directory = TestEnvironment.CreateDirectory("cli-update-recorded");
-        Assert.AreEqual(0, Run("new", "project", TestEnvironment.TestTypeLibrary, "-o", directory, "-v", "quiet"));
+        Assert.AreEqual(0, Run("project", "create", TestEnvironment.TestTypeLibrary, "-o", directory, "-v", "quiet"));
 
-        Assert.AreEqual(0, Run("update", "project", "-o", directory, "-v", "quiet"));
-        Assert.AreEqual(0, Run("update", "project", "-o", directory, "--single-file", "-v", "quiet"));
+        Assert.AreEqual(0, Run("project", "update", "-o", directory, "-v", "quiet"));
+        Assert.AreEqual(0, Run("project", "update", "-o", directory, "--single-file", "-v", "quiet"));
         Assert.IsTrue(CsComManifest.Read(directory).SingleFile);
     }
 
@@ -217,62 +217,62 @@ public sealed class CommandLineTests
         string directory = TestEnvironment.CreateDirectory("cli-overloads");
         string shape = Path.Combine(directory, "Generated", "IShape.cs");
 
-        Assert.AreEqual(0, Run("new", "project", TestEnvironment.TestTypeLibrary, "-o", directory, "--bool-marshalling", "wrapper", "--overloads-for-default-values", "-v", "quiet"));
+        Assert.AreEqual(0, Run("project", "create", TestEnvironment.TestTypeLibrary, "-o", directory, "--bool-marshalling", "wrapper", "--overloads-for-default-values", "-v", "quiet"));
         Assert.IsTrue(CsComManifest.Read(directory).OverloadsForDefaultValues);
         StringAssert.Contains(File.ReadAllText(Path.Combine(directory, CsComManifest.FileName)), "\"overloadsForDefaultValues\": true");
         StringAssert.Contains(File.ReadAllText(shape), "global::CsCom.Runtime.ComBool.True);");
 
-        Assert.AreEqual(0, Run("update", "project", "-o", directory, "-v", "quiet"));
+        Assert.AreEqual(0, Run("project", "update", "-o", directory, "-v", "quiet"));
         Assert.IsTrue(CsComManifest.Read(directory).OverloadsForDefaultValues);
 
-        Assert.AreEqual(0, Run("update", "project", "-o", directory, "--overloads-for-default-values", "false", "-v", "quiet"));
+        Assert.AreEqual(0, Run("project", "update", "-o", directory, "--overloads-for-default-values", "false", "-v", "quiet"));
         Assert.IsFalse(CsComManifest.Read(directory).OverloadsForDefaultValues);
         Assert.IsFalse(File.ReadAllText(shape).Contains("ComBool.True", StringComparison.Ordinal));
     }
 
     [TestMethod]
-    public void NewConfigWritesTheStarterFiles()
+    public void ConfigCreateWritesTheStarterFiles()
     {
         string directory = TestEnvironment.CreateDirectory("cli-new-config");
 
-        Assert.AreEqual(0, Run("new", "config", "-o", directory, "-v", "quiet"));
+        Assert.AreEqual(0, Run("config", "create", "-o", directory, "-v", "quiet"));
         string configuration = Path.Combine(directory, "cscom.xml");
         StringAssert.Contains(File.ReadAllText(configuration), "xsi:noNamespaceSchemaLocation=\"cscom.xsd\"");
         Assert.IsTrue(File.Exists(Path.Combine(directory, "cscom.xsd")));
 
         File.WriteAllText(configuration, "<CsCom />");
-        Assert.AreEqual(0, Run("new", "config", "-o", directory, "-v", "quiet"));
+        Assert.AreEqual(0, Run("config", "create", "-o", directory, "-v", "quiet"));
         Assert.AreEqual("<CsCom />", File.ReadAllText(configuration));
 
         // The starter configuration can be used right away.
         File.Delete(configuration);
-        Assert.AreEqual(0, Run("new", "config", "-o", directory, "-v", "quiet"));
+        Assert.AreEqual(0, Run("config", "create", "-o", directory, "-v", "quiet"));
         Assert.AreEqual(0, Run("list", TestEnvironment.TestTypeLibrary, "--config", configuration, "-t", "^Color$"));
     }
 
     [TestMethod]
     public void RejectsInvalidMarshallingOptions()
     {
-        Assert.AreNotEqual(0, Run("new", "project", TestEnvironment.TestTypeLibrary, "--date-field-marshalling", "wrapper"));
-        Assert.AreNotEqual(0, Run("new", "project", TestEnvironment.TestTypeLibrary, "--bool-marshalling", "managed"));
-        Assert.AreNotEqual(0, Run("new", "project", TestEnvironment.TestTypeLibrary, "--currency-marshalling", "com"));
-        Assert.AreNotEqual(0, Run("new", "project", TestEnvironment.TestTypeLibrary, "--bstr-marshalling", "ansi"));
-        Assert.AreNotEqual(0, Run("new", "project", TestEnvironment.TestTypeLibrary, "--safearray-marshalling", "vector"));
+        Assert.AreNotEqual(0, Run("project", "create", TestEnvironment.TestTypeLibrary, "--date-field-marshalling", "wrapper"));
+        Assert.AreNotEqual(0, Run("project", "create", TestEnvironment.TestTypeLibrary, "--bool-marshalling", "managed"));
+        Assert.AreNotEqual(0, Run("project", "create", TestEnvironment.TestTypeLibrary, "--currency-marshalling", "com"));
+        Assert.AreNotEqual(0, Run("project", "create", TestEnvironment.TestTypeLibrary, "--bstr-marshalling", "ansi"));
+        Assert.AreNotEqual(0, Run("project", "create", TestEnvironment.TestTypeLibrary, "--safearray-marshalling", "vector"));
     }
 
     [TestMethod]
-    public void UpdateProjectSwitchesBetweenSingleAndMultipleFiles()
+    public void ProjectUpdateSwitchesBetweenSingleAndMultipleFiles()
     {
         string directory = TestEnvironment.CreateDirectory("cli-update");
-        Assert.AreEqual(0, Run("new", "project", TestEnvironment.TestTypeLibrary, "-o", directory, "-v", "quiet"));
+        Assert.AreEqual(0, Run("project", "create", TestEnvironment.TestTypeLibrary, "-o", directory, "-v", "quiet"));
 
-        Assert.AreEqual(0, Run("update", "project", TestEnvironment.TestTypeLibrary, "-o", directory, "--single-file", "-v", "quiet"));
+        Assert.AreEqual(0, Run("project", "update", TestEnvironment.TestTypeLibrary, "-o", directory, "--single-file", "-v", "quiet"));
         Assert.IsTrue(CsComManifest.Read(directory).SingleFile);
 
-        Assert.AreEqual(0, Run("update", "project", TestEnvironment.TestTypeLibrary, "-o", directory, "-v", "quiet"));
+        Assert.AreEqual(0, Run("project", "update", TestEnvironment.TestTypeLibrary, "-o", directory, "-v", "quiet"));
         Assert.IsTrue(CsComManifest.Read(directory).SingleFile);
 
-        Assert.AreEqual(0, Run("update", "project", TestEnvironment.TestTypeLibrary, "-o", directory, "--single-file", "false", "-v", "quiet"));
+        Assert.AreEqual(0, Run("project", "update", TestEnvironment.TestTypeLibrary, "-o", directory, "--single-file", "false", "-v", "quiet"));
         Assert.IsFalse(CsComManifest.Read(directory).SingleFile);
         Assert.IsTrue(Directory.GetFiles(Path.Combine(directory, "Generated")).Length > 1);
     }
@@ -282,17 +282,23 @@ public sealed class CommandLineTests
     {
         string directory = TestEnvironment.CreateDirectory("cli-error");
 
-        Assert.AreEqual(1, Run("new", "project", Path.Combine(directory, "missing.tlb"), "-o", directory, "-v", "quiet"));
-        Assert.AreEqual(1, Run("new", "project", TestEnvironment.TestTypeLibrary, "-o", directory, "-f", "net8.0", "-v", "quiet"));
-        Assert.AreEqual(1, Run("update", "project", TestEnvironment.TestTypeLibrary, "-o", directory, "-v", "quiet"));
+        Assert.AreEqual(1, Run("project", "create", Path.Combine(directory, "missing.tlb"), "-o", directory, "-v", "quiet"));
+        Assert.AreEqual(1, Run("project", "create", TestEnvironment.TestTypeLibrary, "-o", directory, "-f", "net8.0", "-v", "quiet"));
+        Assert.AreEqual(1, Run("project", "update", TestEnvironment.TestTypeLibrary, "-o", directory, "-v", "quiet"));
     }
 
     [TestMethod]
     public void RejectsInvalidSyntax()
     {
-        Assert.AreNotEqual(0, Run("new", "project"));
-        Assert.AreNotEqual(0, Run("new", "project", TestEnvironment.TestTypeLibrary, "--support-code", "nuget"));
-        Assert.AreNotEqual(0, Run("update", "assembly", TestEnvironment.TestTypeLibrary));
+        Assert.AreNotEqual(0, Run("project", "create"));
+        Assert.AreNotEqual(0, Run("project", "create", TestEnvironment.TestTypeLibrary, "--support-code", "nuget"));
+        Assert.AreNotEqual(0, Run("assembly", "update", TestEnvironment.TestTypeLibrary));
+
+        // The verb-noun commands were renamed.
+        Assert.AreNotEqual(0, Run("new", "project", TestEnvironment.TestTypeLibrary));
+        Assert.AreNotEqual(0, Run("update", "project"));
+        Assert.AreNotEqual(0, Run("new", "assembly", TestEnvironment.TestTypeLibrary));
+        Assert.AreNotEqual(0, Run("new", "config"));
     }
 
     private static int Run(params string[] args) => CommandLine.Create().Parse(args).Invoke(new System.CommandLine.InvocationConfiguration

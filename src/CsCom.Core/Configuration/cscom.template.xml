@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
   The CsCom configuration: adds model and syntax transformers to the pipeline.
-  Pass it to 'cscom new project' with the config option; 'cscom update project' applies it again.
+  Pass it to 'cscom project create' with the config option; 'cscom project update' applies it again.
   'cscom list <TlbPath>' shows the names that the selectors match. cscom.xsd gives IntelliSense in XML editors.
 -->
 <CsCom xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="cscom.xsd">

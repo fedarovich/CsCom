@@ -6,11 +6,11 @@
     },
     "CsCom - Task Scheduler": {
       "commandName": "Project",
-      "commandLineArgs": "new project -o r:\\Interop.TaskScheduler -n Interop.TaskScheduler --support-code public C:\\Windows\\System32\\taskschd.dll"
+      "commandLineArgs": "project create -o r:\\Interop.TaskScheduler -n Interop.TaskScheduler --support-code public C:\\Windows\\System32\\taskschd.dll"
     },
     "CsCom - UIA Client": {
       "commandName": "Project",
-      "commandLineArgs": "new project -o r:\\Interop.UIAutomationClient --support-code public C:\\Windows\\System32\\UIAutomationCore.dll"
+      "commandLineArgs": "project create -o r:\\Interop.UIAutomationClient --support-code public C:\\Windows\\System32\\UIAutomationCore.dll"
     }
   }
 }
