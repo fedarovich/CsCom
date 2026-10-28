@@ -142,7 +142,9 @@ internal sealed class TypeMapper
                 return vt switch
                 {
                     VarEnum.VT_BOOL => MapField(_marshalling.Booleans, "short", "ComBool"),
-                    VarEnum.VT_BSTR or VarEnum.VT_LPSTR or VarEnum.VT_LPWSTR or VarEnum.VT_UNKNOWN or VarEnum.VT_DISPATCH => ManagedType.IntPtr,
+                    // A BSTR field is a pointer-sized wrapper that converts to string, unless the raw pointer is asked for.
+                    VarEnum.VT_BSTR => _marshalling.Bstrs == BstrMarshalling.None ? ManagedType.IntPtr : new ManagedType($"{_context.Support}.ComBstrValue"),
+                    VarEnum.VT_LPSTR or VarEnum.VT_LPWSTR or VarEnum.VT_UNKNOWN or VarEnum.VT_DISPATCH => ManagedType.IntPtr,
                     VarEnum.VT_VARIANT => new ManagedType($"{Syntax.MarshallingNamespace}.ComVariant"),
                     VarEnum.VT_CY => MapField(_marshalling.Currencies, "long", "ComCurrency"),
                     VarEnum.VT_DATE => MapField(_marshalling.Dates, "double", "ComDate"),
@@ -235,8 +237,16 @@ internal sealed class TypeMapper
             case SafeArrayTypeReference array:
             {
                 LateBoundType element = MapLateBound(array.ElementType);
-                if (element.Name is "object?" or "string?" or "bool" or "sbyte" or "byte" or "short" or "ushort" or "int" or "uint"
-                    or "long" or "ulong" or "float" or "double" or "decimal" or "global::System.DateTime")
+                bool isPrimitive = element.Name is "object?" or "string?" or "bool" or "sbyte" or "byte" or "short" or "ushort" or "int" or "uint"
+                    or "long" or "ulong" or "float" or "double" or "decimal" or "global::System.DateTime";
+                if (array.Rank is 2 or 3 && (isPrimitive || array.ElementType is UserDefinedTypeReference { Definition: EnumDefinition }))
+                {
+                    // Multidimensional arrays are converted element by element, e.g. VT_I4 elements to an enum.
+                    string method = array.Rank == 2 ? "ToArray2D" : "ToArray3D";
+                    return new LateBoundType($"{element.Name}{RankSpecifier(array.Rank.Value)}?", x => $"{method}<{element.Name}>({x})");
+                }
+
+                if (isPrimitive)
                 {
                     string name = $"{element.Name}[]?";
                     return new LateBoundType(name, x => $"({name}){x}");
@@ -344,9 +354,21 @@ internal sealed class TypeMapper
             return new ManagedType("global::System.Array?", $"{Syntax.MarshallingNamespace}.MarshalUsing(typeof({_context.Support}.SafeArrayMarshaller))");
         }
 
+        // The COM generator only supports generic marshallers of one-dimensional arrays, so the arrays of a known higher rank
+        // use marshallers generated for their element types.
+        if (array.Rank is 2 or 3)
+        {
+            string qualifiedElement = new TypeMapper(_context, string.Empty, _marshalling).GetSafeArrayElement(array.ElementType)!;
+            string marshaller = _context.GetSafeArrayMarshaller(qualifiedElement, array.Rank.Value);
+            return new ManagedType($"{element}{RankSpecifier(array.Rank.Value)}?", $"{Syntax.MarshallingNamespace}.MarshalUsing(typeof({marshaller}))");
+        }
+
         string typeArgument = element.TrimEnd('?');
         return new ManagedType($"{element}[]?", $"{Syntax.MarshallingNamespace}.MarshalUsing(typeof({_context.Support}.SafeArrayMarshaller<{typeArgument}>))");
     }
+
+    /// <summary>Gets the C# rank specifier of an array, e.g. <c>[,]</c>.</summary>
+    public static string RankSpecifier(int rank) => $"[{new string(',', rank - 1)}]";
 
     private string? GetSafeArrayElement(TypeReference element)
     {

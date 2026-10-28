@@ -81,6 +81,11 @@ public sealed class IntegrationTests
                 <RemoveEnumPrefix />
                 <ExcludeType TypeName="IShapeEventsVt" />
                 <ExcludeType Kind="module" />
+                <SetType TypeName="ICalculator" MemberName="Add" ParameterName="a" To="Color" />
+                <SetType TypeName="IShapeContract" MemberName="Dispatch" To="IShapeContract" />
+                <SetSafeArrayRank TypeName="IArrays" MemberName="Matrix" Rank="2" />
+                <SetSafeArrayRank TypeName="IMarshalling" MemberName="Colors" Rank="3" />
+                <SetSafeArrayRank TypeName="DShapeEvents" MemberName="Names" Rank="2" />
               </ModelTransformers>
               <SyntaxTransformers>
                 <AddFlagsAttribute Type="^(Color|AnonymousEnum)$" />
@@ -105,6 +110,8 @@ public sealed class IntegrationTests
         StringAssert.Contains(File.ReadAllText(Path.Combine(directory, "Generated", "ICircleContract.cs")), "[System.ComponentModel.EditorBrowsable(");
         Assert.IsFalse(File.Exists(Path.Combine(directory, "Generated", "IShapeEventsVt.cs")));
         Assert.IsFalse(File.Exists(Path.Combine(directory, "Generated", "Kernel.cs")));
+        Assert.IsTrue(File.Exists(Path.Combine(directory, "Generated", "CsComSafeArrayMarshallers.cs")));
+        StringAssert.Contains(File.ReadAllText(Path.Combine(directory, "Generated", "Record.cs")), "ComBstrValue Name;");
         Build(project);
     }
 
@@ -622,6 +629,111 @@ public sealed class IntegrationTests
 
         string[] lines = ["Values=2x2|1,a,2.5,<null>", "Cube=2x3x4|123|12", .. expected];
         CollectionAssert.IsSubsetOf(lines, output.ToArray(), string.Join(Environment.NewLine, output));
+    }
+
+    [TestMethod]
+    public void DefaultOverloadsCompile()
+    {
+        // With the wrappers, the BSTR and VARIANT_BOOL default values of IShape.Move have no C# constants; the overloads
+        // generated with OverloadsForDefaultValues allow omitting them, and the full method stays available.
+        string root = TestEnvironment.CreateDirectory("default-overloads");
+        string interop = new ProjectGenerator(_pipeline).CreateProject(new NewProjectRequest
+        {
+            TypeLibraryPath = TestEnvironment.TestTypeLibrary,
+            OutputDirectory = Path.Combine(root, "Interop"),
+            Marshalling = AllWrappers with { Bstrs = BstrMarshalling.Wrapper },
+            OverloadsForDefaultValues = true,
+            PackageSource = TestEnvironment.LocalPackages,
+            GlobalPackagesFolder = TestEnvironment.GlobalPackagesFolder,
+        });
+
+        var output = RunConsumer(root, interop, """
+            using CsCom.Runtime;
+            using Interop.CsComTest;
+
+            if (args.Length > 100)
+            {
+                Use(null!);
+            }
+
+            Console.WriteLine("Compiled");
+
+            static void Use(IShape shape)
+            {
+                using var label = ComBstr.Create("x");
+                shape.Move(1);
+                shape.Move(1, 2);
+                shape.Move(1, 2, 3.5);
+                shape.Move(1, 2, null, label);
+                shape.Move(1, 2, null, label, Color.Blue, 2.5);
+                shape.Move(1, 2, null, label, Color.Blue, 2.5, ComBool.False);
+            }
+            """);
+
+        CollectionAssert.Contains(output.ToArray(), "Compiled");
+    }
+
+    [TestMethod]
+    public void RankedSafeArraysRoundTripThroughComWrappers()
+    {
+        // The ranks of IArrays.Matrix and IArrays.Names are set by the configuration, so they are marshalled as T[,] by the
+        // marshallers generated into the project, in both directions of the generated stubs.
+        string root = TestEnvironment.CreateDirectory("safearrays-ranked");
+        string configuration = Path.Combine(root, "cscom.xml");
+        File.WriteAllText(configuration, """
+            <CsCom>
+              <ModelTransformers>
+                <SetSafeArrayRank TypeName="IArrays" Member="^(Matrix|Names)$" Rank="2" />
+              </ModelTransformers>
+            </CsCom>
+            """);
+        string interop = new ProjectGenerator(_pipeline).CreateProject(new NewProjectRequest
+        {
+            TypeLibraryPath = TestEnvironment.TestTypeLibrary,
+            OutputDirectory = Path.Combine(root, "Interop"),
+            ConfigurationPath = configuration,
+            PackageSource = TestEnvironment.LocalPackages,
+            GlobalPackagesFolder = TestEnvironment.GlobalPackagesFolder,
+        });
+
+        var output = RunConsumer(root, interop, """
+            using System.Globalization;
+            using System.Runtime.InteropServices;
+            using System.Runtime.InteropServices.Marshalling;
+            using Interop.CsComTest;
+
+            CultureInfo.CurrentCulture = CultureInfo.InvariantCulture;
+            var wrappers = new StrategyBasedComWrappers();
+            nint unknown = wrappers.GetOrCreateComInterfaceForObject(new ArraysImpl(), CreateComInterfaceFlags.None);
+            var proxy = (IArrays)wrappers.GetOrCreateObjectForComInstance(unknown, CreateObjectFlags.UniqueInstance);
+            Marshal.Release(unknown);
+
+            double[,] matrix = proxy.Matrix(new double[,] { { 1, 2, 3 }, { 10, 20, 30 } })!;
+            Console.WriteLine($"Matrix={matrix.GetLength(0)}x{matrix.GetLength(1)}|{matrix.GetLowerBound(0)}|{Join(matrix)}");
+            string?[,]? names = new string?[,] { { "a", "b" }, { "c", null } };
+            proxy.Names(ref names);
+            Console.WriteLine($"Names={names!.GetLength(0)}x{names.GetLength(1)}|{Join(names)}");
+
+            static string Join(Array array) => string.Join(",", array.Cast<object?>().Select(static v => v?.ToString() ?? "<null>"));
+
+            [GeneratedComClass]
+            internal sealed partial class ArraysImpl : IArrays
+            {
+                public double[,]? Matrix(double[,]? values)
+                {
+                    var result = new double[values!.GetLength(0), values.GetLength(1)];
+                    for (int i = 0; i < values.GetLength(0); i++) for (int j = 0; j < values.GetLength(1); j++) result[i, j] = values[i, j] * 2;
+                    return result;
+                }
+
+                public void Names(ref string?[,]? names) => names![0, 1] = "changed";
+
+                public object? Values(object? value) => value;
+            }
+            """,
+            allowUnsafe: true);
+
+        CollectionAssert.IsSubsetOf(new[] { "Matrix=2x3|0|2,4,6,20,40,60", "Names=2x2|a,changed,c,<null>" }, output.ToArray(), string.Join(Environment.NewLine, output));
     }
 
     [TestMethod]

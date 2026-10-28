@@ -121,6 +121,20 @@ internal static class CommandLine
         HelpName = "always|nonblittable|never",
     };
 
+    private const string OverloadsDescription =
+        "Generates overloads for the methods whose optional parameters have default values that C# cannot express (e.g. ComBool.True or a DateTime), so that these parameters can be omitted.";
+
+    private static readonly Option<bool> OverloadsOption = new("--overloads-for-default-values")
+    {
+        Description = OverloadsDescription,
+    };
+
+    private static readonly Option<bool?> UpdateOverloadsOption = new("--overloads-for-default-values")
+    {
+        Description = OverloadsDescription + " The value recorded in cscom.json by default.",
+        Arity = ArgumentArity.ZeroOrOne,
+    };
+
     private const string ConfigDescription = "An XML file that adds and configures model and syntax transformers.";
 
     private static readonly Option<string?> ConfigOption = new("--config")
@@ -177,6 +191,7 @@ internal static class CommandLine
                 Marshalling = NewMarshallingOptions.GetOverrides(result).Apply(new MarshallingOptions()),
                 EventStyle = result.GetValue(EventStyleOption),
                 StructProperties = result.GetValue(StructPropertiesOption),
+                OverloadsForDefaultValues = result.GetValue(OverloadsOption),
                 ConfigurationPath = result.GetValue(ConfigOption),
                 PackageSource = result.GetValue(PackageSourceOption),
             })));
@@ -199,6 +214,7 @@ internal static class CommandLine
                 Marshalling = NewMarshallingOptions.GetOverrides(result).Apply(new MarshallingOptions()),
                 EventStyle = result.GetValue(EventStyleOption),
                 StructProperties = result.GetValue(StructPropertiesOption),
+                OverloadsForDefaultValues = result.GetValue(OverloadsOption),
                 ConfigurationPath = result.GetValue(ConfigOption),
                 PackageSource = result.GetValue(PackageSourceOption) ?? GetBundledPackageSource(),
                 KeepTemporaryFiles = result.GetValue(KeepTempOption),
@@ -215,6 +231,7 @@ internal static class CommandLine
         UpdateMarshallingOptions.AddTo(updateProject);
         updateProject.Options.Add(UpdateEventStyleOption);
         updateProject.Options.Add(UpdateStructPropertiesOption);
+        updateProject.Options.Add(UpdateOverloadsOption);
         updateProject.Options.Add(UpdateConfigOption);
         updateProject.SetAction(static result => Run(result, (pipeline, loggerFactory) =>
             new ProjectGenerator(pipeline, loggerFactory).UpdateProject(new UpdateProjectRequest
@@ -223,10 +240,11 @@ internal static class CommandLine
                 ProjectDirectory = result.GetValue(OutputOption),
                 Namespace = result.GetValue(NamespaceOption),
                 LanguageVersion = result.GetValue(LanguageVersionOption),
-                SingleFile = GetSingleFile(result),
+                SingleFile = GetFlag(result, UpdateSingleFileOption),
                 Marshalling = UpdateMarshallingOptions.GetOverrides(result),
                 EventStyle = result.GetValue(UpdateEventStyleOption),
                 StructProperties = result.GetValue(UpdateStructPropertiesOption),
+                OverloadsForDefaultValues = GetFlag(result, UpdateOverloadsOption),
                 ConfigurationPath = result.GetValue(UpdateConfigOption),
             })));
 
@@ -297,13 +315,14 @@ internal static class CommandLine
         NewMarshallingOptions.AddTo(command);
         command.Options.Add(EventStyleOption);
         command.Options.Add(StructPropertiesOption);
+        command.Options.Add(OverloadsOption);
         command.Options.Add(ConfigOption);
         command.Options.Add(PackageSourceOption);
     }
 
-    // "--single-file" without a value means true; when the option is omitted, the recorded value is kept.
-    private static bool? GetSingleFile(ParseResult result) =>
-        result.GetResult(UpdateSingleFileOption) is { Implicit: false } option ? option.GetValueOrDefault<bool?>() ?? true : null;
+    // A flag of 'update project' without a value means true; when the option is omitted, the recorded value is kept.
+    private static bool? GetFlag(ParseResult result, Option<bool?> flag) =>
+        result.GetResult(flag) is { Implicit: false } option ? option.GetValueOrDefault<bool?>() ?? true : null;
 
     // Commands that write their result to the output log only warnings and errors unless a verbosity is specified.
     private static int Run(ParseResult result, Func<InteropPipeline, ILoggerFactory, object> action, bool quietByDefault = false)

@@ -108,7 +108,7 @@ public sealed class CommandLineTests
 
         Assert.AreEqual(0, Run("update", "project", TestEnvironment.TestTypeLibrary, "-o", directory, "--struct-properties", "always", "-v", "quiet"));
         Assert.AreEqual(CodeGeneration.StructProperties.Always, CsComManifest.Read(directory).StructProperties);
-        StringAssert.Contains(File.ReadAllText(Path.Combine(directory, "Generated", "Record.cs")), "private nint _name;");
+        StringAssert.Contains(File.ReadAllText(Path.Combine(directory, "Generated", "Record.cs")), "private global::CsCom.Runtime.ComBstrValue _name;");
 
         Assert.AreEqual(0, Run("update", "project", TestEnvironment.TestTypeLibrary, "-o", directory, "-v", "quiet"));
         Assert.AreEqual(CodeGeneration.StructProperties.Always, CsComManifest.Read(directory).StructProperties);
@@ -173,6 +173,25 @@ public sealed class CommandLineTests
 
         Assert.AreEqual(1, RunWithOutput("list", TestEnvironment.TestTypeLibrary, "--type", "(").ExitCode);
         Assert.AreEqual(1, RunWithOutput("list", "CsCom.Does.Not.Exist").ExitCode);
+    }
+
+    [TestMethod]
+    public void OverloadsForDefaultValuesAreRecordedAndCanBeTurnedOff()
+    {
+        string directory = TestEnvironment.CreateDirectory("cli-overloads");
+        string shape = Path.Combine(directory, "Generated", "IShape.cs");
+
+        Assert.AreEqual(0, Run("new", "project", TestEnvironment.TestTypeLibrary, "-o", directory, "--bool-marshalling", "wrapper", "--overloads-for-default-values", "-v", "quiet"));
+        Assert.IsTrue(CsComManifest.Read(directory).OverloadsForDefaultValues);
+        StringAssert.Contains(File.ReadAllText(Path.Combine(directory, CsComManifest.FileName)), "\"overloadsForDefaultValues\": true");
+        StringAssert.Contains(File.ReadAllText(shape), "global::CsCom.Runtime.ComBool.True);");
+
+        Assert.AreEqual(0, Run("update", "project", "-o", directory, "-v", "quiet"));
+        Assert.IsTrue(CsComManifest.Read(directory).OverloadsForDefaultValues);
+
+        Assert.AreEqual(0, Run("update", "project", "-o", directory, "--overloads-for-default-values", "false", "-v", "quiet"));
+        Assert.IsFalse(CsComManifest.Read(directory).OverloadsForDefaultValues);
+        Assert.IsFalse(File.ReadAllText(shape).Contains("ComBool.True", StringComparison.Ordinal));
     }
 
     [TestMethod]

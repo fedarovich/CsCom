@@ -52,4 +52,27 @@ internal sealed class EmitContext
     }
 
     public static string GetExtensionsClassName(InterfaceDefinition definition) => definition.Name + "Extensions";
+
+    /// <summary>The name of the class that contains the marshallers of the multidimensional <c>SAFEARRAY</c> parameters.</summary>
+    public const string SafeArrayMarshallersClassName = "CsComSafeArrayMarshallers";
+
+    /// <summary>
+    /// The marshallers of the multidimensional <c>SAFEARRAY</c> parameters, which are generated for their element types: the
+    /// name of the nested class, the fully qualified element type and the rank.
+    /// </summary>
+    public SortedDictionary<string, (string ElementType, int Rank)> SafeArrayMarshallers { get; } = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// Gets the marshaller of the arrays of the specified fully qualified element type and rank, which is generated into
+    /// <see cref="SafeArrayMarshallersClassName"/>.
+    /// </summary>
+    /// <returns>The fully qualified name of the marshaller.</returns>
+    public string GetSafeArrayMarshaller(string elementType, int rank)
+    {
+        string element = elementType.TrimEnd('?');
+        element = element.StartsWith("global::", StringComparison.Ordinal) ? element["global::".Length..] : element;
+        string name = $"{NameSanitizer.ToIdentifier(element.Replace('.', '_'))}_{rank}D";
+        SafeArrayMarshallers.TryAdd(name, (elementType, rank));
+        return $"global::{Options.Namespace}.{SafeArrayMarshallersClassName}.{name}";
+    }
 }

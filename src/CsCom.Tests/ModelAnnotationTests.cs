@@ -140,6 +140,24 @@ public sealed class ModelAnnotationTests
     }
 
     [TestMethod]
+    public void AnnotatesOverloads()
+    {
+        var (library, documents, annotations) = Generate(new CodeGenerationOptions
+        {
+            Namespace = "Test",
+            Marshalling = new MarshallingOptions { Booleans = ValueMarshalling.Wrapper },
+            OverloadsForDefaultValues = true,
+        });
+        var move = Get<InterfaceDefinition>(library, "IShape").Methods.Single(static m => m.Name == "Move");
+
+        var overloads = annotations.GetNodes(Root(documents, "IShape.cs"), move, SyntaxRole.Overload).ToList();
+
+        Assert.HasCount(1, overloads);
+        Assert.AreEqual("Move", ((MethodDeclarationSyntax)overloads[0]).Identifier.Text);
+        Assert.IsTrue(overloads[0].Ancestors().OfType<ClassDeclarationSyntax>().Single().Identifier.Text == "IShapeExtensions");
+    }
+
+    [TestMethod]
     [DataRow(false)]
     [DataRow(true)]
     public void EveryTypeHasOneDeclaration(bool singleFile)

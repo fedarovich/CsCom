@@ -509,9 +509,14 @@ internal sealed partial class EventEmitter
             return $"arguments.GetWrapper<{parameter.TypeName.TrimEnd('?')}>({position})";
         }
 
-        return parameter.TypeName.EndsWith("[]?", StringComparison.Ordinal)
-            ? $"arguments.GetArray<{parameter.TypeName[..^3]}>({position})"
-            : $"arguments.Get<{parameter.TypeName}>({position})";
+        string typeName = parameter.TypeName;
+        return typeName switch
+        {
+            _ when typeName.EndsWith("[]?", StringComparison.Ordinal) => $"arguments.GetArray<{typeName[..^3]}>({position})",
+            _ when typeName.EndsWith("[,]?", StringComparison.Ordinal) => $"arguments.GetArray2D<{typeName[..^4]}>({position})",
+            _ when typeName.EndsWith("[,,]?", StringComparison.Ordinal) => $"arguments.GetArray3D<{typeName[..^5]}>({position})",
+            _ => $"arguments.Get<{typeName}>({position})",
+        };
     }
 
     private static bool IsDispatchWrapper(TypeReference type) => type switch

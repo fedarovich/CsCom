@@ -54,6 +54,15 @@ internal sealed class DispatchWrapperEmitter
         foreach (var method in definition.Methods.Where(static m => !m.IsProperty))
         {
             members.Add(Method(method, signatures));
+            if (_context.Options.OverloadsForDefaultValues)
+            {
+                var (returnType, parameters) = signatures.MapLateBoundSignature(method);
+                string name = SignatureBuilder.GetMethodName(method);
+                members.AddRange(signatures.GetDefaultOverloads(method, parameters, lateBound: true).Select(overload => _context.Annotations.Annotate(
+                    SignatureBuilder.BuildOverload(overload, returnType.Name, name, Syntax.Escape(name), SyntaxKind.PublicKeyword).WithDocumentation(method.Documentation),
+                    method,
+                    SyntaxRole.Overload)));
+            }
         }
 
         // _NewEnum is exposed via GetEnumerator.

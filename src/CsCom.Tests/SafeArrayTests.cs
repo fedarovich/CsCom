@@ -230,6 +230,32 @@ public sealed class SafeArrayTests
     }
 
     [TestMethod]
+    public void ConvertsSafeArraysOfKnownRanks()
+    {
+        using var matrix = ComSafeArray<int>.Create(VarEnum.VT_I4, [2, 3], [1, 1]);
+        matrix[2, 3] = 23;
+
+        var converted = SafeArrayMarshaller.ConvertToManaged2D<int>(matrix.Pointer)!;
+        Assert.AreEqual(2, converted.GetLength(0));
+        Assert.AreEqual(3, converted.GetLength(1));
+        Assert.AreEqual(23, converted[1, 2], "The arrays are zero-based.");
+        Assert.AreEqual((DayOfWeek)23, SafeArrayMarshaller.ConvertToManaged2D<DayOfWeek>(matrix.Pointer)![1, 2]);
+        Assert.ThrowsExactly<SafeArrayRankMismatchException>(() => SafeArrayMarshaller.ConvertToManaged3D<int>(matrix.Pointer));
+        Assert.IsNull(SafeArrayMarshaller.ConvertToManaged2D<int>(0));
+
+        nint cube = SafeArrayMarshaller.ConvertToUnmanaged(new long[,,] { { { 1, 2 }, { 3, 4 } }, { { 5, 6 }, { 7, 8 } } });
+        try
+        {
+            CollectionAssert.AreEqual(new long[,,] { { { 1, 2 }, { 3, 4 } }, { { 5, 6 }, { 7, 8 } } }, SafeArrayMarshaller.ConvertToManaged3D<long>(cube));
+            Assert.ThrowsExactly<SafeArrayRankMismatchException>(() => SafeArrayMarshaller.ConvertToManaged2D<long>(cube));
+        }
+        finally
+        {
+            SafeArrayMarshaller.Free(cube);
+        }
+    }
+
+    [TestMethod]
     public void ComSafeArrayRejectsInvalidSpans()
     {
         using var matrix = ComSafeArray<int>.Create(new int[2, 2]);

@@ -77,6 +77,7 @@ public sealed partial class ProjectGenerator
             Marshalling = request.Marshalling.Apply(manifest.Marshalling),
             EventStyle = request.EventStyle ?? manifest.EventStyle,
             StructProperties = request.StructProperties ?? manifest.StructProperties,
+            OverloadsForDefaultValues = request.OverloadsForDefaultValues ?? manifest.OverloadsForDefaultValues,
             Configuration = request.ConfigurationPath switch
             {
                 null => manifest.Configuration,
@@ -215,6 +216,7 @@ public sealed partial class ProjectGenerator
             Marshalling = request.Marshalling,
             EventStyle = request.EventStyle,
             StructProperties = request.StructProperties,
+            OverloadsForDefaultValues = request.OverloadsForDefaultValues,
             Configuration = string.IsNullOrEmpty(request.ConfigurationPath) ? null : Path.GetFullPath(request.ConfigurationPath),
         };
     }
@@ -229,6 +231,7 @@ public sealed partial class ProjectGenerator
         Marshalling = manifest.Marshalling,
         EventStyle = manifest.EventStyle,
         StructProperties = manifest.StructProperties,
+        OverloadsForDefaultValues = manifest.OverloadsForDefaultValues,
     };
 
     private static int ValidateLanguageVersion(int? languageVersion, IReadOnlyList<string> targetFrameworks)

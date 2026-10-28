@@ -31,10 +31,14 @@ public sealed record PointerTypeReference(TypeReference ElementType) : TypeRefer
 /// A <c>SAFEARRAY</c> of elements of another type (<c>VT_SAFEARRAY</c>).
 /// </summary>
 /// <param name="ElementType">The type of the elements.</param>
-public sealed record SafeArrayTypeReference(TypeReference ElementType) : TypeReference
+/// <param name="Rank">
+/// The number of dimensions, which type libraries do not record, or <see langword="null"/> if unknown; set e.g. by the
+/// <c>SetSafeArrayRank</c> transformer.
+/// </param>
+public sealed record SafeArrayTypeReference(TypeReference ElementType, int? Rank = null) : TypeReference
 {
     /// <inheritdoc/>
-    public override string ToString() => $"SAFEARRAY({ElementType})";
+    public override string ToString() => Rank is { } rank ? $"SAFEARRAY({ElementType}, {rank})" : $"SAFEARRAY({ElementType})";
 }
 
 /// <summary>

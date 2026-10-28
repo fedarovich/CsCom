@@ -47,6 +47,12 @@ public enum SyntaxRole
 
     /// <summary>The .NET event or the <see cref="IObservable{T}"/> property of the sink class for an event.</summary>
     Event,
+
+    /// <summary>
+    /// An overload of a method that omits optional parameters whose default values C# cannot express, generated with the
+    /// <c>OverloadsForDefaultValues</c> option.
+    /// </summary>
+    Overload,
 }
 
 /// <summary>

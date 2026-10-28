@@ -47,8 +47,34 @@ public static class SafeArrayMarshaller
     /// <summary>Converts a <c>SAFEARRAY</c> to an array.</summary>
     public static Array? ConvertToManaged(nint unmanaged) => SafeArrayConverter.ToManaged(unmanaged);
 
+    /// <summary>
+    /// Converts a two-dimensional <c>SAFEARRAY</c> to a zero-based array of <typeparamref name="T"/>, converting the elements
+    /// when the variant type of the <c>SAFEARRAY</c> does not match. Used by the marshallers generated for the parameters
+    /// whose rank is known.
+    /// </summary>
+    /// <exception cref="SafeArrayRankMismatchException">The <c>SAFEARRAY</c> does not have two dimensions.</exception>
+    public static T[,]? ConvertToManaged2D<T>(nint unmanaged) => ComConvert.ToArray2D<T>(ToManaged(unmanaged, 2));
+
+    /// <summary>
+    /// Converts a three-dimensional <c>SAFEARRAY</c> to a zero-based array of <typeparamref name="T"/>, converting the elements
+    /// when the variant type of the <c>SAFEARRAY</c> does not match. Used by the marshallers generated for the parameters
+    /// whose rank is known.
+    /// </summary>
+    /// <exception cref="SafeArrayRankMismatchException">The <c>SAFEARRAY</c> does not have three dimensions.</exception>
+    public static T[,,]? ConvertToManaged3D<T>(nint unmanaged) => ComConvert.ToArray3D<T>(ToManaged(unmanaged, 3));
+
     /// <summary>Destroys the <c>SAFEARRAY</c>.</summary>
     public static void Free(nint unmanaged) => SafeArrayConverter.Destroy(unmanaged);
+
+    private static Array? ToManaged(nint unmanaged, int rank)
+    {
+        if (unmanaged != 0 && OleNativeMethods.SafeArrayGetDim(unmanaged) is var dimensions && dimensions != rank)
+        {
+            throw new SafeArrayRankMismatchException($"A SAFEARRAY with {rank} dimensions is expected, but the array has {dimensions} dimensions.");
+        }
+
+        return SafeArrayConverter.ToManaged(unmanaged);
+    }
 }
 
 /// <summary>

@@ -21,8 +21,9 @@ public sealed class TransformerRegistry
     /// <summary>
     /// Creates a registry with the configurable transformers built into CsCom: the model transformers <c>RenameType</c>
     /// (<see cref="TypeRenamer"/>), <c>RenameMember</c> (<see cref="MemberRenamer"/>), <c>SetMarshalling</c>
-    /// (<see cref="MarshallingSetter"/>), <c>RemoveEnumPrefix</c> (<see cref="EnumPrefixRemover"/>) and <c>ExcludeType</c>
-    /// (<see cref="TypeExcluder"/>), and the syntax transformers <c>AddFlagsAttribute</c> (<see cref="FlagsAttributeAdder"/>)
+    /// (<see cref="MarshallingSetter"/>), <c>RemoveEnumPrefix</c> (<see cref="EnumPrefixRemover"/>), <c>ExcludeType</c>
+    /// (<see cref="TypeExcluder"/>), <c>SetSafeArrayRank</c> (<see cref="SafeArrayRankSetter"/>) and <c>SetType</c>
+    /// (<see cref="TypeSetter"/>), and the syntax transformers <c>AddFlagsAttribute</c> (<see cref="FlagsAttributeAdder"/>)
     /// and <c>AddAttribute</c> (<see cref="AttributeAdder"/>).
     /// </summary>
     public static TransformerRegistry CreateDefault() => new TransformerRegistry()
@@ -31,6 +32,8 @@ public sealed class TransformerRegistry
         .AddModelTransformer("SetMarshalling", MarshallingSetter.Create)
         .AddModelTransformer("RemoveEnumPrefix", EnumPrefixRemover.Create)
         .AddModelTransformer("ExcludeType", TypeExcluder.Create)
+        .AddModelTransformer("SetSafeArrayRank", SafeArrayRankSetter.Create)
+        .AddModelTransformer("SetType", TypeSetter.Create)
         .AddSyntaxTransformer("AddFlagsAttribute", FlagsAttributeAdder.Create)
         .AddSyntaxTransformer("AddAttribute", AttributeAdder.Create);
 

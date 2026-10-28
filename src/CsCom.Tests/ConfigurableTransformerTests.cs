@@ -82,6 +82,8 @@ public sealed class ConfigurableTransformerTests
     [DataRow("""<RenameType TypeName="IShap" NewName="X" />""", "RenameType: no type matches TypeName='IShap'")]
     [DataRow("""<ExcludeType Type="^IShape$" Kind="enum|struct" />""", "ExcludeType: no type matches Type='^IShape$', Kind='enum|struct'")]
     [DataRow("""<RenameMember Kind="coclass" MemberName="Move" NewName="X" />""", "RenameMember: no member matches MemberName='Move', Kind='coclass'")]
+    [DataRow("""<SetSafeArrayRank TypeName="IShape" Rank="2" />""", "SetSafeArrayRank: no SAFEARRAY matches TypeName='IShape'")]
+    [DataRow("""<SetType TypeName="IShape" MemberName="Nothing" To="Color" />""", "SetType: nothing matches TypeName='IShape', MemberName='Nothing'")]
     public void WarnsWhenNothingMatches(string transformer, string warning)
     {
         var (_, logger) = Apply(transformer);
@@ -147,6 +149,10 @@ public sealed class ConfigurableTransformerTests
         """<RenameType Type="A" Kind="enum|class" NewName="X" />""",
         "cscom.xml(1,48): 'class' is not a valid value of the attribute 'Kind': a list of enum, struct, union, interface, dispinterface, coclass, module, all is expected.")]
     [DataRow("""<ExcludeType />""", "cscom.xml(1,28): The attribute 'Type', 'TypeName' or 'Kind' is required by <ExcludeType>.")]
+    [DataRow(
+        """<SetSafeArrayRank TypeName="IArrays" Rank="4" />""",
+        "cscom.xml(1,64): '4' is not a valid value of the attribute 'Rank': an integer from 1 to 3 is expected.")]
+    [DataRow("""<SetSafeArrayRank TypeName="IArrays" />""", "cscom.xml(1,28): The attribute 'Rank' is required by <SetSafeArrayRank>.")]
     public void ReportsConfigurationErrors(string transformer, string message)
     {
         var exception = Assert.ThrowsExactly<CsComException>(() => Parse(transformer));
@@ -182,6 +188,81 @@ public sealed class ConfigurableTransformerTests
         var names = library.Types.Select(static t => t.Name).ToList();
         CollectionAssert.IsSubsetOf(new[] { "IFigure", "DFigureEvents", "_FigureEvents", "IFigureEventsVt", "Shape", "EventShape" }, names);
         Assert.AreEqual("Rot", Get<EnumDefinition>(library, "Color").Members[0].Name);
+    }
+
+    [TestMethod]
+    public void SetTypeChangesParametersAndMembers()
+    {
+        var (library, logger) = Apply("""
+            <SetType TypeName="ICalculator" MemberName="Add" ParameterName="a" To="Color" />
+            <SetType TypeName="ICalculator" MemberName="Add" To="Color" />
+            <SetType TypeName="ICalculator" MemberName="Swap" ParameterName="b" To="Color" />
+            <SetType TypeName="IShape" MemberName="Dispatch" ParameterName="Dispatch" To="ICircle" />
+            <SetType TypeName="IShape" MemberName="Dispatch" To="IShape" />
+            <SetType TypeName="IShape" Member="^(Coordinate|WriteOnly)$" To="Color" />
+            <SetType TypeName="DShapeEvents" MemberName="Compute" ParameterName="b" To="Color" />
+            <SetType TypeName="DShapeEvents" MemberName="Counter" To="Color" />
+            <SetType TypeName="Record" MemberName="checked" To="Color" />
+            """);
+
+        var color = new UserDefinedTypeReference(Get<EnumDefinition>(library, "Color"));
+        var calculator = Get<InterfaceDefinition>(library, "ICalculator");
+        var add = calculator.Methods.Single(static m => m.Name == "Add");
+        Assert.AreEqual(color, add.Parameters[0].Type);
+        Assert.AreEqual(new PointerTypeReference(color), add.Parameters[2].Type, "The retval keeps its pointer.");
+        Assert.AreEqual(new PointerTypeReference(color), calculator.Methods.Single(static m => m.Name == "Swap").Parameters[1].Type);
+
+        var shape = Get<InterfaceDefinition>(library, "IShape");
+        var dispatch = shape.Methods.Single(static m => m.Name == "Dispatch");
+        Assert.AreEqual(new PointerTypeReference(new UserDefinedTypeReference(Get<InterfaceDefinition>(library, "ICircle"))), dispatch.Parameters[0].Type);
+        Assert.AreEqual(new PointerTypeReference(new PointerTypeReference(new UserDefinedTypeReference(shape))), dispatch.Parameters[1].Type);
+        Assert.AreEqual(new PointerTypeReference(color), shape.Methods.Single(static m => m.Name == "Coordinate").Parameters[1].Type);
+        Assert.AreEqual(color, shape.Methods.Single(static m => m.Name == "WriteOnly").Parameters[0].Type);
+
+        var events = Get<InterfaceDefinition>(library, "DShapeEvents");
+        Assert.AreEqual(color, events.Methods.Single(static m => m.Name == "Compute").Parameters[1].Type, "Dispinterfaces accept any type.");
+        Assert.AreEqual(color, events.Properties.Single(static p => p.Name == "Counter").Type);
+        Assert.AreEqual(color, Get<RecordDefinition>(library, "Record").Fields.Single(static f => f.Name == "checked").Type);
+        Assert.IsEmpty(logger.Warnings);
+    }
+
+    [TestMethod]
+    [DataRow(
+        """<SetType TypeName="IShape" MemberName="Move" ParameterName="scale" To="Color" />""",
+        "SetType: 'IShape.Move(scale)' is VARIANT, which cannot be changed to 'Color' in the vtable of a dual interface, because their layouts differ.")]
+    [DataRow(
+        """<SetType TypeName="ICalculator" MemberName="Divide" ParameterName="a" To="Color" />""",
+        "SetType: 'ICalculator.Divide(a)' is double, which cannot be changed to 'Color' in a vtable interface, because their layouts differ.")]
+    [DataRow(
+        """<SetType TypeName="Record" MemberName="Next" To="Point" />""",
+        "SetType: 'Record.Next' is Point*, which cannot be changed to 'Point' in a structure, because their layouts differ.")]
+    [DataRow(
+        """<SetType TypeName="Point" MemberName="X" To="Number" />""",
+        "SetType: 'Point.X' is long, which cannot be changed to 'Number' in a structure, because their layouts differ.")]
+    [DataRow("""<SetType TypeName="IShape" MemberName="Move" To="Nope" />""", "SetType: the type 'Nope' was not found.")]
+    public void SetTypeKeepsTheLayouts(string transformer, string message)
+    {
+        var exception = Assert.ThrowsExactly<CsComException>(() => Apply(transformer));
+
+        Assert.AreEqual(message, exception.Message);
+    }
+
+    [TestMethod]
+    public void SetSafeArrayRankSetsTheRanks()
+    {
+        var (library, logger) = Apply("""
+            <SetSafeArrayRank TypeName="IArrays" MemberName="Matrix" Rank="2" />
+            <SetSafeArrayRank TypeName="IMarshalling" MemberName="Numbers" Rank="3" />
+            """);
+
+        var matrix = Get<InterfaceDefinition>(library, "IArrays").Methods.Single(static m => m.Name == "Matrix");
+        Assert.AreEqual(2, ((SafeArrayTypeReference)matrix.Parameters[0].Type).Rank);
+        Assert.AreEqual(2, ((SafeArrayTypeReference)((PointerTypeReference)matrix.Parameters[1].Type).ElementType).Rank, "The retval is passed by reference.");
+        var numbers = Get<InterfaceDefinition>(library, "IMarshalling").Methods.Single(static m => m.Name == "Numbers");
+        Assert.AreEqual(3, ((SafeArrayTypeReference)((PointerTypeReference)numbers.Parameters[0].Type).ElementType).Rank, "[in, out] SAFEARRAY*");
+        var names = (PointerTypeReference)Get<InterfaceDefinition>(library, "IArrays").Methods.Single(static m => m.Name == "Names").Parameters[0].Type;
+        Assert.IsNull(((SafeArrayTypeReference)names.ElementType).Rank, "Other members keep the unknown rank.");
+        Assert.IsEmpty(logger.Warnings);
     }
 
     [TestMethod]

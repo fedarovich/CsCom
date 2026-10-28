@@ -68,6 +68,11 @@ public sealed class CSharpEmitter
             units.Add(new Unit(UniquePath(folder + type.Name, paths), @namespace, members, default, null));
         }
 
+        if (context.SafeArrayMarshallers.Count > 0)
+        {
+            units.Add(new Unit(UniquePath(EmitContext.SafeArrayMarshallersClassName, paths), options.Namespace, [EmitSafeArrayMarshallers(context)], default, null));
+        }
+
         if (options.SupportCode != SupportCodeMode.Package)
         {
             foreach (var (fileName, root) in SupportCodeProvider.GetFiles(options))
@@ -113,6 +118,43 @@ public sealed class CSharpEmitter
         }
 
         return new GeneratedDocument(fileName, SyntaxFormatter.Format(CompilationUnit().WithMembers(List(members)), header));
+    }
+
+    // The COM generator only supports generic marshallers of one-dimensional arrays, so the multidimensional arrays get a
+    // marshaller per element type and rank.
+    private static ClassDeclarationSyntax EmitSafeArrayMarshallers(EmitContext context)
+    {
+        string marshalling = Syntax.MarshallingNamespace;
+        var members = context.SafeArrayMarshallers.Select(pair =>
+        {
+            var (element, rank) = pair.Value;
+            string arrayType = element + TypeMapper.RankSpecifier(rank);
+            string typeOfArray = element.TrimEnd('?') + TypeMapper.RankSpecifier(rank);
+            string text = $$"""
+                [{{marshalling}}.CustomMarshaller(typeof({{typeOfArray}}), {{marshalling}}.MarshalMode.Default, typeof({{pair.Key}}))]
+                public static class {{pair.Key}}
+                {
+                    public static nint ConvertToUnmanaged({{arrayType}}? managed) => {{context.Support}}.SafeArrayMarshaller.ConvertToUnmanaged(managed);
+
+                    public static {{arrayType}}? ConvertToManaged(nint unmanaged) => {{context.Support}}.SafeArrayMarshaller.ConvertToManaged{{rank}}D<{{element}}>(unmanaged);
+
+                    public static void Free(nint unmanaged) => {{context.Support}}.SafeArrayMarshaller.Free(unmanaged);
+                }
+                """;
+            var member = ParseMemberDeclaration(text, options: Syntax.ParseOptions);
+            if (member is null || member.ContainsDiagnostics)
+            {
+                throw new InvalidOperationException($"Invalid member generated: {text}");
+            }
+
+            string readable = typeOfArray.StartsWith("global::", StringComparison.Ordinal) ? typeOfArray["global::".Length..] : typeOfArray;
+            return member.WithDocumentation($"Marshals the {readable} arrays as SAFEARRAYs.");
+        });
+
+        return ClassDeclaration(Syntax.Identifier(EmitContext.SafeArrayMarshallersClassName))
+            .WithModifiers(Syntax.Modifiers(SyntaxKind.InternalKeyword, SyntaxKind.StaticKeyword))
+            .WithMembers(List(members))
+            .WithDocumentation("Marshals the multidimensional arrays of the SAFEARRAY parameters whose rank is known, e.g. from the SetSafeArrayRank transformer.");
     }
 
     private static string GetHeader(TypeLibrary library, CodeGenerationOptions options) =>

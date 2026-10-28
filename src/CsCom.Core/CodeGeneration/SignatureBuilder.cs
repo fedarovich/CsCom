@@ -4,6 +4,7 @@ using CsCom.Model;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
+using Microsoft.Extensions.Logging;
 using static Microsoft.CodeAnalysis.CSharp.SyntaxFactory;
 
 namespace CsCom.CodeGeneration;
@@ -57,10 +58,24 @@ internal sealed record SignatureParameter(ParameterDefinition Definition, TypeRe
 }
 
 /// <summary>
+/// An overload of a method that omits optional parameters whose default values C# cannot express.
+/// </summary>
+/// <param name="Parameters">The parameters of the overload, with the C# default values that can be expressed.</param>
+/// <param name="Arguments">The arguments of the call of the method: the parameters, then the default values of the omitted ones.</param>
+/// <param name="Setup">The statements that prepare the default values, e.g. allocate a <c>BSTR</c>.</param>
+/// <param name="Cleanup">The statements that release the default values after the call.</param>
+internal sealed record DefaultOverload(IReadOnlyList<SignatureParameter> Parameters, IReadOnlyList<string> Arguments, IReadOnlyList<string> Setup, IReadOnlyList<string> Cleanup);
+
+/// <summary>
 /// Builds the signatures of generated methods.
 /// </summary>
-internal sealed class SignatureBuilder
+internal sealed partial class SignatureBuilder
 {
+    /// <summary>The maximum number of overloads generated per method for default values that C# cannot express.</summary>
+    public const int MaxDefaultOverloads = 4;
+
+    private const string Missing = "global::System.Reflection.Missing.Value";
+
     private readonly EmitContext _context;
     private readonly TypeMapper _mapper;
     private readonly string _namespace;
@@ -249,41 +264,202 @@ internal sealed class SignatureBuilder
         for (int i = parameters.Count - 1; i >= 0; i--)
         {
             var parameter = parameters[i];
-            var flags = parameter.Definition.Flags;
-            if (parameter.IsByRef || (!flags.HasFlag(ParameterFlags.Optional) && !flags.HasFlag(ParameterFlags.HasDefault)))
+            if (GetConstantDefault(parameter, lateBound) is not { } defaultValue)
             {
                 return;
             }
 
-            if (parameter.TypeName == "object?")
+            if (IsOptionalVariant(parameter, lateBound))
             {
-                bool isVariant = lateBound || parameter.Marshalling?.Contains("VariantMarshaller", StringComparison.Ordinal) == true;
-                if (isVariant)
+                // The COM object applies the default value of an omitted argument.
+                if (!lateBound)
                 {
-                    // The COM object applies the default value of an omitted argument.
-                    if (!lateBound)
-                    {
-                        parameters[i] = parameter = parameter with { Marshalling = _mapper.VariantMarshalling(optional: true) };
-                    }
-
-                    parameter.IsOptionalVariant = true;
-                    parameter.DefaultValue = "null";
-                    continue;
+                    parameters[i] = parameter = parameter with { Marshalling = _mapper.VariantMarshalling(optional: true) };
                 }
-            }
 
-            string? defaultValue = flags.HasFlag(ParameterFlags.HasDefault) && parameter.Definition.DefaultValue is { } value
-                ? FormatConstant(value, parameter.ValueType, parameter.TypeName)
-                : parameter.TypeName.EndsWith('?') && flags.HasFlag(ParameterFlags.Optional) ? "null" : null;
-
-            if (defaultValue is null)
-            {
-                return;
+                parameter.IsOptionalVariant = true;
             }
 
             parameter.DefaultValue = defaultValue;
         }
     }
+
+    private static bool IsOptionalVariant(SignatureParameter parameter, bool lateBound) =>
+        parameter.TypeName == "object?" && (lateBound || parameter.Marshalling?.Contains("VariantMarshaller", StringComparison.Ordinal) == true);
+
+    // The C# default value of an optional parameter, or null if it has none or C# cannot express it.
+    private string? GetConstantDefault(SignatureParameter parameter, bool lateBound)
+    {
+        var flags = parameter.Definition.Flags;
+        if (parameter.IsByRef || (!flags.HasFlag(ParameterFlags.Optional) && !flags.HasFlag(ParameterFlags.HasDefault)))
+        {
+            return null;
+        }
+
+        if (IsOptionalVariant(parameter, lateBound))
+        {
+            return "null";
+        }
+
+        return flags.HasFlag(ParameterFlags.HasDefault) && parameter.Definition.DefaultValue is { } value
+            ? FormatConstant(value, parameter.ValueType, parameter.TypeName)
+            : parameter.TypeName.EndsWith('?') && flags.HasFlag(ParameterFlags.Optional) ? "null" : null;
+    }
+
+    /// <summary>
+    /// Gets the overloads of a method whose optional parameters have default values that C# cannot express, e.g.
+    /// <c>ComBool.True</c> or a <c>DateTime</c>. Each overload ends before one of these parameters and passes the default
+    /// values of the omitted parameters, so the numbers of arguments of the overloads do not overlap. At most
+    /// <see cref="MaxDefaultOverloads"/> overloads are generated, for the first of these parameters.
+    /// </summary>
+    /// <param name="method">The method.</param>
+    /// <param name="parameters">The parameters of the method, as mapped by <see cref="MapParameters"/> or <see cref="MapLateBoundParameters"/>.</param>
+    /// <param name="lateBound">Whether the method is invoked through <c>IDispatch::Invoke</c>.</param>
+    public List<DefaultOverload> GetDefaultOverloads(MethodDefinition method, List<SignatureParameter> parameters, bool lateBound)
+    {
+        var overloads = new List<DefaultOverload>();
+        if (parameters.Any(static p => p.TypeName.EndsWith('*')))
+        {
+            return overloads;
+        }
+
+        var constants = parameters.Select(p => GetConstantDefault(p, lateBound)).ToList();
+        var expressions = parameters.Select(GetDefaultExpression).ToList();
+
+        // The trailing parameters that can be omitted, and the ones among them whose default values need an overload.
+        int start = parameters.Count;
+        while (start > 0 && !parameters[start - 1].IsByRef && (constants[start - 1] is not null || expressions[start - 1] is not null))
+        {
+            start--;
+        }
+
+        var lost = Enumerable.Range(start, parameters.Count - start).Where(i => constants[i] is null).ToList();
+        if (lost.Count > MaxDefaultOverloads)
+        {
+            LogTooManyOverloads(_context.Logger, method.Name, lost.Count, MaxDefaultOverloads);
+        }
+
+        foreach (int index in lost.Take(MaxDefaultOverloads))
+        {
+            var kept = parameters.Take(index).Select(static p => p with { DefaultValue = null, IsOptionalVariant = false }).ToList();
+            ApplyDefaults(kept, lateBound);
+
+            var arguments = new List<string>();
+            var setup = new List<string>();
+            var cleanup = new List<string>();
+            for (int i = 0; i < parameters.Count; i++)
+            {
+                // The method does not treat the null value of an optional VARIANT that precedes a lost default value as an
+                // omitted argument, so the overloads pass Missing.Value, which is marshalled as DISP_E_PARAMNOTFOUND.
+                bool passMissing = IsOptionalVariant(parameters[i], lateBound) && !parameters[i].IsOptionalVariant;
+                if (i < index)
+                {
+                    arguments.Add(Modifier(parameters[i]) + parameters[i].Name + (passMissing ? $" ?? {Missing}" : string.Empty));
+                }
+                else if (passMissing)
+                {
+                    arguments.Add(Missing);
+                }
+                else if (constants[i] is { } constant)
+                {
+                    arguments.Add(constant);
+                }
+                else
+                {
+                    var expression = expressions[i]!;
+                    arguments.Add(expression.Argument);
+                    setup.AddRange(expression.Setup);
+                    cleanup.AddRange(expression.Cleanup);
+                }
+            }
+
+            overloads.Add(new DefaultOverload(kept, arguments, setup, cleanup));
+        }
+
+        return overloads;
+
+        static string Modifier(SignatureParameter parameter) => parameter.Modifier switch
+        {
+            SyntaxKind.RefKeyword => "ref ",
+            SyntaxKind.OutKeyword => "out ",
+            SyntaxKind.InKeyword => "in ",
+            _ => string.Empty,
+        };
+    }
+
+    /// <summary>
+    /// Builds an overload of a method that omits parameters with default values; the body calls <paramref name="callee"/>.
+    /// </summary>
+    public static MethodDeclarationSyntax BuildOverload(DefaultOverload overload, string returnType, string name, string callee, params SyntaxKind[] modifiers)
+    {
+        string call = $"{callee}({string.Join(", ", overload.Arguments)})";
+        string statement = returnType == "void" ? $"{call};" : $"return {call};";
+        var declaration = MethodDeclaration(Syntax.Type(returnType), Syntax.Identifier(name))
+            .WithModifiers(Syntax.Modifiers(modifiers))
+            .WithParameterList(Syntax.Parameters(overload.Parameters.Select(static p => p.ToSyntax(includeMarshalling: false))));
+
+        if (overload.Setup.Count == 0)
+        {
+            return declaration
+                .WithExpressionBody(Syntax.Arrow(call))
+                .WithSemicolonToken(Token(SyntaxKind.SemicolonToken));
+        }
+
+        var statements = overload.Setup.Select(Syntax.Statement).ToList();
+        statements.Add(overload.Cleanup.Count == 0
+            ? Syntax.Statement(statement)
+            : TryStatement(Block(Syntax.Statement(statement)), default, FinallyClause(Block(overload.Cleanup.Select(Syntax.Statement)))));
+        return declaration.WithBody(Block(statements));
+    }
+
+    // An expression for a default value that C# cannot express as a constant, with the statements that prepare and release it.
+    private DefaultExpression? GetDefaultExpression(SignatureParameter parameter)
+    {
+        if (parameter.IsByRef || !parameter.Definition.Flags.HasFlag(ParameterFlags.HasDefault) || parameter.Definition.DefaultValue is not { } value)
+        {
+            return null;
+        }
+
+        string support = _context.Support;
+        string temporary = "__" + parameter.Definition.Name;
+        try
+        {
+            return (parameter.ValueType, parameter.TypeName) switch
+            {
+                (PrimitiveTypeReference { VarType: VarEnum.VT_BOOL }, _) when parameter.TypeName == $"{support}.ComBool" =>
+                    new(IsTrue(value) ? $"{support}.ComBool.True" : $"{support}.ComBool.False", [], []),
+                (PrimitiveTypeReference { VarType: VarEnum.VT_DATE }, "global::System.DateTime") =>
+                    new($"global::System.DateTime.FromOADate({FormatDouble(ToOADate(value))})", [], []),
+                (PrimitiveTypeReference { VarType: VarEnum.VT_DATE }, _) when parameter.TypeName == $"{support}.ComDate" =>
+                    new($"new {support}.ComDate({FormatDouble(ToOADate(value))})", [], []),
+                (PrimitiveTypeReference { VarType: VarEnum.VT_CY }, _) when parameter.TypeName == $"{support}.ComCurrency" =>
+                    new($"new {support}.ComCurrency({decimal.ToOACurrency(System.Convert.ToDecimal(value, CultureInfo.InvariantCulture)).ToString(CultureInfo.InvariantCulture)}L)", [], []),
+                (PrimitiveTypeReference { VarType: VarEnum.VT_BSTR }, _) when value is string text && parameter.TypeName == $"{support}.ComBstr?" =>
+                    new(temporary, [$"using var {temporary} = {support}.ComBstr.Create({Syntax.Literal(text)});"], []),
+                (PrimitiveTypeReference { VarType: VarEnum.VT_BSTR }, "nint") when value is string text =>
+                    new(
+                        temporary,
+                        [$"nint {temporary} = global::System.Runtime.InteropServices.Marshal.StringToBSTR({Syntax.Literal(text)});"],
+                        [$"global::System.Runtime.InteropServices.Marshal.FreeBSTR({temporary});"]),
+                _ => null,
+            };
+        }
+        catch (Exception e) when (e is FormatException or InvalidCastException or OverflowException)
+        {
+            return null;
+        }
+
+        static bool IsTrue(object value) => value is bool b ? b : System.Convert.ToInt64(value, CultureInfo.InvariantCulture) != 0;
+
+        static double ToOADate(object value) => value is DateTime date ? date.ToOADate() : System.Convert.ToDouble(value, CultureInfo.InvariantCulture);
+
+        static string FormatDouble(double value) => value.ToString("R", CultureInfo.InvariantCulture) + "D";
+    }
+
+    [LoggerMessage(Level = LogLevel.Debug, Message = "{Method} has {Count} parameters with default values that need overloads; only {Max} overloads are generated")]
+    private static partial void LogTooManyOverloads(ILogger logger, string method, int count, int max);
+
+    private sealed record DefaultExpression(string Argument, IReadOnlyList<string> Setup, IReadOnlyList<string> Cleanup);
 
     /// <summary>
     /// Formats a constant of a type library type as a C# expression, or returns <see langword="null"/> if it cannot be represented.

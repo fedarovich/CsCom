@@ -183,6 +183,29 @@ internal sealed partial class InterfaceEmitter
                 SyntaxRole.Enumerator));
         }
 
+        // Instance methods win over extension methods when they are applicable, so the overloads only take the shorter calls.
+        if (_context.Options.OverloadsForDefaultValues)
+        {
+            foreach (var method in definition.Methods.Where(static m => m.InvokeKind == InvokeKind.Method))
+            {
+                var (returnType, parameters) = signatures.MapComSignature(method);
+                if (returnType.IsPointer)
+                {
+                    continue;
+                }
+
+                string name = SignatureBuilder.GetMethodName(method);
+                foreach (var overload in signatures.GetDefaultOverloads(method, parameters, lateBound: false))
+                {
+                    members.Add(_context.Annotations.Annotate(
+                        SignatureBuilder.BuildOverload(overload, returnType.Name, name, $"@this.{Syntax.Escape(name)}", SyntaxKind.PublicKeyword)
+                            .WithDocumentation(method.Documentation),
+                        method,
+                        SyntaxRole.Overload));
+                }
+            }
+        }
+
         if (members.Count == 0)
         {
             return null;

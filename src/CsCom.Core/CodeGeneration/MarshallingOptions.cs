@@ -73,8 +73,9 @@ public sealed record MarshallingOptions
     public ValueMarshalling Booleans { get; init; }
 
     /// <summary>
-    /// The representation of <c>BSTR</c> parameters and return values. Structure fields, the elements of <c>SAFEARRAY</c>s and
-    /// <c>VARIANT</c>s, and late-bound dispinterface wrappers are not affected.
+    /// The representation of <c>BSTR</c> parameters and return values. Structure fields are <c>ComBstrValue</c>s, except with
+    /// <see cref="BstrMarshalling.None"/>, which keeps the pointers. The elements of <c>SAFEARRAY</c>s and <c>VARIANT</c>s, and
+    /// late-bound dispinterface wrappers are not affected.
     /// </summary>
     public BstrMarshalling Bstrs { get; init; }
 

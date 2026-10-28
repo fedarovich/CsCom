@@ -43,6 +43,9 @@ public abstract class NewOutputRequest
     /// <summary>Whether the members of the generated structures are public fields or properties.</summary>
     public StructProperties StructProperties { get; init; }
 
+    /// <summary>Whether overloads are generated for the default values that C# cannot express.</summary>
+    public bool OverloadsForDefaultValues { get; init; }
+
     /// <summary>The configuration file with the transformers, relative to the current directory; none when <see langword="null"/>.</summary>
     public string? ConfigurationPath { get; init; }
 
@@ -103,6 +106,9 @@ public sealed class UpdateProjectRequest
 
     /// <summary>Whether the members of the generated structures are public fields or properties.</summary>
     public StructProperties? StructProperties { get; init; }
+
+    /// <summary>Whether overloads are generated for the default values that C# cannot express.</summary>
+    public bool? OverloadsForDefaultValues { get; init; }
 
     /// <summary>
     /// The new configuration file with the transformers, relative to the current directory. The recorded file is kept when

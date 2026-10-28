@@ -84,6 +84,14 @@ public readonly unsafe ref struct EventArguments
     /// <param name="index">The position of the argument in the declaration of the member.</param>
     public T[]? GetArray<T>(int index) => ComConvert.ToArray<T>(GetValue(index));
 
+    /// <summary>Gets a two-dimensional array argument converted to a zero-based array of <typeparamref name="T"/>.</summary>
+    /// <param name="index">The position of the argument in the declaration of the member.</param>
+    public T[,]? GetArray2D<T>(int index) => ComConvert.ToArray2D<T>(GetValue(index));
+
+    /// <summary>Gets a three-dimensional array argument converted to a zero-based array of <typeparamref name="T"/>.</summary>
+    /// <param name="index">The position of the argument in the declaration of the member.</param>
+    public T[,,]? GetArray3D<T>(int index) => ComConvert.ToArray3D<T>(GetValue(index));
+
     /// <summary>
     /// Returns a new value through an argument passed by reference, converted to the type of the argument. Nothing happens
     /// if the argument is missing or was passed by value.

@@ -106,6 +106,12 @@ internal static class SyntaxFormatter
                 return visited.WithTrailingTrivia();
             }
 
+            // NormalizeWhitespace writes "[, ]" for the rank specifiers of multidimensional arrays.
+            if (token.IsKind(SyntaxKind.CommaToken) && token.Parent is ArrayRankSpecifierSyntax)
+            {
+                return visited.WithTrailingTrivia();
+            }
+
             return visited;
         }
 

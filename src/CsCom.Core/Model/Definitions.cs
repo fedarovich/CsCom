@@ -66,7 +66,8 @@ public sealed class FieldDefinition
 
     /// <summary>
     /// Changes to the marshalling options for this field; the options of the project when <see langword="null"/>. Only the
-    /// representation of <c>DATE</c>, <c>CURRENCY</c> and <c>VARIANT_BOOL</c> values applies to fields.
+    /// representation of <c>DATE</c>, <c>CURRENCY</c> and <c>VARIANT_BOOL</c> values, and <see cref="BstrMarshalling.None"/>
+    /// (raw <c>BSTR</c> pointers instead of <c>ComBstrValue</c>s), apply to fields.
     /// </summary>
     public MarshallingOverrides? Marshalling { get; set; }
 

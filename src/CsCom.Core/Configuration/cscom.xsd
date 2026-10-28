@@ -99,6 +99,44 @@
           <xs:attributeGroup ref="KindSelector" />
         </xs:complexType>
       </xs:element>
+      <xs:element name="SetType">
+        <xs:annotation>
+          <xs:documentation>Changes the type of the matching members (their return values, property values and field types) or parameters to a type of the library. Vtable interfaces, functions and structures only accept compatible types: 4-byte integers to enums, interface pointers to interfaces, and structures of the same size.</xs:documentation>
+        </xs:annotation>
+        <xs:complexType>
+          <xs:attributeGroup ref="TypeSelector" />
+          <xs:attributeGroup ref="KindSelector" />
+          <xs:attributeGroup ref="MemberSelector" />
+          <xs:attributeGroup ref="ParameterSelector" />
+          <xs:attribute name="To" type="xs:string" use="required">
+            <xs:annotation>
+              <xs:documentation>The name of the new type: an enum, a structure, an interface, a dispinterface or a coclass of the library.</xs:documentation>
+            </xs:annotation>
+          </xs:attribute>
+        </xs:complexType>
+      </xs:element>
+      <xs:element name="SetSafeArrayRank">
+        <xs:annotation>
+          <xs:documentation>Sets the number of dimensions of the SAFEARRAYs of the matching members or parameters, which type libraries do not record: with the default array representation, 2 and 3 give T[,] and T[,,] instead of T[].</xs:documentation>
+        </xs:annotation>
+        <xs:complexType>
+          <xs:attributeGroup ref="TypeSelector" />
+          <xs:attributeGroup ref="KindSelector" />
+          <xs:attributeGroup ref="MemberSelector" />
+          <xs:attributeGroup ref="ParameterSelector" />
+          <xs:attribute name="Rank" use="required">
+            <xs:annotation>
+              <xs:documentation>The number of dimensions: 1, 2 or 3.</xs:documentation>
+            </xs:annotation>
+            <xs:simpleType>
+              <xs:restriction base="xs:int">
+                <xs:minInclusive value="1" />
+                <xs:maxInclusive value="3" />
+              </xs:restriction>
+            </xs:simpleType>
+          </xs:attribute>
+        </xs:complexType>
+      </xs:element>
     </xs:choice>
   </xs:complexType>
 
@@ -234,6 +272,7 @@
       <xs:enumeration value="EventDelegate" />
       <xs:enumeration value="EventArgs" />
       <xs:enumeration value="Event" />
+      <xs:enumeration value="Overload" />
     </xs:restriction>
   </xs:simpleType>
 

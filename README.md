@@ -52,6 +52,7 @@ after an Office update.
 | `--bstr-marshalling <string\|wrapper\|none>` | How `BSTR` parameters and return values are represented: `string` (default), `wrapper` (`ComBstr`) or `none`, see [BSTRs](#bstrs). |
 | `--safearray-marshalling <array\|sysarray\|wrapper\|none>` | How typed `SAFEARRAY(T)` parameters and return values are represented: `array` (default, `T[]`), `sysarray`, `wrapper` or `none`, see [SAFEARRAYs](#safearrays). |
 | `--event-style <events\|observable\|interface\|none>` | The code generated for the events of coclasses: `events` (default), `observable`, `interface` or `none`, see [Events](#events). |
+| `--overloads-for-default-values` | Generates overloads for the methods whose optional parameters have default values that C# cannot express, see [Optional parameters](#optional-parameters). |
 | `--config <PATH>` | An XML file that adds and configures model and syntax transformers, see [Configuration file](#configuration-file). |
 | `--package-source <PATH>` | An additional NuGet source with the CsCom.Runtime package. |
 | `--keep-temp` | `new assembly` only: keeps the temporary project used to build the assembly. |
@@ -59,7 +60,7 @@ after an Office update.
 
 `new project` writes `<Name>.csproj`, a `cscom.json` file with the options it was generated with, and the C# files into the
 `Generated` folder. `update project` replaces the C# files of the `Generated` folder using the type library and the options recorded
-in `cscom.json`; a `TlbPath` replaces the recorded type library. It accepts `--namespace`, `--csharp-version`, `--single-file [true|false]`, the marshalling options, `--event-style`, `--struct-properties` and `--config`
+in `cscom.json`; a `TlbPath` replaces the recorded type library. It accepts `--namespace`, `--csharp-version`, `--single-file [true|false]`, the marshalling options, `--event-style`, `--struct-properties`, `--overloads-for-default-values [true|false]` and `--config`
 (an empty value removes the file) to change them. Code outside of the `Generated` folder, e.g. partial classes, is not touched.
 
 `new assembly` generates the project in a temporary directory, builds it with `dotnet build` once per runtime identifier and copies
@@ -141,6 +142,8 @@ The type selector (`Type`/`TypeName`) can be combined with `Kind`, except for th
 | `SetMarshalling` | `Type`, `Member` and `Parameter` (all optional); at least one of `Dates`, `Currencies`, `Booleans` (`bcl\|none\|wrapper`), `Bstrs` (`string\|wrapper\|none`) and `SafeArrays` (`array\|sysarray\|wrapper\|none`) | Changes the [marshalling options](#marshalling-options) of the parameters and return values of the matching methods, and of the matching dispinterface properties and structure fields. With `Parameter`, only of the matching parameters, including `[retval]` parameters. Later elements override the values set by earlier ones. |
 | `RemoveEnumPrefix` | `Type` (optional) | Removes the prefix shared by the members of the matching enums, or of all enums. |
 | `ExcludeType` | `Type` and/or `Kind` | Removes the matching types. References to interfaces, dispinterfaces and coclasses become `IDispatch*` (if they are dispatchable) or `IUnknown*`, references to enums `long`, and pointers to structures `void*`. Structures used by value and base interfaces of kept interfaces cannot be removed. |
+| `SetType` | `Type` (optional), `Member`, `Parameter` (optional), `To` | Changes the type of the matching parameters, or without `Parameter` of the members themselves (return values, property values, dispinterface properties, structure fields), to the type of the library named `To`, e.g. a `long` that is meant to be an enum. Parameters passed by reference keep their pointer. Vtable and dual interfaces, functions and structures only accept compatible types: 4-byte integers to enums, interface pointers to interfaces, and structures of the same size; dispinterfaces accept any type. |
+| `SetSafeArrayRank` | `Type`, `Member` and `Parameter` (all optional), `Rank` (`1`–`3`) | Sets the number of dimensions of the `SAFEARRAY`s of the matching parameters, return values and dispinterface properties, see [SAFEARRAYs](#safearrays). |
 
 ```xml
 <RenameMember Type="^IShape$" Member="^Move$" Parameter="^d(.)$" NewName="delta$1" />    <!-- dx, dy -> deltax, deltay -->
@@ -159,7 +162,7 @@ The syntax transformers run after the code is generated, so their selectors matc
 | Element | Attributes | Effect |
 | --- | --- | --- |
 | `AddFlagsAttribute` | `Type` | Adds `[System.Flags]` to the matching enums, which type libraries cannot mark as bit fields. Enums that already have it are not changed. |
-| `AddAttribute` | `Type` and/or `Kind`, `Member` (optional), `Role` (optional), `Attribute` | Adds a C# attribute (without brackets) to the declarations generated for the matching types or members. `Role` selects which declaration: `Declaration` (default), `Extensions` (the extensions class of an interface), `EventHandler`, `EventSink`, `EventDelegate`, `EventArgs`, `Event`, `Property`, `BackingField`, `InlineArray` or `Enumerator`. Declarations that already have the attribute are not changed. |
+| `AddAttribute` | `Type` and/or `Kind`, `Member` (optional), `Role` (optional), `Attribute` | Adds a C# attribute (without brackets) to the declarations generated for the matching types or members. `Role` selects which declaration: `Declaration` (default), `Extensions` (the extensions class of an interface), `EventHandler`, `EventSink`, `EventDelegate`, `EventArgs`, `Event`, `Property`, `BackingField`, `InlineArray`, `Enumerator` or `Overload` (the [overloads](#optional-parameters) of a method). Declarations that already have the attribute are not changed. |
 
 ```xml
 <SyntaxTransformers>
@@ -226,11 +229,12 @@ Arrays inside `VARIANT`s (`object` parameters, `dynamic` and late-bound wrappers
 fastest. The .NET arrays are **zero-based**, because Native AOT does not support other lower bounds, so the 1-based arrays of
 Visual Basic and Excel start at `[0, 0]`.
 
-Type libraries do not record the rank of `SAFEARRAY(T)` parameters, so their representation is selected by `--safearray-marshalling`:
+Type libraries do not record the rank of `SAFEARRAY(T)` parameters, so their representation is selected by `--safearray-marshalling`
+and, for [known ranks](#known-ranks), by the configuration file:
 
 | Value | `SAFEARRAY(T)` | Ranks |
 | --- | --- | --- |
-| `array` (default) | `T[]?` (`SafeArrayMarshaller<T>`) | 1 |
+| `array` (default) | `T[]?` (`SafeArrayMarshaller<T>`), or `T[,]?`/`T[,,]?` for known ranks | 1, or the known rank |
 | `sysarray` | `System.Array?` (`SafeArrayMarshaller`), e.g. a `double[,]` | 1–3 |
 | `wrapper` | `ComSafeArray<T>?` | any |
 | `none` | the `SAFEARRAY*` (`nint`) | any |
@@ -239,6 +243,16 @@ Type libraries do not record the rank of `SAFEARRAY(T)` parameters, so their rep
   e.g. a `string[,]` to a `SAFEARRAY(BSTR)`.
 - **Other places:** `SAFEARRAY(IUnknown*)` stays `object?[]` (`UnknownSafeArrayMarshaller`) in the `array` and `sysarray` modes.
   Late-bound wrappers use `System.Array?` in all modes other than `array`.
+- <a id="known-ranks"></a>**Known ranks:** when the rank of a parameter is known, the `SetSafeArrayRank` element of the [configuration file](#model-transformers)
+  gives `T[,]` or `T[,,]` instead of `T[]` in the `array` mode, also in late-bound wrappers and events:
+
+  ```xml
+  <SetSafeArrayRank TypeName="Range" MemberName="Value2" Rank="2" />   <!-- object?[,]? instead of object?[]? -->
+  ```
+
+  The source generator of COM interop only supports generic marshallers of one-dimensional arrays, so the project gets a
+  marshaller per element type and rank in `CsComSafeArrayMarshallers.cs`. A `SAFEARRAY` of another rank throws a
+  `SafeArrayRankMismatchException`.
 
 `ComSafeArray<T>` wraps the `SAFEARRAY` and converts the elements to and from `T` on each access. Unlike the .NET arrays, it keeps
 the **native bounds**:
@@ -294,11 +308,13 @@ COM objects implemented in .NET receive views that are only valid during the cal
 structure field, and `Detach` gives the pointer up.
 
 - **Default values:** a `ComBstr` or `nint` parameter cannot have a string as its C# default value, so `BSTR` parameters with
-  a `defaultvalue` become required, together with the optional parameters before them.
+  a `defaultvalue` become required, together with the optional parameters before them, unless
+  [overloads](#optional-parameters) are generated.
 - **Events:** dual event interfaces can also be invoked through `IDispatch::Invoke`, which passes `BSTR`s in `VARIANT`s. In the
   `wrapper` and `none` modes, their events with `BSTR` parameters are only received through the vtable.
-- **Other places:** structure fields stay `nint`, and late-bound wrappers, dispinterface events, `VARIANT`s, the elements of
-  `SAFEARRAY`s and constants use `string`. A `ComBstr` passed to a `VARIANT` parameter is passed as a copy.
+- **Other places:** structure fields are `ComBstrValue`s (see [Structures](#structures)), or `nint` with `none`, and late-bound
+  wrappers, dispinterface events, `VARIANT`s, the elements of `SAFEARRAY`s and constants use `string`. A `ComBstr` passed to a
+  `VARIANT` parameter is passed as a copy.
 
 ### Marshalling options
 
@@ -327,19 +343,42 @@ DateTime date = record.Date;
 Boolean operators `!`, `&`, `|` and `^`, which return `ComBool.True` or `ComBool.False`, so it can be used in conditions and
 with `&&` and `||` (`if (record.Flag && !other.Flag)`). Passed to `VARIANT` parameters or `dynamic` calls,
 the wrappers become `VT_DATE`, `VT_CY` and `VT_BOOL` values. A wrapper parameter can only have its default value as a C# default
-value, so optional parameters whose default is `true` or non-zero become required. The options do not affect late-bound
-dispinterface wrappers, constants and the elements of `SAFEARRAY`s, which use the .NET types.
+value, so optional parameters whose default is `true` or non-zero become required, unless [overloads](#optional-parameters)
+are generated. The options do not affect late-bound dispinterface wrappers, constants and the elements of `SAFEARRAY`s, which use
+the .NET types.
 
 All marshalling options, including `--bstr-marshalling` and `--safearray-marshalling`, can be changed for individual methods,
 parameters, dispinterface properties and structure fields with the `SetMarshalling` element of the
 [configuration file](#model-transformers).
 
+### Optional parameters
+
+C# requires the optional parameters to follow the required ones and their default values to be constants, so a parameter whose
+type library default has no C# constant makes it and the parameters before it required: `DATE` defaults (`DateTime` has no
+constants), and `VARIANT_BOOL`, `CURRENCY`, `DATE` and `BSTR` defaults with the `wrapper` and `none` options.
+`--overloads-for-default-values` generates overloads that omit them and pass their default values:
+
+```csharp
+// --bool-marshalling wrapper --bstr-marshalling wrapper --overloads-for-default-values
+// HRESULT Move([in] long dx, [in, defaultvalue(0)] long dy, [in, optional] VARIANT scale, [in, defaultvalue("label")] BSTR label,
+//              [in, defaultvalue(2)] Color color, [in, defaultvalue(1.5)] double factor, [in, defaultvalue(-1)] VARIANT_BOOL flag);
+shape.Move(1);                                    // Move(dx, dy = 0, scale = null): passes ComBstr "label", ..., ComBool.True
+shape.Move(1, 2, null, label, Color.Blue);        // Move(dx, dy, scale, label, color = 2, factor = 1.5): passes ComBool.True
+shape.Move(1, 2, null, label, Color.Blue, 2, f);  // the method itself
+```
+
+- **Where:** the overloads of interface methods are extension methods in the `…Extensions` class, which only take the calls that
+  the method itself does not accept; dispinterface wrappers and modules get regular overloads. Property accessors get none.
+- **Limit:** each overload ends before one of these parameters, so the overloads never accept the same number of arguments. To
+  keep the code small, a method gets at most 4 overloads, for its first 4 such parameters.
+- **Temporary strings:** `BSTR` default values are allocated for the call and released afterwards.
+
 ### Structures
 
 Structures keep the layout of the COM structures, so they can be passed by pointer and by reference without marshalling. Their
-fields have the COM types: `BSTR` and interface pointers are `nint`, `VARIANT`s are `ComVariant`, `SAFEARRAY`s are `nint`,
-fixed-size arrays are inline arrays of the COM element types, and `DATE`, `CURRENCY` and `VARIANT_BOOL` members are stored as
-`double`, `long` and `short` or as the wrappers. `--struct-properties` selects how the members are exposed:
+fields have the COM types: `BSTR`s are `ComBstrValue`s, interface pointers are `nint`, `VARIANT`s are `ComVariant`, `SAFEARRAY`s
+are `nint`, fixed-size arrays are inline arrays of the COM element types, and `DATE`, `CURRENCY` and `VARIANT_BOOL` members are
+stored as `double`, `long` and `short` or as the wrappers. `--struct-properties` selects how the members are exposed:
 
 | Value | Members with the COM type or a wrapper | `bcl` members (`DateTime`, `decimal`, `bool`) |
 | --- | --- | --- |
@@ -349,7 +388,7 @@ fixed-size arrays are inline arrays of the COM element types, and `DATE`, `CURRE
 
 ```csharp
 // --struct-properties nonblittable (default)
-public nint Name;                       // BSTR
+public ComBstrValue Name;               // BSTR
 private short _flag;
 public bool Flag { readonly get => _flag != 0; set => _flag = value ? (short)-1 : (short)0; }
 ```
@@ -357,6 +396,16 @@ public bool Flag { readonly get => _flag != 0; set => _flag = value ? (short)-1 
 With `always`, the properties return copies of nested structures and inline arrays, so `rect.TopLeft.X = 5` does not compile;
 assign a modified copy (`var topLeft = rect.TopLeft; topLeft.X = 5; rect.TopLeft = topLeft;`) or use `nonblittable` or `never`,
 which keep them as fields.
+
+`ComBstrValue` is a pointer-sized view of a `BSTR` field: `IsNull`, `Length`, `ToString()` and the implicit conversion to `string?`
+read it, and `AsComBstr()` gives a `ComBstr` that does not own it. As in C, the owner of the structure owns its strings, so
+`ComBstrValue.Allocate("text")` allocates a string to store in a structure, and `Free()` releases a string the structure owns:
+
+```csharp
+var record = new Record { Name = ComBstrValue.Allocate("Ann") };
+try { server.Update(ref record); string? name = record.Name; }  // a method that takes a Record*
+finally { record.Name.Free(); }
+```
 
 ### Late binding with `dynamic`
 
@@ -448,10 +497,11 @@ The generated projects disable runtime marshalling, which source-generated COM i
 
 - Events cannot be handled through `dynamic`, and they are connected through the sink classes rather than through events of the
   COM interfaces as with TlbImp (`app.WorkbookOpen += ...`), because C# has no extension events.
-- Structures keep the layout of the COM structures, so `BSTR`, `VARIANT`, `SAFEARRAY` and interface pointer members are raw values;
-  only `DATE`, `CURRENCY` and `VARIANT_BOOL` members are converted.
-- `SAFEARRAY`s are converted to zero-based .NET arrays of up to three dimensions; only `ComSafeArray<T>` keeps their bounds and
-  supports more dimensions.
+- Structures keep the layout of the COM structures, so `VARIANT`, `SAFEARRAY` and interface pointer members are raw values, and
+  `BSTR` members are `ComBstrValue` views that the code using the structure allocates and frees; only `DATE`, `CURRENCY` and
+  `VARIANT_BOOL` members are converted.
+- `SAFEARRAY`s are converted to zero-based .NET arrays of up to three dimensions, and `T[,]`/`T[,,]` require a
+  [known rank](#known-ranks); only `ComSafeArray<T>` keeps their bounds and supports more dimensions.
 - Types imported from other type libraries are always generated into the project; referencing other interop assemblies is not supported yet.
 - CsCom.Runtime only targets `net10.0` for now. Source-generated COM expects a base interface from another assembly (`IDispatch`)
   to be compiled for the same target framework, so a `net11.0` build of CsCom.Runtime should be added together with .NET 11 support.

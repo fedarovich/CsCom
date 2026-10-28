@@ -101,4 +101,39 @@ public sealed class BstrTests
 
         Assert.AreEqual("text", bstr.ToString());
     }
+
+    [TestMethod]
+    public void ComBstrValueWrapsFieldStrings()
+    {
+        var value = ComBstrValue.Allocate("héllo\0world");
+        try
+        {
+            Assert.IsFalse(value.IsNull);
+            Assert.AreEqual(11, value.Length);
+            Assert.AreEqual("héllo\0world", value.ToString());
+            string? text = value;
+            Assert.AreEqual("héllo\0world", text);
+            Assert.AreEqual("héllo\0world", Marshal.PtrToStringBSTR(value.Pointer));
+
+            var view = value.AsComBstr()!;
+            Assert.IsFalse(view.OwnsString);
+            Assert.AreEqual(value.Pointer, view.Pointer);
+            Assert.AreEqual(new ComBstrValue(value.Pointer), value);
+        }
+        finally
+        {
+            value.Free();
+        }
+
+        ComBstrValue empty = default;
+        Assert.IsTrue(empty.IsNull);
+        Assert.AreEqual(0, empty.Length);
+        Assert.AreEqual(string.Empty, empty.ToString());
+        string? emptyText = empty;
+        Assert.IsNull(emptyText);
+        Assert.IsNull(empty.AsComBstr());
+        empty.Free();
+        Assert.IsTrue(ComBstrValue.Allocate((string?)null).IsNull);
+        Assert.AreEqual(nint.Size, System.Runtime.CompilerServices.Unsafe.SizeOf<ComBstrValue>());
+    }
 }

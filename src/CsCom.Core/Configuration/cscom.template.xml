@@ -12,6 +12,8 @@
     <!-- <SetMarshalling TypeName="IArrays" MemberName="Matrix" SafeArrays="wrapper" /> -->
     <!-- <RemoveEnumPrefix /> -->
     <!-- <ExcludeType Type="^_" Kind="interface|dispinterface" /> -->
+    <!-- <SetType TypeName="IShape" MemberName="Move" ParameterName="kind" To="ShapeKind" /> -->
+    <!-- <SetSafeArrayRank TypeName="IArrays" MemberName="Matrix" Rank="2" /> -->
   </ModelTransformers>
   <SyntaxTransformers>
     <!-- <AddFlagsAttribute TypeName="ShapeFlags" /> -->

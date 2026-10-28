@@ -139,6 +139,7 @@ public static class ModelPrinter
     {
         PrimitiveTypeReference primitive => FormatPrimitive(primitive.VarType),
         PointerTypeReference pointer => FormatType(pointer.ElementType) + "*",
+        SafeArrayTypeReference { Rank: { } rank } array => $"SAFEARRAY({FormatType(array.ElementType)}, {rank})",
         SafeArrayTypeReference array => $"SAFEARRAY({FormatType(array.ElementType)})",
         FixedArrayTypeReference array => $"{FormatType(array.ElementType)}[{string.Join("][", array.Dimensions)}]",
         UserDefinedTypeReference user => user.Definition.Name,

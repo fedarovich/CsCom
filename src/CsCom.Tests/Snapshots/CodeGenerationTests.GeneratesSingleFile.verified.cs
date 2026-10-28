@@ -42,7 +42,7 @@ namespace Interop.CsComTest
     [global::System.Runtime.InteropServices.StructLayout(global::System.Runtime.InteropServices.LayoutKind.Sequential, Pack = 8)]
     public unsafe partial struct Record
     {
-        public nint Name;
+        public global::CsCom.Runtime.ComBstrValue Name;
 
         public global::System.Runtime.InteropServices.Marshalling.ComVariant Value;
 
@@ -80,7 +80,7 @@ namespace Interop.CsComTest
         [global::System.Runtime.CompilerServices.InlineArray(2)]
         public struct __Names_Buffer
         {
-            private nint _element0;
+            private global::CsCom.Runtime.ComBstrValue _element0;
         }
 
         public __Names_Buffer Names;

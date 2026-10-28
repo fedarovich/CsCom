@@ -201,6 +201,19 @@ internal sealed partial class TypeEmitters
             }
 
             members.Add(EmitFunction(function, signatures, ref isUnsafe));
+            if (_context.Options.OverloadsForDefaultValues)
+            {
+                var returnType = signatures.Mapper.WithMarshalling(function.ReturnMarshalling).MapValue(function.ReturnType);
+                if (!returnType.IsPointer)
+                {
+                    members.AddRange(signatures.GetDefaultOverloads(function, signatures.MapParameters(function.Parameters), lateBound: false).Select(overload =>
+                        _context.Annotations.Annotate(
+                            SignatureBuilder.BuildOverload(overload, returnType.Name, function.Name, Syntax.Escape(function.Name), SyntaxKind.PublicKeyword, SyntaxKind.StaticKeyword)
+                                .WithDocumentation(function.Documentation),
+                            function,
+                            SyntaxRole.Overload)));
+                }
+            }
         }
 
         if (members.Count == 0)

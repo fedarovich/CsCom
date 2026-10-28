@@ -67,6 +67,18 @@ public abstract class DispatchObject : IDispatchProvider
         return ComConvert.ToInterface<T>(value);
     }
 
+    /// <summary>Converts an invocation result to a zero-based two-dimensional array of <typeparamref name="T"/>.</summary>
+    protected static T[,]? ToArray2D<T>(object? value)
+    {
+        return ComConvert.ToArray2D<T>(value);
+    }
+
+    /// <summary>Converts an invocation result to a zero-based three-dimensional array of <typeparamref name="T"/>.</summary>
+    protected static T[,,]? ToArray3D<T>(object? value)
+    {
+        return ComConvert.ToArray3D<T>(value);
+    }
+
     /// <summary>Gets an enumerator for a collection that exposes a <c>_NewEnum</c> member.</summary>
     protected ComEnumerator GetEnumeratorCore()
     {

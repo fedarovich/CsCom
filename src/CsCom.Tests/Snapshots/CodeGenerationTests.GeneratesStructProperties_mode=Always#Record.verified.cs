@@ -10,9 +10,9 @@ namespace Interop.CsComTest;
 [global::System.Runtime.InteropServices.StructLayout(global::System.Runtime.InteropServices.LayoutKind.Sequential, Pack = 8)]
 public unsafe partial struct Record
 {
-    private nint _name;
+    private global::CsCom.Runtime.ComBstrValue _name;
 
-    public nint Name { readonly get => _name; set => _name = value; }
+    public global::CsCom.Runtime.ComBstrValue Name { readonly get => _name; set => _name = value; }
 
     private global::System.Runtime.InteropServices.Marshalling.ComVariant _value;
 
@@ -58,7 +58,7 @@ public unsafe partial struct Record
     [global::System.Runtime.CompilerServices.InlineArray(2)]
     public struct __Names_Buffer
     {
-        private nint _element0;
+        private global::CsCom.Runtime.ComBstrValue _element0;
     }
 
     private __Names_Buffer _names;

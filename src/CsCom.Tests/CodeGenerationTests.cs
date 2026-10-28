@@ -1,6 +1,7 @@
 using System.Xml.Linq;
 using CsCom.CodeGeneration;
 using CsCom.Configuration;
+using CsCom.Model;
 
 namespace CsCom.Tests;
 
@@ -115,6 +116,20 @@ public sealed class CodeGenerationTests : VerifyBase
     }
 
     [TestMethod]
+    public void BstrFieldsArePointersWithoutMarshalling()
+    {
+        var documents = Generate(new CodeGenerationOptions
+        {
+            Namespace = "Interop.CsComTest",
+            Marshalling = new MarshallingOptions { Bstrs = BstrMarshalling.None },
+        });
+
+        string record = documents.Single(static d => d.RelativePath == "Record.cs").GetText();
+        StringAssert.Contains(record, "public nint Name;");
+        Assert.IsFalse(record.Contains("ComBstrValue", StringComparison.Ordinal));
+    }
+
+    [TestMethod]
     [DataRow(StructProperties.Always)]
     [DataRow(StructProperties.Never)]
     public Task GeneratesStructProperties(StructProperties mode)
@@ -223,6 +238,109 @@ public sealed class CodeGenerationTests : VerifyBase
             """);
 
         return Verify(ToTargets(documents.Where(static d => d.RelativePath is "Color.cs")));
+    }
+
+    [TestMethod]
+    public Task GeneratesSafeArrayRanks()
+    {
+        var documents = Generate(new CodeGenerationOptions { Namespace = "Interop.CsComTest", ToolVersion = TestEnvironment.ToolVersion }, """
+            <CsCom>
+              <ModelTransformers>
+                <SetSafeArrayRank TypeName="IArrays" MemberName="Matrix" Rank="2" />
+                <SetSafeArrayRank TypeName="IMarshalling" MemberName="Colors" Rank="3" />
+                <SetSafeArrayRank TypeName="IMarshalling" MemberName="Strings" ParameterName="Values" Rank="2" />
+                <SetSafeArrayRank TypeName="DShapeEvents" MemberName="Names" Rank="2" />
+              </ModelTransformers>
+            </CsCom>
+            """);
+
+        return Verify(ToTargets(documents.Where(static d => d.RelativePath is "IArrays.cs" or "IMarshalling.cs" or "DShapeEvents.cs" or "CsComSafeArrayMarshallers.cs")));
+    }
+
+    [TestMethod]
+    public Task GeneratesDefaultOverloads()
+    {
+        // With the wrappers, the default values of the label (BSTR) and flag (VARIANT_BOOL) parameters of IShape.Move have no C#
+        // constants, so the overloads pass them.
+        var documents = Generate(new CodeGenerationOptions
+        {
+            Namespace = "Interop.CsComTest",
+            ToolVersion = TestEnvironment.ToolVersion,
+            Marshalling = new MarshallingOptions
+            {
+                Dates = ValueMarshalling.Wrapper,
+                Currencies = ValueMarshalling.Wrapper,
+                Booleans = ValueMarshalling.Wrapper,
+                Bstrs = BstrMarshalling.Wrapper,
+            },
+            OverloadsForDefaultValues = true,
+        });
+
+        return Verify(ToTargets(documents.Where(static d => d.RelativePath is "IShape.cs")));
+    }
+
+    [TestMethod]
+    public void LimitsTheDefaultOverloads()
+    {
+        var library = new TypeLibrary { Name = "Synthetic" };
+        var @interface = new InterfaceDefinition
+        {
+            Name = "IOptions",
+            OriginalName = "IOptions",
+            Guid = Guid.NewGuid(),
+            InterfaceKind = InterfaceKind.Vtable,
+            BaseVtableSlots = 3,
+        };
+        var method = new MethodDefinition
+        {
+            Name = "Configure",
+            OriginalName = "Configure",
+            InvokeKind = InvokeKind.Method,
+            VtableSlot = 3,
+            ReturnType = new PrimitiveTypeReference(System.Runtime.InteropServices.VarEnum.VT_HRESULT),
+        };
+        method.Parameters.Add(new ParameterDefinition { Name = "id", Type = new PrimitiveTypeReference(System.Runtime.InteropServices.VarEnum.VT_I4), Flags = ParameterFlags.In });
+        for (int i = 1; i <= 6; i++)
+        {
+            method.Parameters.Add(new ParameterDefinition
+            {
+                Name = $"flag{i}",
+                Type = new PrimitiveTypeReference(System.Runtime.InteropServices.VarEnum.VT_BOOL),
+                Flags = ParameterFlags.In | ParameterFlags.Optional | ParameterFlags.HasDefault,
+                DefaultValue = (short)-1,
+            });
+        }
+
+        @interface.Methods.Add(method);
+        library.Types.Add(@interface);
+
+        var documents = new InteropPipeline().GenerateCode(library, new CodeGenerationOptions
+        {
+            Namespace = "Test",
+            Marshalling = new MarshallingOptions { Booleans = ValueMarshalling.Wrapper },
+            OverloadsForDefaultValues = true,
+        });
+
+        string text = documents.Single(static d => d.RelativePath == "IOptions.cs").GetText();
+        Assert.AreEqual(SignatureBuilder.MaxDefaultOverloads, text.Split("public void Configure(").Length - 1);
+        StringAssert.Contains(text, "public void Configure(int id) => @this.Configure(id, global::CsCom.Runtime.ComBool.True,");
+    }
+
+    [TestMethod]
+    public Task GeneratesChangedTypes()
+    {
+        var documents = Generate(new CodeGenerationOptions { Namespace = "Interop.CsComTest", ToolVersion = TestEnvironment.ToolVersion }, """
+            <CsCom>
+              <ModelTransformers>
+                <SetType TypeName="ICalculator" MemberName="Add" To="Color" />
+                <SetType TypeName="ICalculator" MemberName="Swap" To="Color" Parameter="." />
+                <SetType TypeName="IShape" MemberName="Dispatch" To="IShape" />
+                <SetType TypeName="IShape" MemberName="Coordinate" To="Color" />
+              </ModelTransformers>
+            </CsCom>
+            """);
+
+        return Verify(ToTargets(documents.Where(static d => d.RelativePath is "ICalculator.cs" or "IShape.cs")));
     }
 
     [TestMethod]

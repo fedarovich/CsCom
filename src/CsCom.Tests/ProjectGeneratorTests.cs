@@ -214,6 +214,7 @@ public sealed class ProjectGeneratorTests
         Assert.AreEqual(EventStyle.Events, manifest.EventStyle);
         Assert.AreEqual(StructProperties.NonBlittable, manifest.StructProperties);
         Assert.IsNull(manifest.Configuration);
+        Assert.IsFalse(manifest.OverloadsForDefaultValues);
     }
 
     [TestMethod]

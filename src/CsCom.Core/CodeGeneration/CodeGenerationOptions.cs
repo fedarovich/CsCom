@@ -52,6 +52,12 @@ public sealed class CodeGenerationOptions
     /// <summary>Whether the members of the generated structures are public fields or properties.</summary>
     public StructProperties StructProperties { get; init; }
 
+    /// <summary>
+    /// Whether overloads are generated for the methods whose optional parameters have default values that C# cannot express,
+    /// e.g. <c>ComBool.True</c> or a <c>DateTime</c>, so that these parameters can be omitted.
+    /// </summary>
+    public bool OverloadsForDefaultValues { get; init; }
+
     /// <summary>The version of the tool written into the file headers.</summary>
     public string ToolVersion { get; init; } = ToolInfo.Version;
 

@@ -131,6 +131,16 @@ public sealed class ConfigurationElement
     public Regex GetRequiredRegex(string name) =>
         GetRegex(name) ?? throw CreateError($"The attribute '{name}' is required by <{Name}>.");
 
+    /// <summary>Gets the value of an integer attribute that must be specified, within a range.</summary>
+    /// <exception cref="CsComException">The attribute is missing, or its value is not an integer within the range.</exception>
+    public int GetRequiredInt32(string name, int minimum, int maximum)
+    {
+        string value = GetRequiredAttribute(name);
+        return int.TryParse(value, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out int result) && result >= minimum && result <= maximum
+            ? result
+            : throw CreateError(Element.Attribute(name)!, FilePath, $"'{value}' is not a valid value of the attribute '{name}': an integer from {minimum} to {maximum} is expected.");
+    }
+
     /// <summary>
     /// Gets the value of a flags enum attribute: names of enum members in any case, separated by <c>,</c> or <c>|</c>.
     /// </summary>
