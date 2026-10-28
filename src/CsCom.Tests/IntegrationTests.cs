@@ -89,10 +89,12 @@ public sealed class IntegrationTests
             reader.Close();
             fileSystem.DeleteFile(path);
             Console.WriteLine($"Exists={fileSystem.FileExists(path)}");
+            IFolder folder = fileSystem.GetFolder(Path.GetTempPath())!;
+            Console.WriteLine($"Created={folder.DateCreated.Year > 1990 && folder.DateCreated <= DateTime.Now}");
             """);
 
         CollectionAssert.IsSubsetOf(
-            new[] { "Count=2", "Exists=True", "Item=two", "Keys=a,b", "Key=a", "Key=b", "Line=Hello", "Exists=False" },
+            new[] { "Count=2", "Exists=True", "Item=two", "Keys=a,b", "Key=a", "Key=b", "Line=Hello", "Exists=False", "Created=True" },
             output.ToArray(),
             string.Join(Environment.NewLine, output));
     }
@@ -151,6 +153,158 @@ public sealed class IntegrationTests
     }
 
     [TestMethod]
+    public void MarshallersRoundTripThroughComWrappers()
+    {
+        // The consumer implements IMarshalling and calls it through a runtime callable wrapper of its own COM callable wrapper,
+        // so that every argument is marshalled to native code and back by the generated stubs.
+        string root = TestEnvironment.CreateDirectory("marshallers");
+        string interop = CreateProject(TestEnvironment.TestTypeLibrary, Path.Combine(root, "Interop"), SupportCodeMode.Package, singleFile: false);
+
+        var output = RunConsumer(root, interop, """
+            using System.Globalization;
+            using System.Runtime.InteropServices;
+            using System.Runtime.InteropServices.Marshalling;
+            using CsCom.Runtime;
+            using Interop.CsComTest;
+
+            CultureInfo.DefaultThreadCurrentCulture = CultureInfo.InvariantCulture;
+            CultureInfo.CurrentCulture = CultureInfo.InvariantCulture;
+
+            var wrappers = new StrategyBasedComWrappers();
+            var implementation = new MarshallingImpl();
+            nint unknown = wrappers.GetOrCreateComInterfaceForObject(implementation, CreateComInterfaceFlags.None);
+            var proxy = (IMarshalling)wrappers.GetOrCreateObjectForComInstance(unknown, CreateObjectFlags.UniqueInstance);
+            Marshal.Release(unknown);
+            Console.WriteLine($"Proxy={!ReferenceEquals(proxy, implementation)}");
+
+            var date = new DateTime(2024, 2, 29, 12, 30, 0);
+            DateTime result = proxy.Dates(date, out DateTime next);
+            Console.WriteLine($"Dates={result:yyyy-MM-dd HH:mm}|{next:yyyy-MM-dd}");
+
+            decimal total = 10.5m;
+            decimal money = proxy.Money(1.25m, ref total);
+            Console.WriteLine($"Money={money:0.####}|{total:0.####}");
+
+            Console.WriteLine($"Strings={string.Join(",", proxy.Strings(["a", null, "c"])!.Select(static s => s ?? "<null>"))}");
+            Console.WriteLine($"Variants={string.Join(",", proxy.Variants([1, "two", true, null])!.Select(static v => v?.ToString() ?? "<null>"))}");
+
+            int[]? numbers = [1, 2, 3];
+            proxy.Numbers(ref numbers);
+            Console.WriteLine($"Numbers={string.Join(",", numbers!)}");
+            Console.WriteLine($"Flags={string.Join(",", proxy.Flags([true, false, true])!)}");
+            Console.WriteLine($"Colors={string.Join(",", proxy.Colors([Color.Red, Color.Blue])!)}");
+            Console.WriteLine($"DateArray={string.Join(",", proxy.DateArray([date])!.Select(static d => d.ToString("yyyy-MM-dd")))}");
+
+            object?[] unknowns = proxy.Unknowns([implementation, null])!;
+            Console.WriteLine($"Unknowns={ReferenceEquals(unknowns[0], implementation)}|{unknowns[1] is null}");
+
+            var calculator = new CalculatorImpl();
+            ICalculator?[] calculators = proxy.Calculators([calculator])!;
+            Console.WriteLine($"Calculators={ReferenceEquals(calculators[0], calculator)}|{calculators[0]!.Add(2, 3)}");
+
+            var dictionary = ComActivator.CreateInstance<IDispatch>(new Guid("EE09B103-97E0-11CF-978F-00A02463E06F"));
+            Console.WriteLine($"Dispatches={proxy.Dispatches([dictionary, null, dictionary])}");
+
+            [GeneratedComClass]
+            internal sealed partial class MarshallingImpl : IMarshalling
+            {
+                public DateTime Dates(DateTime date, out DateTime next)
+                {
+                    next = date.AddDays(1);
+                    return date.AddHours(1);
+                }
+
+                public decimal Money(decimal money, ref decimal total)
+                {
+                    total += money;
+                    return money * 2;
+                }
+
+                public string?[]? Strings(string?[]? values) => values?.Reverse().ToArray();
+
+                public object?[]? Variants(in object?[]? values) => values;
+
+                public void Numbers(ref int[]? values) => values = values?.Select(static v => v * 10).ToArray();
+
+                public double[]? Flags(bool[]? values) => values?.Select(static v => v ? 1.0 : 0.0).ToArray();
+
+                public Color[]? Colors(Color[]? values) => values?.Reverse().ToArray();
+
+                public DateTime[]? DateArray(DateTime[]? values) => values?.Select(static d => d.AddYears(1)).ToArray();
+
+                public object?[]? Unknowns(object?[]? values) => values;
+
+                public ICalculator?[]? Calculators(ICalculator?[]? values) => values;
+
+                public int Dispatches(IDispatch?[]? values) => values?.Count(static v => v is not null) ?? -1;
+
+                public void Unsupported(nint points, nint Money)
+                {
+                }
+            }
+
+            [GeneratedComClass]
+            internal sealed unsafe partial class CalculatorImpl : ICalculator
+            {
+                public int Add(int a, int b) => a + b;
+
+                public void Divide(double a, double b, out double quotient, out double remainder) => throw new NotSupportedException();
+
+                public void Swap(ref int a, ref int b) => throw new NotSupportedException();
+
+                public Point GetPoint() => throw new NotSupportedException();
+
+                public void SetPoint(Point Point) => throw new NotSupportedException();
+
+                public void MovePoint(in Point Point) => throw new NotSupportedException();
+
+                public int NoHResult(int Value) => throw new NotSupportedException();
+
+                public void NoReturn(int Value) => throw new NotSupportedException();
+
+                public string? Strings(string? bstr, string? wide, string? ansi) => throw new NotSupportedException();
+
+                public int[]? Arrays(string?[]? Values) => throw new NotSupportedException();
+
+                public void Buffer(int size, ref byte Buffer) => throw new NotSupportedException();
+
+                public void VoidPointer(void* pointer) => throw new NotSupportedException();
+
+                public int GetHandle() => throw new NotSupportedException();
+
+                public int Locale(int lcid) => throw new NotSupportedException();
+
+                public int Keywords(int @params, int @lock, int Value) => throw new NotSupportedException();
+
+                public int Numbers(Number Number, in Record Record, in Guid Id) => throw new NotSupportedException();
+
+                public void Integers(sbyte c, byte b, short s, ushort us, int i, uint ui, long h, ulong uh, float f) => throw new NotSupportedException();
+
+                public IEnumVARIANT? enumerator() => throw new NotSupportedException();
+            }
+            """, allowUnsafe: true);
+
+        CollectionAssert.IsSubsetOf(
+            new[]
+            {
+                "Proxy=True",
+                "Dates=2024-02-29 13:30|2024-03-01",
+                "Money=2.5|11.75",
+                "Strings=c,<null>,a",
+                "Variants=1,two,True,<null>",
+                "Numbers=10,20,30",
+                "Flags=1,0,1",
+                "Colors=Blue,Red",
+                "DateArray=2025-02-28",
+                "Unknowns=True|True",
+                "Calculators=True|5",
+                "Dispatches=2",
+            },
+            output.ToArray(),
+            string.Join(Environment.NewLine, output));
+    }
+
+    [TestMethod]
     public void NewAssemblyCopiesTheOutputsOfEachRuntime()
     {
         string output = TestEnvironment.CreateDirectory("assembly");
@@ -197,7 +351,7 @@ public sealed class IntegrationTests
     /// Builds and runs a console application that references the interop project.
     /// </summary>
     /// <returns>The trimmed output lines.</returns>
-    private static List<string> RunConsumer(string root, string interopProject, string program)
+    private static List<string> RunConsumer(string root, string interopProject, string program, bool allowUnsafe = false)
     {
         string consumer = Path.Combine(root, "Consumer");
         Directory.CreateDirectory(consumer);
@@ -210,6 +364,7 @@ public sealed class IntegrationTests
                 <ImplicitUsings>enable</ImplicitUsings>
                 <Nullable>enable</Nullable>
                 <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+                <AllowUnsafeBlocks>{(allowUnsafe ? "true" : "false")}</AllowUnsafeBlocks>
               </PropertyGroup>
               <ItemGroup>
                 <ProjectReference Include="{interopProject}" />

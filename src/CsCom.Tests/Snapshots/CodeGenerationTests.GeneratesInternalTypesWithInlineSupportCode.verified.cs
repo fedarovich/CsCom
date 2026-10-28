@@ -61,7 +61,8 @@ internal unsafe partial interface IShape : global::Interop.CsComTest.ComSupport.
 
     global::Interop.CsComTest.ComSupport.IDispatch? Dispatch(global::Interop.CsComTest.ComSupport.IDispatch? Dispatch);
 
-    double Dates(double Date, long Money, decimal Amount);
+    [return: global::System.Runtime.InteropServices.Marshalling.MarshalUsing(typeof(global::Interop.CsComTest.ComSupport.DateMarshaller))]
+    global::System.DateTime Dates([global::System.Runtime.InteropServices.Marshalling.MarshalUsing(typeof(global::Interop.CsComTest.ComSupport.DateMarshaller))] global::System.DateTime Date, [global::System.Runtime.InteropServices.Marshalling.MarshalUsing(typeof(global::Interop.CsComTest.ComSupport.CurrencyMarshaller))] decimal Money, decimal Amount);
 
     global::Interop.CsComTest.stdole.Font? Font();
 }

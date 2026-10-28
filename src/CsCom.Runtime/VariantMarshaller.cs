@@ -78,13 +78,8 @@ public static unsafe class VariantMarshaller
     // Takes ownership of the 'unknown' reference.
     private static ComVariant CreateObjectVariant(nint unknown)
     {
-        if (Marshal.QueryInterface(unknown, OleNativeMethods.IID_IDispatch, out nint dispatch) == OleNativeMethods.S_OK)
-        {
-            Marshal.Release(unknown);
-            return ComVariant.CreateRaw(VarEnum.VT_DISPATCH, dispatch);
-        }
-
-        return ComVariant.CreateRaw(VarEnum.VT_UNKNOWN, unknown);
+        nint pointer = ComObjects.QueryDispatch(unknown, out bool isDispatch);
+        return ComVariant.CreateRaw(isDispatch ? VarEnum.VT_DISPATCH : VarEnum.VT_UNKNOWN, pointer);
     }
 
     private static ComVariant ConvertEnum(Enum value)

@@ -199,6 +199,7 @@ internal sealed class SignatureBuilder
 
     private static bool IsPassedAsIn(TypeReference element) =>
         element is PrimitiveTypeReference { VarType: VarEnum.VT_VARIANT }
+            or SafeArrayTypeReference
             or UserDefinedTypeReference { Definition: RecordDefinition }
             or WellKnownTypeReference { Type: WellKnownType.Guid };
 

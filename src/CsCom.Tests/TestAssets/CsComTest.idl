@@ -137,6 +137,27 @@ library CsComTest
     };
 
     [
+        object,
+        uuid(6B1F2D2A-4C1E-4B71-9D0B-7B7C2E0A1014),
+        helpstring("Covers the custom marshallers")
+    ]
+    interface IMarshalling : IUnknown
+    {
+        HRESULT Dates([in] DATE date, [out] DATE* next, [out, retval] DATE* result);
+        HRESULT Money([in] CURRENCY money, [in, out] CURRENCY* total, [out, retval] CURRENCY* result);
+        HRESULT Strings([in] SAFEARRAY(BSTR) values, [out, retval] SAFEARRAY(BSTR)* result);
+        HRESULT Variants([in] SAFEARRAY(VARIANT)* values, [out, retval] SAFEARRAY(VARIANT)* result);
+        HRESULT Numbers([in, out] SAFEARRAY(long)* values);
+        HRESULT Flags([in] SAFEARRAY(VARIANT_BOOL) values, [out, retval] SAFEARRAY(double)* result);
+        HRESULT Colors([in] SAFEARRAY(Color) values, [out, retval] SAFEARRAY(Color)* result);
+        HRESULT DateArray([in] SAFEARRAY(DATE) values, [out, retval] SAFEARRAY(DATE)* result);
+        HRESULT Unknowns([in] SAFEARRAY(IUnknown*) values, [out, retval] SAFEARRAY(IUnknown*)* result);
+        HRESULT Calculators([in] SAFEARRAY(ICalculator*) values, [out, retval] SAFEARRAY(ICalculator*)* result);
+        HRESULT Dispatches([in] SAFEARRAY(IDispatch*) values, [out, retval] long* count);
+        HRESULT Unsupported([in] SAFEARRAY(Point) points, [in] SAFEARRAY(CURRENCY) money);
+    };
+
+    [
         uuid(6B1F2D2A-4C1E-4B71-9D0B-7B7C2E0A1013),
         helpstring("The events of a shape")
     ]

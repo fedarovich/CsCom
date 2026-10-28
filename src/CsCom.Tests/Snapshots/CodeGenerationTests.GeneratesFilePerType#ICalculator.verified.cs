@@ -37,7 +37,8 @@ public unsafe partial interface ICalculator
 
     string? Strings(string? bstr, [global::System.Runtime.InteropServices.MarshalAs(global::System.Runtime.InteropServices.UnmanagedType.LPWStr)] string? wide, [global::System.Runtime.InteropServices.MarshalAs(global::System.Runtime.InteropServices.UnmanagedType.LPStr)] string? ansi);
 
-    nint Arrays(nint Values);
+    [return: global::System.Runtime.InteropServices.Marshalling.MarshalUsing(typeof(global::CsCom.Runtime.SafeArrayMarshaller<int>))]
+    int[]? Arrays([global::System.Runtime.InteropServices.Marshalling.MarshalUsing(typeof(global::CsCom.Runtime.SafeArrayMarshaller<string>))] string?[]? Values);
 
     void Buffer(int size, ref byte Buffer);
 

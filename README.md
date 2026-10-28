@@ -71,7 +71,8 @@ foreach (object? key in dictionary)                 // _NewEnum via IEnumVARIANT
   properties and indexers that invoke the members by their DISPIDs.
 - **Coclasses** become static classes with the `Clsid` and a `Create()` method that returns the default interface.
 - **Enums** become enums and **structs and unions** become blittable structs (`BSTR` and interface pointer fields are `nint`,
-  `VARIANT` fields are `ComVariant`, fixed-size arrays are inline arrays).
+  `VARIANT` fields are `ComVariant`, `CURRENCY` and `DATE` fields are `long` and `double`, `SAFEARRAY` fields are `nint` and
+  fixed-size arrays are inline arrays).
 - **Modules** become static classes with `[LibraryImport]` functions and constants.
 - **Aliases** are replaced by the aliased types.
 - **Types imported from other type libraries** are generated into `<Namespace>.<LibraryName>`. The well-known OLE Automation types
@@ -86,13 +87,19 @@ foreach (object? key in dictionary)                 // _NewEnum via IEnumVARIANT
 | `IUnknown*` | `object?` |
 | `IDispatch*` | `IDispatch?` |
 | `DECIMAL` | `decimal` |
-| `CURRENCY`, `DATE` | `long`, `double` (raw values) |
-| `SAFEARRAY(T)` | `nint` (raw `SAFEARRAY*`); arrays inside `VARIANT`s are converted to .NET arrays |
+| `CURRENCY` | `decimal` (`CurrencyMarshaller`) |
+| `DATE` | `DateTime` (`DateMarshaller`) |
+| `SAFEARRAY(T)` | `T[]?` (`SafeArrayMarshaller<T>`), see below |
 | `[out] T*`, `[in, out] T*` | `out T`, `ref T` |
+
+`SAFEARRAY`s of `VARIANT`, `BSTR`, `VARIANT_BOOL`, integers, floating-point numbers, `DECIMAL`, `DATE`, enums, `IUnknown*`
+(`UnknownSafeArrayMarshaller`), `IDispatch*` and interfaces are marshalled as zero-based one-dimensional .NET arrays, and so are
+arrays inside `VARIANT`s. `SAFEARRAY`s of structs, `CURRENCY`, `SCODE` and dispinterfaces are passed as raw `SAFEARRAY*` (`nint`).
+Multi-dimensional `SAFEARRAY`s are not supported.
 
 ### Support code
 
-The generated code depends on a few support types: `IDispatch`, `IEnumVARIANT`, `ComActivator`, the `VARIANT` marshallers and the
+The generated code depends on a few support types: `IDispatch`, `IEnumVARIANT`, `ComActivator`, the `VARIANT`, `SAFEARRAY`, `DATE` and `CURRENCY` marshallers and the
 base class of the late-bound wrappers. With `--support-code package`, the generated project references the **CsCom.Runtime**
 NuGet package. With `public` or `internal`, the support code is emitted into the project, in the `<Namespace>.ComSupport` namespace.
 In the `internal` mode all generated types are internal, because a public interface cannot derive from an internal `IDispatch`.
@@ -102,7 +109,8 @@ The generated projects disable runtime marshalling, which source-generated COM i
 ### Limitations
 
 - COM events (connection points and source interfaces) are not generated yet.
-- `SAFEARRAY` parameters, `CURRENCY` and `DATE` are passed as raw values.
+- Structure fields stay blittable, so `BSTR`, `CURRENCY`, `DATE`, `SAFEARRAY` and interface pointer fields are raw values.
+- `SAFEARRAY`s are converted to zero-based one-dimensional arrays; their lower bounds are not preserved.
 - Types imported from other type libraries are always generated into the project; referencing other interop assemblies is not supported yet.
 - CsCom.Runtime only targets `net10.0` for now. Source-generated COM expects a base interface from another assembly (`IDispatch`)
   to be compiled for the same target framework, so a `net11.0` build of CsCom.Runtime should be added together with .NET 11 support.

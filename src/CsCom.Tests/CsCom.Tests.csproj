@@ -14,8 +14,8 @@
     <ProjectReference Include="..\CsCom\CsCom.csproj" />
     <ProjectReference Include="..\CsCom.Core\CsCom.Core.csproj" />
 
-    <!-- The integration tests restore the CsCom.Runtime package from the local feed. -->
-    <ProjectReference Include="..\CsCom.Runtime\CsCom.Runtime.csproj" ReferenceOutputAssembly="false" />
+    <!-- Tested directly, and its package is restored from the local feed by the integration tests. -->
+    <ProjectReference Include="..\CsCom.Runtime\CsCom.Runtime.csproj" />
   </ItemGroup>
 
   <ItemGroup>

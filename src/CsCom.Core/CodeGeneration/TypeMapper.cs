@@ -101,8 +101,10 @@ internal sealed class TypeMapper
                 return MapInterface(pointer.ElementType);
             case PointerTypeReference pointer:
                 return MapPointer(pointer);
+            case SafeArrayTypeReference array:
+                return MapSafeArray(array);
             default:
-                // SAFEARRAY* and C arrays decayed to pointers are passed as raw pointers.
+                // C arrays decayed to pointers are passed as raw pointers.
                 return ManagedType.IntPtr;
         }
     }
@@ -120,6 +122,8 @@ internal sealed class TypeMapper
                     VarEnum.VT_BOOL => new ManagedType("short"),
                     VarEnum.VT_BSTR or VarEnum.VT_LPSTR or VarEnum.VT_LPWSTR or VarEnum.VT_UNKNOWN or VarEnum.VT_DISPATCH => ManagedType.IntPtr,
                     VarEnum.VT_VARIANT => new ManagedType($"{Syntax.MarshallingNamespace}.ComVariant"),
+                    VarEnum.VT_CY => new ManagedType("long"),
+                    VarEnum.VT_DATE => new ManagedType("double"),
                     _ => MapPrimitive(vt) is { Marshalling: null, IsReference: false } mapped ? mapped : ManagedType.IntPtr,
                 };
             case WellKnownTypeReference { Type: WellKnownType.Guid }:
@@ -207,8 +211,8 @@ internal sealed class TypeMapper
         VarEnum.VT_UI8 => new("ulong"),
         VarEnum.VT_R4 => new("float"),
         VarEnum.VT_R8 => new("double"),
-        VarEnum.VT_CY => new("long"),
-        VarEnum.VT_DATE => new("double"),
+        VarEnum.VT_CY => new("decimal", $"{Syntax.MarshallingNamespace}.MarshalUsing(typeof({_context.Support}.CurrencyMarshaller))"),
+        VarEnum.VT_DATE => new("global::System.DateTime", $"{Syntax.MarshallingNamespace}.MarshalUsing(typeof({_context.Support}.DateMarshaller))"),
         VarEnum.VT_DECIMAL => new("decimal"),
         VT_INT_PTR => ManagedType.IntPtr,
         VT_UINT_PTR => new("nuint"),
@@ -230,6 +234,69 @@ internal sealed class TypeMapper
 
     private static string UnknownMarshalling =>
         $"{Syntax.MarshallingNamespace}.MarshalUsing(typeof({Syntax.MarshallingNamespace}.ComInterfaceMarshaller<object>))";
+
+    /// <summary>
+    /// Maps a <c>SAFEARRAY</c> to a one-dimensional array marshalled by <c>SafeArrayMarshaller&lt;T&gt;</c>, or to a raw
+    /// <c>SAFEARRAY*</c> when the elements cannot be marshalled (records, <c>CURRENCY</c>, dispinterfaces).
+    /// </summary>
+    private ManagedType MapSafeArray(SafeArrayTypeReference array)
+    {
+        if (array.ElementType is PrimitiveTypeReference { VarType: VarEnum.VT_UNKNOWN })
+        {
+            return new ManagedType("object?[]?", $"{Syntax.MarshallingNamespace}.MarshalUsing(typeof({_context.Support}.UnknownSafeArrayMarshaller))");
+        }
+
+        if (GetSafeArrayElement(array.ElementType) is not { } element)
+        {
+            return ManagedType.IntPtr;
+        }
+
+        string typeArgument = element.TrimEnd('?');
+        return new ManagedType($"{element}[]?", $"{Syntax.MarshallingNamespace}.MarshalUsing(typeof({_context.Support}.SafeArrayMarshaller<{typeArgument}>))");
+    }
+
+    private string? GetSafeArrayElement(TypeReference element)
+    {
+        switch (element)
+        {
+            case PrimitiveTypeReference { VarType: var vt }:
+                return vt switch
+                {
+                    VarEnum.VT_VARIANT => "object?",
+                    VarEnum.VT_BSTR => "string?",
+                    VarEnum.VT_BOOL => "bool",
+                    VarEnum.VT_DATE => "global::System.DateTime",
+                    VarEnum.VT_DECIMAL => "decimal",
+                    VarEnum.VT_DISPATCH => $"{_context.Support}.IDispatch?",
+                    VarEnum.VT_I1 => "sbyte",
+                    VarEnum.VT_UI1 => "byte",
+                    VarEnum.VT_I2 => "short",
+                    VarEnum.VT_UI2 => "ushort",
+                    VarEnum.VT_I4 or VarEnum.VT_INT => "int",
+                    VarEnum.VT_UI4 or VarEnum.VT_UINT => "uint",
+                    VarEnum.VT_I8 => "long",
+                    VarEnum.VT_UI8 => "ulong",
+                    VarEnum.VT_R4 => "float",
+                    VarEnum.VT_R8 => "double",
+                    _ => null,
+                };
+            case UserDefinedTypeReference { Definition: EnumDefinition definition }:
+                return _context.GetTypeName(definition, _namespace);
+            case UserDefinedTypeReference { Definition: AliasDefinition alias }:
+                return GetSafeArrayElement(alias.Target);
+            case PointerTypeReference pointer when IsInterfaceLike(pointer.ElementType):
+                return GetSafeArrayElement(pointer.ElementType);
+            case UserDefinedTypeReference { Definition: InterfaceDefinition { InterfaceKind: not InterfaceKind.Dispatch } definition }:
+                return _context.GetTypeName(definition, _namespace) + "?";
+            case UserDefinedTypeReference { Definition: CoClassDefinition coClass }:
+                return coClass.DefaultInterface?.Interface is UserDefinedTypeReference defaultInterface ? GetSafeArrayElement(defaultInterface) : null;
+            case WellKnownTypeReference { Type: WellKnownType.IEnumVariant }:
+                return $"{_context.Support}.IEnumVARIANT?";
+            default:
+                // Records (VT_RECORD), CURRENCY, VT_ERROR and dispinterface wrappers are not supported.
+                return null;
+        }
+    }
 
     private ManagedType MapInterface(TypeReference type)
     {
