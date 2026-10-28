@@ -21,6 +21,12 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- The schema of the configuration files and the starter configuration written by 'cscom new config'. -->
+    <EmbeddedResource Include="Configuration\cscom.xsd" LogicalName="CsCom.Configuration.cscom.xsd" />
+    <EmbeddedResource Include="Configuration\cscom.template.xml" LogicalName="CsCom.Configuration.cscom.template.xml" />
+  </ItemGroup>
+
+  <ItemGroup>
     <InternalsVisibleTo Include="CsCom.Tests" />
   </ItemGroup>
 

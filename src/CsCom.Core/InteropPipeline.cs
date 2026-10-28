@@ -70,7 +70,7 @@ public sealed partial class InteropPipeline
         var context = TransformModel(library, options, configuration);
         var annotations = new ModelAnnotations();
         IReadOnlyList<GeneratedDocument> documents = new CSharpEmitter(_loggerFactory.CreateLogger<CSharpEmitter>()).Emit(library, options, annotations);
-        var syntaxContext = new TransformationContext { Options = context.Options, Logger = context.Logger, Annotations = annotations };
+        var syntaxContext = new TransformationContext { Options = context.Options, Logger = context.Logger, Library = library, Annotations = annotations };
         foreach (var transformer in SyntaxTransformers.Concat(configuration.SyntaxTransformers))
         {
             documents = transformer.Transform(documents, syntaxContext);
@@ -96,7 +96,7 @@ public sealed partial class InteropPipeline
         ArgumentNullException.ThrowIfNull(options);
         configuration ??= PipelineConfiguration.Empty;
 
-        var context = new TransformationContext { Options = options, Logger = _loggerFactory.CreateLogger<InteropPipeline>() };
+        var context = new TransformationContext { Options = options, Logger = _loggerFactory.CreateLogger<InteropPipeline>(), Library = library };
         IEnumerable<IModelTransformer> modelTransformers = [new AliasResolver(), .. ModelTransformers, .. configuration.ModelTransformers];
         if (sanitizeNames)
         {

@@ -176,6 +176,26 @@ public sealed class CommandLineTests
     }
 
     [TestMethod]
+    public void NewConfigWritesTheStarterFiles()
+    {
+        string directory = TestEnvironment.CreateDirectory("cli-new-config");
+
+        Assert.AreEqual(0, Run("new", "config", "-o", directory, "-v", "quiet"));
+        string configuration = Path.Combine(directory, "cscom.xml");
+        StringAssert.Contains(File.ReadAllText(configuration), "xsi:noNamespaceSchemaLocation=\"cscom.xsd\"");
+        Assert.IsTrue(File.Exists(Path.Combine(directory, "cscom.xsd")));
+
+        File.WriteAllText(configuration, "<CsCom />");
+        Assert.AreEqual(0, Run("new", "config", "-o", directory, "-v", "quiet"));
+        Assert.AreEqual("<CsCom />", File.ReadAllText(configuration));
+
+        // The starter configuration can be used right away.
+        File.Delete(configuration);
+        Assert.AreEqual(0, Run("new", "config", "-o", directory, "-v", "quiet"));
+        Assert.AreEqual(0, Run("list", TestEnvironment.TestTypeLibrary, "--config", configuration, "-t", "^Color$"));
+    }
+
+    [TestMethod]
     public void RejectsInvalidMarshallingOptions()
     {
         Assert.AreNotEqual(0, Run("new", "project", TestEnvironment.TestTypeLibrary, "--date-field-marshalling", "wrapper"));

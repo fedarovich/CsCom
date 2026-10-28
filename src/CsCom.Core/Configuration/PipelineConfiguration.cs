@@ -27,6 +27,12 @@ public sealed class PipelineConfiguration
     /// <summary>The name of the root element.</summary>
     public const string RootElementName = "CsCom";
 
+    /// <summary>The name of the configuration file written by <see cref="WriteStarterFiles"/>.</summary>
+    public const string DefaultFileName = "cscom.xml";
+
+    /// <summary>The name of the schema file of the configuration files, see <see cref="GetSchema"/>.</summary>
+    public const string SchemaFileName = "cscom.xsd";
+
     private const string ModelTransformersElementName = "ModelTransformers";
     private const string SyntaxTransformersElementName = "SyntaxTransformers";
 
@@ -107,6 +113,42 @@ public sealed class PipelineConfiguration
         var syntaxTransformers = CreateTransformers<ISyntaxTransformer>(root, SyntaxTransformersElementName, "syntax", registry.TryGetSyntaxTransformer, registry.SyntaxTransformerNames);
         root.ThrowIfUnused();
         return new PipelineConfiguration(modelTransformers, syntaxTransformers);
+    }
+
+    /// <summary>
+    /// Gets the XML schema of the configuration files with the built-in transformers, which gives IntelliSense in XML editors
+    /// through <c>xsi:noNamespaceSchemaLocation</c>.
+    /// </summary>
+    public static string GetSchema() => ReadResource("CsCom.Configuration.cscom.xsd");
+
+    /// <summary>
+    /// Writes the schema (<see cref="SchemaFileName"/>) into the directory, and a starter configuration file
+    /// (<see cref="DefaultFileName"/>) with commented examples if the directory does not contain one yet.
+    /// </summary>
+    /// <param name="directory">The directory.</param>
+    /// <returns>The path of the configuration file, and whether it was created.</returns>
+    public static (string Path, bool Created) WriteStarterFiles(string directory)
+    {
+        ArgumentNullException.ThrowIfNull(directory);
+        Directory.CreateDirectory(directory);
+        File.WriteAllText(System.IO.Path.Combine(directory, SchemaFileName), GetSchema().ReplaceLineEndings());
+
+        string path = System.IO.Path.Combine(directory, DefaultFileName);
+        if (File.Exists(path))
+        {
+            return (path, false);
+        }
+
+        File.WriteAllText(path, ReadResource("CsCom.Configuration.cscom.template.xml").ReplaceLineEndings());
+        return (path, true);
+    }
+
+    private static string ReadResource(string name)
+    {
+        using var stream = typeof(PipelineConfiguration).Assembly.GetManifestResourceStream(name)
+            ?? throw new InvalidOperationException($"The resource '{name}' was not found.");
+        using var reader = new StreamReader(stream);
+        return reader.ReadToEnd();
     }
 
     private static List<T> CreateTransformers<T>(

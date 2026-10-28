@@ -107,21 +107,32 @@ interface IDictionary : IDispatch (dual)
   it again. `--config` replaces it, and `--config ""` removes it.
 - **Custom transformers:** they are registered through the API with `InteropPipeline.Registry.AddModelTransformer(name, element => ...)`
   and `AddSyntaxTransformer`, whose factories read their element with `ConfigurationElement`.
+- **Schema and starter file:** `cscom new config [-o <dir>]` writes `cscom.xsd`, the schema of the configuration files, and a
+  `cscom.xml` with commented examples of every transformer, unless it already exists (the schema is always written again). The
+  starter file refers to the schema with `xsi:noNamespaceSchemaLocation`, which gives IntelliSense in Visual Studio, VS Code and
+  other XML editors.
 
 ### Selectors
 
-The `Type`, `Member` and `Parameter` attributes are .NET regular expressions matched against the current names: the type library
-names, unless an earlier transformer renamed them. [`cscom list`](#listing-a-type-library) shows these names.
-- **Matching:** like `Regex.IsMatch`, an expression matches anywhere in the name, so `^IShape$` is needed to match only `IShape`.
-  The matching is case-sensitive; `(?i)` makes it case-insensitive.
-- **Omitted selectors:** an omitted `Type`, `Member` or `Parameter` matches everything, where the transformer allows it.
-- **New names:** `NewName` replaces the matches of the last selector, like `Regex.Replace`, so it can use substitutions such as `$1`.
-  `Type="Shape" NewName="Figure"` renames `IShapeEvents` to `IFigureEvents`. Invalid characters become `_`, and names that clash
-  get a `_` suffix.
+The selectors match the current names: the type library names, unless an earlier transformer renamed them.
+[`cscom list`](#listing-a-type-library) shows these names.
+- **Regular expressions:** `Type`, `Member` and `Parameter` are .NET regular expressions. Like `Regex.IsMatch`, an expression
+  matches anywhere in the name, so `^IShape$` is needed to match only `IShape`. The matching is case-sensitive; `(?i)` makes it
+  case-insensitive.
+- **Exact names:** `TypeName`, `MemberName` and `ParameterName` match a whole name exactly. They cannot be combined with the
+  regular expression of the same selector.
+- **Kinds:** `Kind` restricts the types to a list of kinds separated by `|` or `,`: `enum`, `struct`, `union`, `interface`,
+  `dispinterface`, `coclass` and `module` (the names of `cscom list`), e.g. `Kind="interface|dispinterface"`.
+- **Omitted selectors:** an omitted type, member or parameter selector matches everything, where the transformer allows it.
+- **New names:** with a regular expression, `NewName` replaces the matches of the last selector, like `Regex.Replace`, so it can use
+  substitutions such as `$1`: `Type="Shape" NewName="Figure"` renames `IShapeEvents` to `IFigureEvents`. With an exact name,
+  `NewName` is the new name as is. Invalid characters become `_`, and names that clash get a `_` suffix.
 - **No match:** a transformer whose selectors match nothing logs a warning, e.g. `RenameType: no type matches Type='^IShap$'`, so
   the same file keeps working with other versions of the type library.
 
 ### Model transformers
+
+The type selector (`Type`/`TypeName`) can be combined with `Kind`, except for the transformers that only apply to enums.
 
 | Element | Attributes | Effect |
 | --- | --- | --- |
@@ -129,6 +140,7 @@ names, unless an earlier transformer renamed them. [`cscom list`](#listing-a-typ
 | `RenameMember` | `Type` (optional), `Member`, `Parameter` (optional), `NewName` | Renames the matching members: methods and properties of interfaces (the accessors of a property together), fields of structures, members of enums, and functions and constants of modules. With `Parameter`, renames the matching parameters of the matching methods instead. |
 | `SetMarshalling` | `Type`, `Member` and `Parameter` (all optional); at least one of `Dates`, `Currencies`, `Booleans` (`bcl\|none\|wrapper`), `Bstrs` (`string\|wrapper\|none`) and `SafeArrays` (`array\|sysarray\|wrapper\|none`) | Changes the [marshalling options](#marshalling-options) of the parameters and return values of the matching methods, and of the matching dispinterface properties and structure fields. With `Parameter`, only of the matching parameters, including `[retval]` parameters. Later elements override the values set by earlier ones. |
 | `RemoveEnumPrefix` | `Type` (optional) | Removes the prefix shared by the members of the matching enums, or of all enums. |
+| `ExcludeType` | `Type` and/or `Kind` | Removes the matching types. References to interfaces, dispinterfaces and coclasses become `IDispatch*` (if they are dispatchable) or `IUnknown*`, references to enums `long`, and pointers to structures `void*`. Structures used by value and base interfaces of kept interfaces cannot be removed. |
 
 ```xml
 <RenameMember Type="^IShape$" Member="^Move$" Parameter="^d(.)$" NewName="delta$1" />    <!-- dx, dy -> deltax, deltay -->
@@ -147,10 +159,13 @@ The syntax transformers run after the code is generated, so their selectors matc
 | Element | Attributes | Effect |
 | --- | --- | --- |
 | `AddFlagsAttribute` | `Type` | Adds `[System.Flags]` to the matching enums, which type libraries cannot mark as bit fields. Enums that already have it are not changed. |
+| `AddAttribute` | `Type` and/or `Kind`, `Member` (optional), `Role` (optional), `Attribute` | Adds a C# attribute (without brackets) to the declarations generated for the matching types or members. `Role` selects which declaration: `Declaration` (default), `Extensions` (the extensions class of an interface), `EventHandler`, `EventSink`, `EventDelegate`, `EventArgs`, `Event`, `Property`, `BackingField`, `InlineArray` or `Enumerator`. Declarations that already have the attribute are not changed. |
 
 ```xml
 <SyntaxTransformers>
   <AddFlagsAttribute Type="^(ShapeFlags|Options)$" />
+  <AddAttribute TypeName="ICircle" Attribute='System.Obsolete("Use IShape")' />
+  <AddAttribute TypeName="IShape" Role="Extensions" Attribute="System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)" />
 </SyntaxTransformers>
 ```
 

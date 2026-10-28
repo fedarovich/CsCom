@@ -1,4 +1,3 @@
-using System.Text.RegularExpressions;
 using CsCom.CodeGeneration;
 using CsCom.Configuration;
 using CsCom.Model;
@@ -27,11 +26,11 @@ public sealed partial class MarshallingSetter : IModelTransformer
     /// <summary>
     /// Initializes a new instance of the <see cref="MarshallingSetter"/> class.
     /// </summary>
-    /// <param name="type">Matches the names of the types; all types when <see langword="null"/>.</param>
+    /// <param name="type">Matches the types; all types when <see langword="null"/>.</param>
     /// <param name="member">Matches the names of the members; all members when <see langword="null"/>.</param>
     /// <param name="parameter">Matches the names of the parameters; the whole members when <see langword="null"/>.</param>
     /// <param name="marshalling">The changes to the marshalling options.</param>
-    public MarshallingSetter(Regex? type, Regex? member, Regex? parameter, MarshallingOverrides marshalling)
+    public MarshallingSetter(TypeSelector? type, NameSelector? member, NameSelector? parameter, MarshallingOverrides marshalling)
     {
         Type = type;
         Member = member;
@@ -39,14 +38,14 @@ public sealed partial class MarshallingSetter : IModelTransformer
         Marshalling = marshalling;
     }
 
-    /// <summary>Gets the expression that matches the names of the types; all types when <see langword="null"/>.</summary>
-    public Regex? Type { get; }
+    /// <summary>Gets the selector of the types; all types when <see langword="null"/>.</summary>
+    public TypeSelector? Type { get; }
 
-    /// <summary>Gets the expression that matches the names of the members; all members when <see langword="null"/>.</summary>
-    public Regex? Member { get; }
+    /// <summary>Gets the selector of the members; all members when <see langword="null"/>.</summary>
+    public NameSelector? Member { get; }
 
-    /// <summary>Gets the expression that matches the names of the parameters; the whole members when <see langword="null"/>.</summary>
-    public Regex? Parameter { get; }
+    /// <summary>Gets the selector of the parameters; the whole members when <see langword="null"/>.</summary>
+    public NameSelector? Parameter { get; }
 
     /// <summary>Gets the changes to the marshalling options.</summary>
     public MarshallingOverrides Marshalling { get; }
@@ -55,7 +54,7 @@ public sealed partial class MarshallingSetter : IModelTransformer
     public void Transform(TypeLibrary library, TransformationContext context)
     {
         bool matched = false;
-        foreach (var type in library.Types.Where(t => ModelSelectors.IsMatch(Type, t.Name)))
+        foreach (var type in library.Types.Where(t => ModelSelectors.IsMatch(Type, t)))
         {
             foreach (var method in ModelSelectors.GetMethods(type).Where(m => ModelSelectors.IsMatch(Member, m.Name)))
             {
@@ -104,7 +103,7 @@ public sealed partial class MarshallingSetter : IModelTransformer
 
         if (!matched)
         {
-            LogNoMatch(context.Logger, ModelSelectors.Describe(("Type", Type), ("Member", Member), ("Parameter", Parameter)));
+            LogNoMatch(context.Logger, ModelSelectors.Describe(Type, ("Member", Member), ("Parameter", Parameter)));
         }
     }
 
@@ -124,7 +123,7 @@ public sealed partial class MarshallingSetter : IModelTransformer
             throw element.CreateError($"At least one of the attributes Dates, Currencies, Booleans, Bstrs or SafeArrays is required by <{element.Name}>.");
         }
 
-        return new MarshallingSetter(element.GetRegex("Type"), element.GetRegex("Member"), element.GetRegex("Parameter"), marshalling);
+        return new MarshallingSetter(element.GetTypeSelector(), element.GetSelector("Member"), element.GetSelector("Parameter"), marshalling);
     }
 
     [LoggerMessage(Level = LogLevel.Debug, Message = "SetMarshalling: changing the marshalling of '{Name}'")]

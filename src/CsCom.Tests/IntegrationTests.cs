@@ -79,9 +79,14 @@ public sealed class IntegrationTests
                 <SetMarshalling Type="^IShapeEventsDual$" Member="^Renamed$" Bstrs="wrapper" />
                 <SetMarshalling Type="^DShapeEvents$" Member="^Names$" SafeArrays="sysarray" />
                 <RemoveEnumPrefix />
+                <ExcludeType TypeName="IShapeEventsVt" />
+                <ExcludeType Kind="module" />
               </ModelTransformers>
               <SyntaxTransformers>
                 <AddFlagsAttribute Type="^(Color|AnonymousEnum)$" />
+                <AddAttribute TypeName="ICircleContract" Attribute="System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)" />
+                <AddAttribute TypeName="IShapeContract" Role="Extensions" Attribute='System.Diagnostics.CodeAnalysis.SuppressMessage("Style", "IDE0001")' />
+                <AddAttribute TypeName="IShapeContract" MemberName="MoveBy" Attribute="System.Diagnostics.DebuggerHidden" />
               </SyntaxTransformers>
             </CsCom>
             """);
@@ -97,6 +102,9 @@ public sealed class IntegrationTests
 
         StringAssert.Contains(File.ReadAllText(Path.Combine(directory, "Generated", "IShapeContract.cs")), "void MoveBy(int deltax, int deltay = 0,");
         StringAssert.Contains(File.ReadAllText(Path.Combine(directory, "Generated", "Color.cs")), "[global::System.Flags]");
+        StringAssert.Contains(File.ReadAllText(Path.Combine(directory, "Generated", "ICircleContract.cs")), "[System.ComponentModel.EditorBrowsable(");
+        Assert.IsFalse(File.Exists(Path.Combine(directory, "Generated", "IShapeEventsVt.cs")));
+        Assert.IsFalse(File.Exists(Path.Combine(directory, "Generated", "Kernel.cs")));
         Build(project);
     }
 

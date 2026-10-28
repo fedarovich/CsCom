@@ -79,6 +79,9 @@ public sealed class ConfigurableTransformerTests
         "RenameMember: no parameter matches Member='^Move$', Parameter='^z$'")]
     [DataRow("""<SetMarshalling Type="^Nothing$" Dates="wrapper" />""", "SetMarshalling: nothing matches Type='^Nothing$'")]
     [DataRow("""<RemoveEnumPrefix Type="^IShape$" />""", "RemoveEnumPrefix: no enum matches Type='^IShape$'")]
+    [DataRow("""<RenameType TypeName="IShap" NewName="X" />""", "RenameType: no type matches TypeName='IShap'")]
+    [DataRow("""<ExcludeType Type="^IShape$" Kind="enum|struct" />""", "ExcludeType: no type matches Type='^IShape$', Kind='enum|struct'")]
+    [DataRow("""<RenameMember Kind="coclass" MemberName="Move" NewName="X" />""", "RenameMember: no member matches MemberName='Move', Kind='coclass'")]
     public void WarnsWhenNothingMatches(string transformer, string warning)
     {
         var (_, logger) = Apply(transformer);
@@ -133,14 +136,139 @@ public sealed class ConfigurableTransformerTests
     [DataRow(
         """<SetMarshalling SafeArrays="vector" />""",
         "cscom.xml(1,43): 'vector' is not a valid value of the attribute 'SafeArrays': one of Array, SysArray, Wrapper, None is expected.")]
-    [DataRow("""<RenameType NewName="X" />""", "cscom.xml(1,28): The attribute 'Type' is required by <RenameType>.")]
-    [DataRow("""<RenameMember Type="^IShape$" NewName="X" />""", "cscom.xml(1,28): The attribute 'Member' is required by <RenameMember>.")]
+    [DataRow("""<RenameType NewName="X" />""", "cscom.xml(1,28): The attribute 'Type' or 'TypeName' is required by <RenameType>.")]
+    [DataRow("""<RenameMember Type="^IShape$" NewName="X" />""", "cscom.xml(1,28): The attribute 'Member' or 'MemberName' is required by <RenameMember>.")]
     [DataRow("""<RemoveEnumPrefix Prefix="xl" />""", "cscom.xml(1,45): The attribute 'Prefix' is not supported by <RemoveEnumPrefix>.")]
+    [DataRow("""<RemoveEnumPrefix Kind="enum" />""", "cscom.xml(1,45): The attribute 'Kind' is not supported by <RemoveEnumPrefix>.")]
+    [DataRow(
+        """<RenameType Type="A" TypeName="B" NewName="X" />""",
+        "cscom.xml(1,28): The attributes 'Type' and 'TypeName' cannot be combined in <RenameType>.")]
+    [DataRow(
+        """<RenameType Type="A" Kind="enum|class" NewName="X" />""",
+        "cscom.xml(1,48): 'class' is not a valid value of the attribute 'Kind': a list of enum, struct, union, interface, dispinterface, coclass, module, all is expected.")]
+    [DataRow("""<ExcludeType />""", "cscom.xml(1,28): The attribute 'Type', 'TypeName' or 'Kind' is required by <ExcludeType>.")]
     public void ReportsConfigurationErrors(string transformer, string message)
     {
         var exception = Assert.ThrowsExactly<CsComException>(() => Parse(transformer));
 
         Assert.AreEqual(message, exception.Message);
+    }
+
+    [TestMethod]
+    public void ExactNamesMatchWholeNames()
+    {
+        var (library, logger) = Apply("""
+            <RenameType TypeName="IShape" NewName="Figure$1" />
+            <RenameMember TypeName="Color" MemberName="Red" NewName="Rot" />
+            <RemoveEnumPrefix TypeName="AnonymousEnum" />
+            """);
+
+        var names = library.Types.Select(static t => t.Name).ToList();
+        CollectionAssert.Contains(names, "Figure$1", "The new name of an exact name is literal.");
+        CollectionAssert.IsSubsetOf(new[] { "IShapeEventsVt", "IShapeEventsDual", "Shape" }, names);
+        Assert.AreEqual("Rot", Get<EnumDefinition>(library, "Color").Members[0].Name);
+        CollectionAssert.AreEqual(new[] { "First", "Second" }, Get<EnumDefinition>(library, "AnonymousEnum").Members.Select(static m => m.Name).ToArray());
+        Assert.IsEmpty(logger.Warnings);
+    }
+
+    [TestMethod]
+    public void KindsFilterTheTypes()
+    {
+        var (library, _) = Apply("""
+            <RenameType Type="Shape" Kind="interface | DispInterface" NewName="Figure" />
+            <RenameMember Kind="enum" Member="^Red$" NewName="Rot" />
+            """);
+
+        var names = library.Types.Select(static t => t.Name).ToList();
+        CollectionAssert.IsSubsetOf(new[] { "IFigure", "DFigureEvents", "_FigureEvents", "IFigureEventsVt", "Shape", "EventShape" }, names);
+        Assert.AreEqual("Rot", Get<EnumDefinition>(library, "Color").Members[0].Name);
+    }
+
+    [TestMethod]
+    public void ExcludeTypeReplacesTheReferences()
+    {
+        var (library, logger) = Apply("""
+            <ExcludeType TypeName="IShapeEventsVt" />
+            <ExcludeType TypeName="DShapeEvents" />
+            <ExcludeType TypeName="Color" />
+            <ExcludeType TypeName="Record" />
+            <ExcludeType Kind="module" />
+            """);
+
+        var names = library.Types.Select(static t => t.Name).ToList();
+        CollectionAssert.IsNotSubsetOf(new[] { "IShapeEventsVt" }, names);
+        Assert.IsFalse(names.Intersect(["IShapeEventsVt", "DShapeEvents", "Color", "Record", "Kernel"]).Any());
+
+        var unknown = new PrimitiveTypeReference(System.Runtime.InteropServices.VarEnum.VT_UNKNOWN);
+        var dispatch = new PrimitiveTypeReference(System.Runtime.InteropServices.VarEnum.VT_DISPATCH);
+        var @long = new PrimitiveTypeReference(System.Runtime.InteropServices.VarEnum.VT_I4);
+        Assert.IsTrue(Get<CoClassDefinition>(library, "EventShape").Interfaces.Any(i => i.IsSource && i.Interface == unknown));
+        Assert.IsTrue(Get<CoClassDefinition>(library, "Shape").Interfaces.Any(i => i.IsSource && i.Interface == dispatch));
+
+        var shape = Get<InterfaceDefinition>(library, "IShape");
+        Assert.AreEqual(new PointerTypeReference(dispatch), shape.Methods.Single(static m => m.Name == "GetEvents").Parameters[0].Type);
+        Assert.AreEqual(new PointerTypeReference(@long), shape.Methods.Single(static m => m.Name == "Color" && m.InvokeKind == InvokeKind.PropertyGet).Parameters[0].Type);
+        Assert.AreEqual(@long, shape.Methods.Single(static m => m.Name == "Move").Parameters[4].Type);
+
+        var numbers = Get<InterfaceDefinition>(library, "ICalculator").Methods.Single(static m => m.Name == "Numbers");
+        Assert.AreEqual(new PointerTypeReference(new PrimitiveTypeReference(System.Runtime.InteropServices.VarEnum.VT_VOID)), numbers.Parameters[1].Type);
+        Assert.IsEmpty(logger.Warnings);
+    }
+
+    [TestMethod]
+    [DataRow("""<ExcludeType TypeName="Point" />""", "The structure 'Point' cannot be excluded, because 'Record.Corners' uses it.")]
+    [DataRow("""<ExcludeType TypeName="Number" />""", "The union 'Number' cannot be excluded, because 'ICalculator.Numbers' uses it.")]
+    [DataRow("""<ExcludeType TypeName="IShape" />""", "The interface 'IShape' cannot be excluded, because 'ICircle' derives from it.")]
+    public void ExcludeTypeKeepsTheLayouts(string transformer, string message)
+    {
+        var exception = Assert.ThrowsExactly<CsComException>(() => Apply(transformer));
+
+        Assert.AreEqual(message, exception.Message);
+    }
+
+    [TestMethod]
+    public void AddAttributeAddsTheAttributeToTheSelectedDeclarations()
+    {
+        var (documents, logger) = Generate("""
+            <AddAttribute TypeName="IShape" Attribute='System.Obsolete("x")' />
+            <AddAttribute TypeName="IShape" Role="Extensions" Attribute='System.Obsolete( "x" )' />
+            <AddAttribute TypeName="IShape" MemberName="Move" Attribute='System.Obsolete("x")' />
+            <AddAttribute TypeName="IShape" Attribute='System.Obsolete("x")' />
+            <AddAttribute Kind="enum" Attribute="System.CLSCompliant(false)" />
+            """);
+
+        string shape = documents.Single(static d => d.RelativePath == "IShape.cs").GetText();
+        Assert.AreEqual(3, shape.Split("[System.Obsolete(").Length - 1);
+        StringAssert.Contains(shape.ReplaceLineEndings("\n"), "/// </summary>\n[System.Obsolete(\"x\")]\n[global::System.Runtime.InteropServices.Marshalling.GeneratedComInterface(");
+        StringAssert.Contains(shape.ReplaceLineEndings("\n"), "/// </summary>\n[System.Obsolete(\"x\")]\npublic static partial class IShapeExtensions");
+        StringAssert.Contains(shape.ReplaceLineEndings("\n"), "    [System.Obsolete(\"x\")]\n    void Move(");
+        StringAssert.Contains(documents.Single(static d => d.RelativePath == "Color.cs").GetText(), "[System.CLSCompliant(false)]");
+        Assert.IsEmpty(logger.Warnings);
+    }
+
+    [TestMethod]
+    public void AddAttributeWarnsWhenNothingMatches()
+    {
+        var (_, logger) = Generate("""<AddAttribute TypeName="IShape" Role="EventSink" Attribute="System.Obsolete" />""");
+
+        CollectionAssert.AreEqual(
+            new[] { "AddAttribute: no declaration matches TypeName='IShape' with the role EventSink" },
+            logger.Warnings.ToArray());
+    }
+
+    [TestMethod]
+    [DataRow("""<AddAttribute TypeName="IShape" Attribute="System.Obsolete(" />""", "cscom.xml(1,29): 'System.Obsolete(' is not a valid attribute:")]
+    [DataRow("""<AddAttribute TypeName="IShape" Attribute="return: X" />""", "cscom.xml(1,29): 'return: X' is not a valid attribute: a single attribute list without a target is expected")]
+    [DataRow("""<AddAttribute TypeName="IShape" Role="Nope" Attribute="X" />""", "cscom.xml(1,60): 'Nope' is not a valid value of the attribute 'Role':")]
+    [DataRow("""<AddAttribute Attribute="X" />""", "cscom.xml(1,29): The attribute 'Type', 'TypeName' or 'Kind' is required by <AddAttribute>.")]
+    public void AddAttributeReportsConfigurationErrors(string transformer, string message)
+    {
+        var exception = Assert.ThrowsExactly<CsComException>(() => PipelineConfiguration.Parse(
+            XDocument.Parse($"<CsCom><SyntaxTransformers>{transformer}</SyntaxTransformers></CsCom>", LoadOptions.SetLineInfo),
+            TransformerRegistry.CreateDefault(),
+            "cscom.xml"));
+
+        StringAssert.StartsWith(exception.Message, message);
     }
 
     [TestMethod]
@@ -225,7 +353,7 @@ public sealed class ConfigurableTransformerTests
             TransformerRegistry.CreateDefault(),
             "cscom.xml"));
 
-        Assert.AreEqual("cscom.xml(1,29): The attribute 'Type' is required by <AddFlagsAttribute>.", exception.Message);
+        Assert.AreEqual("cscom.xml(1,29): The attribute 'Type' or 'TypeName' is required by <AddFlagsAttribute>.", exception.Message);
     }
 
     private static int CountFlags(string text) => text.Split("[global::System.Flags]").Length - 1;

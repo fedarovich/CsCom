@@ -39,6 +39,12 @@ public sealed class TransformationContext
     public required ILogger Logger { get; init; }
 
     /// <summary>
+    /// The model, which is also passed to the model transformers; for the syntax transformers, the model the code was
+    /// generated from, e.g. to find the members of a type.
+    /// </summary>
+    public TypeLibrary? Library { get; init; }
+
+    /// <summary>
     /// Associates the generated syntax nodes with the model elements; empty for the model transformers, which run before the
     /// code is generated.
     /// </summary>

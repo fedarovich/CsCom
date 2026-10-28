@@ -1,0 +1,240 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The schema of the CsCom configuration files (cscom.xml), which add model and syntax transformers to the pipeline. -->
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema">
+
+  <xs:element name="CsCom">
+    <xs:annotation>
+      <xs:documentation>Adds and configures the transformers of the CsCom pipeline. The transformers run in the order of their elements.</xs:documentation>
+    </xs:annotation>
+    <xs:complexType>
+      <xs:all>
+        <xs:element name="ModelTransformers" type="ModelTransformers" minOccurs="0">
+          <xs:annotation>
+            <xs:documentation>The transformers of the model, which run after the aliases are resolved and before the names are sanitized.</xs:documentation>
+          </xs:annotation>
+        </xs:element>
+        <xs:element name="SyntaxTransformers" type="SyntaxTransformers" minOccurs="0">
+          <xs:annotation>
+            <xs:documentation>The transformers of the generated syntax trees, which match the final names.</xs:documentation>
+          </xs:annotation>
+        </xs:element>
+      </xs:all>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:complexType name="ModelTransformers">
+    <xs:choice minOccurs="0" maxOccurs="unbounded">
+      <xs:element name="RenameType">
+        <xs:annotation>
+          <xs:documentation>Renames the matching types. With a regular expression, NewName replaces its matches and can use substitutions such as $1.</xs:documentation>
+        </xs:annotation>
+        <xs:complexType>
+          <xs:attributeGroup ref="TypeSelector" />
+          <xs:attributeGroup ref="KindSelector" />
+          <xs:attributeGroup ref="NewName" />
+        </xs:complexType>
+      </xs:element>
+      <xs:element name="RenameMember">
+        <xs:annotation>
+          <xs:documentation>Renames the matching members (the accessors of a property together), or with Parameter, the matching parameters of the matching methods.</xs:documentation>
+        </xs:annotation>
+        <xs:complexType>
+          <xs:attributeGroup ref="TypeSelector" />
+          <xs:attributeGroup ref="KindSelector" />
+          <xs:attributeGroup ref="MemberSelector" />
+          <xs:attributeGroup ref="ParameterSelector" />
+          <xs:attributeGroup ref="NewName" />
+        </xs:complexType>
+      </xs:element>
+      <xs:element name="SetMarshalling">
+        <xs:annotation>
+          <xs:documentation>Changes the marshalling options of the parameters and return values of the matching methods, and of the matching dispinterface properties and structure fields; with Parameter, only of the matching parameters.</xs:documentation>
+        </xs:annotation>
+        <xs:complexType>
+          <xs:attributeGroup ref="TypeSelector" />
+          <xs:attributeGroup ref="KindSelector" />
+          <xs:attributeGroup ref="MemberSelector" />
+          <xs:attributeGroup ref="ParameterSelector" />
+          <xs:attribute name="Dates" type="ValueMarshalling">
+            <xs:annotation>
+              <xs:documentation>The representation of DATE values: bcl (DateTime), none (double) or wrapper (ComDate).</xs:documentation>
+            </xs:annotation>
+          </xs:attribute>
+          <xs:attribute name="Currencies" type="ValueMarshalling">
+            <xs:annotation>
+              <xs:documentation>The representation of CURRENCY values: bcl (decimal), none (long) or wrapper (ComCurrency).</xs:documentation>
+            </xs:annotation>
+          </xs:attribute>
+          <xs:attribute name="Booleans" type="ValueMarshalling">
+            <xs:annotation>
+              <xs:documentation>The representation of VARIANT_BOOL values: bcl (bool), none (short) or wrapper (ComBool).</xs:documentation>
+            </xs:annotation>
+          </xs:attribute>
+          <xs:attribute name="Bstrs" type="BstrMarshalling">
+            <xs:annotation>
+              <xs:documentation>The representation of BSTR parameters and return values: string, wrapper (ComBstr) or none (nint).</xs:documentation>
+            </xs:annotation>
+          </xs:attribute>
+          <xs:attribute name="SafeArrays" type="SafeArrayMarshalling">
+            <xs:annotation>
+              <xs:documentation>The representation of typed SAFEARRAY parameters and return values: array (T[]), sysarray (System.Array), wrapper (ComSafeArray&lt;T&gt;) or none (nint).</xs:documentation>
+            </xs:annotation>
+          </xs:attribute>
+        </xs:complexType>
+      </xs:element>
+      <xs:element name="RemoveEnumPrefix">
+        <xs:annotation>
+          <xs:documentation>Removes the prefix shared by the members of the matching enums, or of all enums, that ends at a word boundary, e.g. xl from xlArea and xlBar.</xs:documentation>
+        </xs:annotation>
+        <xs:complexType>
+          <xs:attributeGroup ref="TypeSelector" />
+        </xs:complexType>
+      </xs:element>
+      <xs:element name="ExcludeType">
+        <xs:annotation>
+          <xs:documentation>Removes the matching types. References to interfaces and coclasses become IUnknown* or IDispatch*, to enums long, and pointers to structures void*.</xs:documentation>
+        </xs:annotation>
+        <xs:complexType>
+          <xs:attributeGroup ref="TypeSelector" />
+          <xs:attributeGroup ref="KindSelector" />
+        </xs:complexType>
+      </xs:element>
+    </xs:choice>
+  </xs:complexType>
+
+  <xs:complexType name="SyntaxTransformers">
+    <xs:choice minOccurs="0" maxOccurs="unbounded">
+      <xs:element name="AddFlagsAttribute">
+        <xs:annotation>
+          <xs:documentation>Adds [System.Flags] to the matching enums.</xs:documentation>
+        </xs:annotation>
+        <xs:complexType>
+          <xs:attributeGroup ref="TypeSelector" />
+        </xs:complexType>
+      </xs:element>
+      <xs:element name="AddAttribute">
+        <xs:annotation>
+          <xs:documentation>Adds an attribute to the declarations generated for the matching types or members.</xs:documentation>
+        </xs:annotation>
+        <xs:complexType>
+          <xs:attributeGroup ref="TypeSelector" />
+          <xs:attributeGroup ref="KindSelector" />
+          <xs:attributeGroup ref="MemberSelector" />
+          <xs:attribute name="Role" type="SyntaxRole" default="Declaration">
+            <xs:annotation>
+              <xs:documentation>The role of the declarations generated for the types or members, e.g. Extensions for the extensions class of an interface.</xs:documentation>
+            </xs:annotation>
+          </xs:attribute>
+          <xs:attribute name="Attribute" type="xs:string" use="required">
+            <xs:annotation>
+              <xs:documentation>The C# attribute without brackets, e.g. System.Obsolete("Use IShape2").</xs:documentation>
+            </xs:annotation>
+          </xs:attribute>
+        </xs:complexType>
+      </xs:element>
+    </xs:choice>
+  </xs:complexType>
+
+  <xs:attributeGroup name="TypeSelector">
+    <xs:attribute name="Type" type="xs:string">
+      <xs:annotation>
+        <xs:documentation>A .NET regular expression that matches anywhere in the names of the types, e.g. ^IShape$. Cannot be combined with TypeName.</xs:documentation>
+      </xs:annotation>
+    </xs:attribute>
+    <xs:attribute name="TypeName" type="xs:string">
+      <xs:annotation>
+        <xs:documentation>The exact name of the type. Cannot be combined with Type.</xs:documentation>
+      </xs:annotation>
+    </xs:attribute>
+  </xs:attributeGroup>
+
+  <xs:attributeGroup name="KindSelector">
+    <xs:attribute name="Kind" type="TypeKinds">
+      <xs:annotation>
+        <xs:documentation>The kinds of the types, separated by | or ,: enum, struct, union, interface, dispinterface, coclass, module or all.</xs:documentation>
+      </xs:annotation>
+    </xs:attribute>
+  </xs:attributeGroup>
+
+  <xs:attributeGroup name="MemberSelector">
+    <xs:attribute name="Member" type="xs:string">
+      <xs:annotation>
+        <xs:documentation>A .NET regular expression that matches anywhere in the names of the members. Cannot be combined with MemberName.</xs:documentation>
+      </xs:annotation>
+    </xs:attribute>
+    <xs:attribute name="MemberName" type="xs:string">
+      <xs:annotation>
+        <xs:documentation>The exact name of the member. Cannot be combined with Member.</xs:documentation>
+      </xs:annotation>
+    </xs:attribute>
+  </xs:attributeGroup>
+
+  <xs:attributeGroup name="ParameterSelector">
+    <xs:attribute name="Parameter" type="xs:string">
+      <xs:annotation>
+        <xs:documentation>A .NET regular expression that matches anywhere in the names of the parameters. Cannot be combined with ParameterName.</xs:documentation>
+      </xs:annotation>
+    </xs:attribute>
+    <xs:attribute name="ParameterName" type="xs:string">
+      <xs:annotation>
+        <xs:documentation>The exact name of the parameter. Cannot be combined with Parameter.</xs:documentation>
+      </xs:annotation>
+    </xs:attribute>
+  </xs:attributeGroup>
+
+  <xs:attributeGroup name="NewName">
+    <xs:attribute name="NewName" type="xs:string" use="required">
+      <xs:annotation>
+        <xs:documentation>The new name; with a regular expression, the replacement of its matches, which can use substitutions such as $1.</xs:documentation>
+      </xs:annotation>
+    </xs:attribute>
+  </xs:attributeGroup>
+
+  <xs:simpleType name="TypeKinds">
+    <xs:restriction base="xs:string">
+      <xs:pattern value="\s*(enum|struct|union|interface|dispinterface|coclass|module|all)(\s*[,|]\s*(enum|struct|union|interface|dispinterface|coclass|module|all))*\s*" />
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="ValueMarshalling">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="bcl" />
+      <xs:enumeration value="none" />
+      <xs:enumeration value="wrapper" />
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="BstrMarshalling">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="string" />
+      <xs:enumeration value="wrapper" />
+      <xs:enumeration value="none" />
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="SafeArrayMarshalling">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="array" />
+      <xs:enumeration value="sysarray" />
+      <xs:enumeration value="wrapper" />
+      <xs:enumeration value="none" />
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="SyntaxRole">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="Declaration" />
+      <xs:enumeration value="Extensions" />
+      <xs:enumeration value="Property" />
+      <xs:enumeration value="BackingField" />
+      <xs:enumeration value="InlineArray" />
+      <xs:enumeration value="Enumerator" />
+      <xs:enumeration value="EventHandler" />
+      <xs:enumeration value="EventSink" />
+      <xs:enumeration value="EventDelegate" />
+      <xs:enumeration value="EventArgs" />
+      <xs:enumeration value="Event" />
+    </xs:restriction>
+  </xs:simpleType>
+
+</xs:schema>

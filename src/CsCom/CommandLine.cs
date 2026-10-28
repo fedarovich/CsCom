@@ -230,6 +230,18 @@ internal static class CommandLine
                 ConfigurationPath = result.GetValue(UpdateConfigOption),
             })));
 
+        var newConfig = new Command("config", "Writes a starter cscom.xml configuration file, unless it exists, and the cscom.xsd schema that gives IntelliSense in XML editors.")
+        {
+            OutputOption,
+        };
+        newConfig.SetAction(static result => Run(result, (_, loggerFactory) =>
+        {
+            var logger = loggerFactory.CreateLogger("cscom");
+            var (path, created) = PipelineConfiguration.WriteStarterFiles(Path.GetFullPath(result.GetValue(OutputOption) ?? Environment.CurrentDirectory));
+            logger.LogInformation(created ? "Created '{Path}' and its schema" : "Updated the schema of the existing '{Path}'", path);
+            return path;
+        }));
+
         var list = new Command("list", "Lists the types and members of a type library with the names that the transformers of configuration files match.")
         {
             TypeLibraryArgument,
@@ -241,7 +253,7 @@ internal static class CommandLine
         return new RootCommand("Generates COM interop code from type libraries using source-generated COM interop.")
         {
             VerbosityOption,
-            new Command("new", "Creates a new interop project or assembly.") { newProject, newAssembly },
+            new Command("new", "Creates a new interop project or assembly, or a configuration file.") { newProject, newAssembly, newConfig },
             new Command("update", "Updates an interop project.") { updateProject },
             list,
         };

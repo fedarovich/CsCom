@@ -1,6 +1,7 @@
 using System.Text.RegularExpressions;
 using System.Xml;
 using System.Xml.Linq;
+using CsCom.Transformations;
 
 namespace CsCom.Configuration;
 
@@ -129,6 +130,83 @@ public sealed class ConfigurationElement
     /// <exception cref="CsComException">The attribute is missing or its value is not a valid regular expression.</exception>
     public Regex GetRequiredRegex(string name) =>
         GetRegex(name) ?? throw CreateError($"The attribute '{name}' is required by <{Name}>.");
+
+    /// <summary>
+    /// Gets the value of a flags enum attribute: names of enum members in any case, separated by <c>,</c> or <c>|</c>.
+    /// </summary>
+    /// <returns>The combined value, or <see langword="null"/> if the attribute is missing.</returns>
+    /// <exception cref="CsComException">A name is not valid.</exception>
+    public TEnum? GetFlags<TEnum>(string name)
+        where TEnum : struct, Enum
+    {
+        string? value = GetAttribute(name);
+        if (value is null)
+        {
+            return null;
+        }
+
+        ulong result = 0;
+        foreach (string part in value.Split([',', '|'], StringSplitOptions.TrimEntries))
+        {
+            if (part.Length == 0 || !char.IsLetter(part[0]) || !Enum.TryParse(part, ignoreCase: true, out TEnum flag) || !Enum.IsDefined(flag) || ToUInt64(flag) == 0)
+            {
+                var names = Enum.GetValues<TEnum>().Where(static v => ToUInt64(v) != 0).Select(static v => v.ToString().ToLowerInvariant());
+                throw CreateError(
+                    Element.Attribute(name)!,
+                    FilePath,
+                    $"'{part}' is not a valid value of the attribute '{name}': a list of {string.Join(", ", names)} is expected.");
+            }
+
+            result |= ToUInt64(flag);
+        }
+
+        return (TEnum)Enum.ToObject(typeof(TEnum), result);
+
+        static ulong ToUInt64(TEnum value) => Convert.ToUInt64(value, System.Globalization.CultureInfo.InvariantCulture);
+    }
+
+    /// <summary>
+    /// Gets a selector of names given by an attribute: a regular expression (see <see cref="GetRegex"/>), or an exact name in the
+    /// attribute with the <c>Name</c> suffix, e.g. <c>Type</c> or <c>TypeName</c>.
+    /// </summary>
+    /// <returns>The selector, or <see langword="null"/> if both attributes are missing.</returns>
+    /// <exception cref="CsComException">Both attributes are specified, or the regular expression is not valid.</exception>
+    public NameSelector? GetSelector(string name)
+    {
+        string exactName = name + "Name";
+        var pattern = GetRegex(name);
+        string? exact = GetAttribute(exactName);
+        if (pattern is not null && exact is not null)
+        {
+            throw CreateError($"The attributes '{name}' and '{exactName}' cannot be combined in <{Name}>.");
+        }
+
+        return pattern is not null ? NameSelector.FromPattern(pattern) : exact is not null ? NameSelector.FromName(exact) : null;
+    }
+
+    /// <summary>Gets a selector of names that must be specified, see <see cref="GetSelector"/>.</summary>
+    /// <exception cref="CsComException">The selector is missing or not valid.</exception>
+    public NameSelector GetRequiredSelector(string name) =>
+        GetSelector(name) ?? throw CreateError($"The attribute '{name}' or '{name}Name' is required by <{Name}>.");
+
+    /// <summary>
+    /// Gets a selector of types given by the <c>Type</c> or <c>TypeName</c> attribute and the <c>Kind</c> attribute, a list of
+    /// <see cref="TypeKinds"/> separated by <c>,</c> or <c>|</c>.
+    /// </summary>
+    /// <param name="required">Whether a name or a kind must be specified.</param>
+    /// <returns>The selector, or <see langword="null"/> if none of the attributes is specified.</returns>
+    /// <exception cref="CsComException">The attributes are not valid, or missing although required.</exception>
+    public TypeSelector? GetTypeSelector(bool required = false)
+    {
+        var name = GetSelector("Type");
+        var kinds = GetFlags<TypeKinds>("Kind");
+        if (name is null && kinds is null)
+        {
+            return required ? throw CreateError($"The attribute 'Type', 'TypeName' or 'Kind' is required by <{Name}>.") : null;
+        }
+
+        return new TypeSelector(name, kinds ?? TypeKinds.All);
+    }
 
     /// <summary>Gets the child elements.</summary>
     /// <param name="name">The name of the elements, or <see langword="null"/> for all child elements.</param>

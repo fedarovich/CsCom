@@ -7,14 +7,19 @@ public static class TypeReferenceRewriter
 {
     /// <summary>
     /// Replaces every type reference in the library with the result of <paramref name="rewrite"/>.
-    /// The function is applied to element types first, then to the containing pointer or array types.
     /// </summary>
-    public static void Rewrite(TypeLibrary library, Func<TypeReference, TypeReference> rewrite)
+    /// <param name="library">The library.</param>
+    /// <param name="rewrite">Rewrites a type reference.</param>
+    /// <param name="deep">
+    /// Whether the function is applied to the element types first, then to the containing pointer or array types; otherwise
+    /// it is applied once to each whole type reference, and rewrites the element types itself if needed.
+    /// </param>
+    public static void Rewrite(TypeLibrary library, Func<TypeReference, TypeReference> rewrite, bool deep = true)
     {
         ArgumentNullException.ThrowIfNull(library);
         ArgumentNullException.ThrowIfNull(rewrite);
 
-        TypeReference Apply(TypeReference type) => RewriteDeep(type, rewrite);
+        TypeReference Apply(TypeReference type) => deep ? RewriteDeep(type, rewrite) : rewrite(type);
 
         foreach (var type in library.Types)
         {

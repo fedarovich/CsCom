@@ -1,4 +1,3 @@
-using System.Text.RegularExpressions;
 using CsCom.Configuration;
 using CsCom.Model;
 using Microsoft.Extensions.Logging;
@@ -20,13 +19,13 @@ public sealed partial class EnumPrefixRemover : IModelTransformer
     /// Initializes a new instance of the <see cref="EnumPrefixRemover"/> class.
     /// </summary>
     /// <param name="type">Matches the names of the enums; all enums when <see langword="null"/>.</param>
-    public EnumPrefixRemover(Regex? type)
+    public EnumPrefixRemover(NameSelector? type)
     {
         Type = type;
     }
 
-    /// <summary>Gets the expression that matches the names of the enums; all enums when <see langword="null"/>.</summary>
-    public Regex? Type { get; }
+    /// <summary>Gets the selector of the names of the enums; all enums when <see langword="null"/>.</summary>
+    public NameSelector? Type { get; }
 
     /// <inheritdoc/>
     public void Transform(TypeLibrary library, TransformationContext context)
@@ -83,7 +82,7 @@ public sealed partial class EnumPrefixRemover : IModelTransformer
         return 0;
     }
 
-    internal static EnumPrefixRemover Create(ConfigurationElement element) => new(element.GetRegex("Type"));
+    internal static EnumPrefixRemover Create(ConfigurationElement element) => new(element.GetSelector("Type"));
 
     private static bool IsBoundary(string name, int index) =>
         index < name.Length

@@ -225,6 +225,39 @@ public sealed class CodeGenerationTests : VerifyBase
         return Verify(ToTargets(documents.Where(static d => d.RelativePath is "Color.cs")));
     }
 
+    [TestMethod]
+    public Task GeneratesExcludedTypes()
+    {
+        // The references to DShapeEvents become IDispatch pointers and those to Color become int; EventShape has no sink for
+        // IShapeEventsVt.
+        var documents = Generate(new CodeGenerationOptions { Namespace = "Interop.CsComTest", ToolVersion = TestEnvironment.ToolVersion }, """
+            <CsCom>
+              <ModelTransformers>
+                <ExcludeType Type="^(DShapeEvents|Color|IShapeEventsVt)$" />
+              </ModelTransformers>
+            </CsCom>
+            """);
+
+        Assert.IsFalse(documents.Any(static d => d.RelativePath is "DShapeEvents.cs" or "Color.cs" or "IShapeEventsVt.cs"));
+        return Verify(ToTargets(documents.Where(static d => d.RelativePath is "IShape.cs")));
+    }
+
+    [TestMethod]
+    public Task GeneratesAttributes()
+    {
+        var documents = Generate(new CodeGenerationOptions { Namespace = "Interop.CsComTest", ToolVersion = TestEnvironment.ToolVersion }, """
+            <CsCom>
+              <SyntaxTransformers>
+                <AddAttribute TypeName="ICircle" Attribute="System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)" />
+                <AddAttribute TypeName="ICircle" Role="Extensions" Attribute='System.Obsolete("Use IShape")' />
+                <AddAttribute TypeName="ICircle" MemberName="Radius" Attribute="System.CLSCompliant(false)" />
+              </SyntaxTransformers>
+            </CsCom>
+            """);
+
+        return Verify(ToTargets(documents.Where(static d => d.RelativePath is "ICircle.cs")));
+    }
+
     private static IReadOnlyList<GeneratedDocument> Generate(CodeGenerationOptions options, string? configuration = null)
     {
         var pipeline = new InteropPipeline();

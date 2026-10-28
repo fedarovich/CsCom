@@ -1,4 +1,3 @@
-using System.Text.RegularExpressions;
 using CsCom.CodeGeneration;
 using CsCom.Configuration;
 using CsCom.Model;
@@ -22,42 +21,26 @@ public sealed partial class FlagsAttributeAdder : ISyntaxTransformer
     /// Initializes a new instance of the <see cref="FlagsAttributeAdder"/> class.
     /// </summary>
     /// <param name="type">Matches the names of the enums.</param>
-    public FlagsAttributeAdder(Regex type)
+    public FlagsAttributeAdder(NameSelector type)
     {
         Type = type;
     }
 
-    /// <summary>Gets the expression that matches the names of the enums.</summary>
-    public Regex Type { get; }
+    /// <summary>Gets the selector of the names of the enums.</summary>
+    public NameSelector Type { get; }
 
     /// <inheritdoc/>
     public IReadOnlyList<GeneratedDocument> Transform(IReadOnlyList<GeneratedDocument> documents, TransformationContext context)
     {
-        bool matched = false;
-        var result = new List<GeneratedDocument>(documents.Count);
-        foreach (var document in documents)
-        {
-            var enums = document.Root.GetAnnotatedNodes(ModelAnnotations.AnnotationKind)
+        var result = SyntaxEditing.AddAttribute(
+            documents,
+            root => root.GetAnnotatedNodes(ModelAnnotations.AnnotationKind)
                 .OfType<EnumDeclarationSyntax>()
-                .Where(e => context.Annotations.GetElements(e).Any(m => m is { Element: EnumDefinition definition, Role: SyntaxRole.Declaration } && Type.IsMatch(definition.Name)))
-                .ToList();
-            matched |= enums.Count > 0;
-
-            var targets = enums.Where(static e => !SyntaxEditing.HasAttribute(e, "System", "Flags")).ToList();
-            if (targets.Count == 0)
-            {
-                result.Add(document);
-                continue;
-            }
-
-            foreach (var target in targets)
-            {
-                LogAdding(context.Logger, target.Identifier.ValueText);
-            }
-
-            var root = document.Root.ReplaceNodes(targets, static (_, rewritten) => SyntaxEditing.AddAttributeList(rewritten, Syntax.AttributeList(Syntax.Attribute("global::System.Flags"))));
-            result.Add(document with { Root = root });
-        }
+                .Where(e => context.Annotations.GetElements(e).Any(m => m is { Element: EnumDefinition definition, Role: SyntaxRole.Declaration } && Type.IsMatch(definition.Name))),
+            Syntax.AttributeList(Syntax.Attribute("global::System.Flags")),
+            static declaration => SyntaxEditing.HasAttribute(declaration, "System", "Flags"),
+            declaration => LogAdding(context.Logger, ((EnumDeclarationSyntax)declaration).Identifier.ValueText),
+            out bool matched);
 
         if (!matched)
         {
@@ -67,7 +50,7 @@ public sealed partial class FlagsAttributeAdder : ISyntaxTransformer
         return result;
     }
 
-    internal static FlagsAttributeAdder Create(ConfigurationElement element) => new(element.GetRequiredRegex("Type"));
+    internal static FlagsAttributeAdder Create(ConfigurationElement element) => new(element.GetRequiredSelector("Type"));
 
     [LoggerMessage(Level = LogLevel.Debug, Message = "AddFlagsAttribute: adding [Flags] to '{Name}'")]
     private static partial void LogAdding(ILogger logger, string name);
