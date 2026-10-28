@@ -7,7 +7,7 @@ namespace CsCom.Output;
 /// </summary>
 public abstract class NewOutputRequest
 {
-    /// <summary>The path to the type library.</summary>
+    /// <summary>The type library: a file, a registered LIBID or a ProgID, see <see cref="TypeLibraries.TypeLibrarySource"/>.</summary>
     public required string TypeLibraryPath { get; init; }
 
     /// <summary>The output directory.</summary>
@@ -77,8 +77,11 @@ public sealed class NewAssemblyRequest : NewOutputRequest
 /// </summary>
 public sealed class UpdateProjectRequest
 {
-    /// <summary>The path to the type library.</summary>
-    public required string TypeLibraryPath { get; init; }
+    /// <summary>
+    /// The type library: a file, a registered LIBID or a ProgID, see <see cref="TypeLibraries.TypeLibrarySource"/>; the type
+    /// library recorded in <c>cscom.json</c> when <see langword="null"/>.
+    /// </summary>
+    public string? TypeLibraryPath { get; init; }
 
     /// <summary>The directory of the project; the current directory by default.</summary>
     public string? ProjectDirectory { get; init; }

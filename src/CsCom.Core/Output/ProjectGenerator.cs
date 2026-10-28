@@ -1,6 +1,7 @@
 using CsCom.CodeGeneration;
 using CsCom.Configuration;
 using CsCom.Model;
+using CsCom.TypeLibraries;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -64,11 +65,12 @@ public sealed partial class ProjectGenerator
         }
 
         int languageVersion = ValidateLanguageVersion(request.LanguageVersion ?? manifest.LanguageVersion, manifest.TargetFrameworks);
-        var library = _pipeline.ReadTypeLibrary(request.TypeLibraryPath);
+        string source = request.TypeLibraryPath ?? manifest.TypeLibrary;
+        var library = _pipeline.ReadTypeLibrary(source);
         var updated = manifest with
         {
             ToolVersion = ToolInfo.Version,
-            TypeLibrary = Path.GetFullPath(request.TypeLibraryPath),
+            TypeLibrary = TypeLibrarySource.Normalize(source),
             Namespace = request.Namespace ?? manifest.Namespace,
             LanguageVersion = languageVersion,
             SingleFile = request.SingleFile ?? manifest.SingleFile,
@@ -202,7 +204,7 @@ public sealed partial class ProjectGenerator
         return new CsComManifest
         {
             ToolVersion = ToolInfo.Version,
-            TypeLibrary = Path.GetFullPath(request.TypeLibraryPath),
+            TypeLibrary = TypeLibrarySource.Normalize(request.TypeLibraryPath),
             Name = name,
             Namespace = @namespace,
             TargetFrameworks = targetFrameworks,

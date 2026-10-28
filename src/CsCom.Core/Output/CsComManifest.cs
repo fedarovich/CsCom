@@ -15,7 +15,10 @@ public sealed record CsComManifest
     /// <summary>The version of the tool that generated the project.</summary>
     public required string ToolVersion { get; init; }
 
-    /// <summary>The path to the type library the project was generated from.</summary>
+    /// <summary>
+    /// The type library the project was generated from: the full path of a file, or a registered LIBID or ProgID, which is
+    /// looked up again when the project is updated.
+    /// </summary>
     public required string TypeLibrary { get; init; }
 
     /// <summary>The project and assembly name.</summary>

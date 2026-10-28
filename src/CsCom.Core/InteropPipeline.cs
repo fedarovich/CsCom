@@ -11,7 +11,7 @@ namespace CsCom;
 /// <summary>
 /// The processing pipeline: reads a type library into the model, transforms the model, generates the Roslyn syntax trees and transforms them.
 /// </summary>
-public sealed class InteropPipeline
+public sealed partial class InteropPipeline
 {
     private readonly ILoggerFactory _loggerFactory;
 
@@ -43,7 +43,17 @@ public sealed class InteropPipeline
     /// <summary>
     /// Reads the type library into the model.
     /// </summary>
-    public TypeLibrary ReadTypeLibrary(string path) => new TypeLibraryReader(_loggerFactory.CreateLogger<TypeLibraryReader>()).Read(path);
+    /// <param name="source">The type library: a file, a registered LIBID or a ProgID, see <see cref="TypeLibrarySource"/>.</param>
+    public TypeLibrary ReadTypeLibrary(string source)
+    {
+        string path = TypeLibrarySource.Resolve(source);
+        if (!TypeLibrarySource.IsFile(source))
+        {
+            LogResolved(_loggerFactory.CreateLogger<InteropPipeline>(), source, path);
+        }
+
+        return new TypeLibraryReader(_loggerFactory.CreateLogger<TypeLibraryReader>()).Read(path);
+    }
 
     /// <summary>
     /// Transforms the model and generates the C# files.
@@ -57,13 +67,7 @@ public sealed class InteropPipeline
         ArgumentNullException.ThrowIfNull(options);
         configuration ??= PipelineConfiguration.Empty;
 
-        var context = new TransformationContext { Options = options, Logger = _loggerFactory.CreateLogger<InteropPipeline>() };
-        IEnumerable<IModelTransformer> modelTransformers = [new AliasResolver(), .. ModelTransformers, .. configuration.ModelTransformers, new NameSanitizer()];
-        foreach (var transformer in modelTransformers)
-        {
-            transformer.Transform(library, context);
-        }
-
+        var context = TransformModel(library, options, configuration);
         var annotations = new ModelAnnotations();
         IReadOnlyList<GeneratedDocument> documents = new CSharpEmitter(_loggerFactory.CreateLogger<CSharpEmitter>()).Emit(library, options, annotations);
         var syntaxContext = new TransformationContext { Options = context.Options, Logger = context.Logger, Annotations = annotations };
@@ -74,4 +78,39 @@ public sealed class InteropPipeline
 
         return documents;
     }
+
+    /// <summary>
+    /// Applies the model transformers: resolves the aliases, applies the transformers of the pipeline and of the configuration,
+    /// and sanitizes the names.
+    /// </summary>
+    /// <param name="library">The model, which is transformed in place.</param>
+    /// <param name="options">The code generation options.</param>
+    /// <param name="configuration">The transformers added by a configuration file, applied after those of the pipeline.</param>
+    /// <param name="sanitizeNames">
+    /// Whether the names are made valid and unique C# identifiers; <see langword="false"/> keeps the names that the transformers see.
+    /// </param>
+    /// <returns>The context passed to the transformers.</returns>
+    public TransformationContext TransformModel(TypeLibrary library, CodeGenerationOptions options, PipelineConfiguration? configuration = null, bool sanitizeNames = true)
+    {
+        ArgumentNullException.ThrowIfNull(library);
+        ArgumentNullException.ThrowIfNull(options);
+        configuration ??= PipelineConfiguration.Empty;
+
+        var context = new TransformationContext { Options = options, Logger = _loggerFactory.CreateLogger<InteropPipeline>() };
+        IEnumerable<IModelTransformer> modelTransformers = [new AliasResolver(), .. ModelTransformers, .. configuration.ModelTransformers];
+        if (sanitizeNames)
+        {
+            modelTransformers = modelTransformers.Append(new NameSanitizer());
+        }
+
+        foreach (var transformer in modelTransformers)
+        {
+            transformer.Transform(library, context);
+        }
+
+        return context;
+    }
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Resolved the type library '{Source}' to '{Path}'")]
+    private static partial void LogResolved(ILogger logger, string source, string path);
 }

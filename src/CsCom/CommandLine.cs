@@ -1,6 +1,8 @@
 using System.CommandLine;
 using System.CommandLine.Parsing;
+using System.Text.RegularExpressions;
 using CsCom.CodeGeneration;
+using CsCom.Configuration;
 using CsCom.Output;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Console;
@@ -12,9 +14,24 @@ namespace CsCom;
 /// </summary>
 internal static class CommandLine
 {
+    private const string TypeLibraryDescription =
+        "The type library: a .tlb file, a .dll, .ocx or .exe file with an embedded type library, a registered LIBID ({GUID} or {GUID}:major.minor) or a ProgID.";
+
     private static readonly Argument<string> TypeLibraryArgument = new("TlbPath")
     {
-        Description = "The type library: a .tlb file or a .dll, .ocx or .exe file with an embedded type library.",
+        Description = TypeLibraryDescription,
+    };
+
+    private static readonly Argument<string?> UpdateTypeLibraryArgument = new("TlbPath")
+    {
+        Description = TypeLibraryDescription + " The type library recorded in cscom.json by default.",
+        Arity = ArgumentArity.ZeroOrOne,
+    };
+
+    private static readonly Option<string?> TypeFilterOption = new("--type", "-t")
+    {
+        Description = "A regular expression that matches the names of the types to list.",
+        HelpName = "REGEX",
     };
 
     private static readonly Option<string?> OutputOption = new("--output", "-o")
@@ -189,7 +206,7 @@ internal static class CommandLine
 
         var updateProject = new Command("project", "Regenerates the C# files of a project created with 'cscom new project'.")
         {
-            TypeLibraryArgument,
+            UpdateTypeLibraryArgument,
             OutputOption,
             NamespaceOption,
             LanguageVersionOption,
@@ -202,7 +219,7 @@ internal static class CommandLine
         updateProject.SetAction(static result => Run(result, (pipeline, loggerFactory) =>
             new ProjectGenerator(pipeline, loggerFactory).UpdateProject(new UpdateProjectRequest
             {
-                TypeLibraryPath = result.GetRequiredValue(TypeLibraryArgument),
+                TypeLibraryPath = result.GetValue(UpdateTypeLibraryArgument),
                 ProjectDirectory = result.GetValue(OutputOption),
                 Namespace = result.GetValue(NamespaceOption),
                 LanguageVersion = result.GetValue(LanguageVersionOption),
@@ -213,12 +230,45 @@ internal static class CommandLine
                 ConfigurationPath = result.GetValue(UpdateConfigOption),
             })));
 
+        var list = new Command("list", "Lists the types and members of a type library with the names that the transformers of configuration files match.")
+        {
+            TypeLibraryArgument,
+            TypeFilterOption,
+        };
+        list.Options.Add(ConfigOption);
+        list.SetAction(static result => Run(result, (pipeline, _) => List(result, pipeline), quietByDefault: true));
+
         return new RootCommand("Generates COM interop code from type libraries using source-generated COM interop.")
         {
             VerbosityOption,
             new Command("new", "Creates a new interop project or assembly.") { newProject, newAssembly },
             new Command("update", "Updates an interop project.") { updateProject },
+            list,
         };
+    }
+
+    // Writes the model after the aliases are resolved and the model transformers of the configuration are applied, before
+    // the names are sanitized: the names that the selectors of configuration files match.
+    private static bool List(ParseResult result, InteropPipeline pipeline)
+    {
+        Regex? filter = null;
+        if (result.GetValue(TypeFilterOption) is { } pattern)
+        {
+            try
+            {
+                filter = new Regex(pattern, RegexOptions.CultureInvariant, TimeSpan.FromSeconds(1));
+            }
+            catch (ArgumentException e)
+            {
+                throw new CsComException($"'{pattern}' is not a valid regular expression: {e.Message}", e);
+            }
+        }
+
+        var library = pipeline.ReadTypeLibrary(result.GetRequiredValue(TypeLibraryArgument));
+        var configuration = result.GetValue(ConfigOption) is { } path ? PipelineConfiguration.Load(Path.GetFullPath(path), pipeline.Registry) : null;
+        pipeline.TransformModel(library, new CodeGenerationOptions { Namespace = "Interop" }, configuration, sanitizeNames: false);
+        ModelPrinter.Write(library, result.InvocationConfiguration.Output, filter);
+        return true;
     }
 
     private static void AddNewOptions(Command command)
@@ -243,9 +293,11 @@ internal static class CommandLine
     private static bool? GetSingleFile(ParseResult result) =>
         result.GetResult(UpdateSingleFileOption) is { Implicit: false } option ? option.GetValueOrDefault<bool?>() ?? true : null;
 
-    private static int Run(ParseResult result, Func<InteropPipeline, ILoggerFactory, object> action)
+    // Commands that write their result to the output log only warnings and errors unless a verbosity is specified.
+    private static int Run(ParseResult result, Func<InteropPipeline, ILoggerFactory, object> action, bool quietByDefault = false)
     {
-        using var loggerFactory = CreateLoggerFactory(result.GetValue(VerbosityOption));
+        var verbosity = quietByDefault && result.GetResult(VerbosityOption) is null or { Implicit: true } ? Verbosity.Minimal : result.GetValue(VerbosityOption);
+        using var loggerFactory = CreateLoggerFactory(verbosity);
         var logger = loggerFactory.CreateLogger("cscom");
         if (!OperatingSystem.IsWindows())
         {

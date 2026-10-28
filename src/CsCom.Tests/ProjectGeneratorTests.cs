@@ -301,6 +301,35 @@ public sealed class ProjectGeneratorTests
     }
 
     [TestMethod]
+    public void UpdatesFromTheRecordedTypeLibrary()
+    {
+        string directory = TestEnvironment.CreateDirectory("recorded-tlb");
+        _generator.CreateProject(new NewProjectRequest { TypeLibraryPath = TestEnvironment.TestTypeLibrary, OutputDirectory = directory });
+        File.Delete(Path.Combine(directory, "Generated", "IShape.cs"));
+
+        _generator.UpdateProject(new UpdateProjectRequest { ProjectDirectory = directory });
+
+        Assert.IsTrue(File.Exists(Path.Combine(directory, "Generated", "IShape.cs")));
+        Assert.AreEqual(TestEnvironment.TestTypeLibrary, CsComManifest.Read(directory).TypeLibrary);
+    }
+
+    [TestMethod]
+    public void RecordsRegisteredTypeLibraries()
+    {
+        string directory = TestEnvironment.CreateDirectory("progid");
+        _generator.CreateProject(new NewProjectRequest { TypeLibraryPath = "Scripting.Dictionary", OutputDirectory = directory });
+
+        Assert.AreEqual("Scripting.Dictionary", CsComManifest.Read(directory).TypeLibrary);
+        Assert.IsTrue(File.Exists(Path.Combine(directory, "Interop.Scripting.csproj")));
+        File.Delete(Path.Combine(directory, "Generated", "IDictionary.cs"));
+
+        _generator.UpdateProject(new UpdateProjectRequest { ProjectDirectory = directory });
+
+        Assert.IsTrue(File.Exists(Path.Combine(directory, "Generated", "IDictionary.cs")));
+        Assert.AreEqual("Scripting.Dictionary", CsComManifest.Read(directory).TypeLibrary);
+    }
+
+    [TestMethod]
     public void UpdateRequiresAManifest()
     {
         var exception = Assert.ThrowsExactly<CsComException>(() => _generator.UpdateProject(new UpdateProjectRequest

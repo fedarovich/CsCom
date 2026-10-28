@@ -1,0 +1,156 @@
+﻿enum Color
+    Red = 0
+    Green = 1
+    Blue = 2
+    Transparent = -2147483648
+enum AnonymousEnum
+    AnonymousFirst = 1
+    AnonymousSecond = 2
+struct Point
+    long X
+    long Y
+struct Record
+    BSTR Name
+    VARIANT Value
+    VARIANT_BOOL Flag
+    IUnknown* Unknown
+    double[4] Values
+    Point[2] Corners
+    BSTR[2] Names
+    GUID Id
+    DATE Date
+    CURRENCY Money
+    DECIMAL Amount
+    long checked
+    Point* Next
+union Number
+    long AsLong
+    double AsDouble
+interface IShape : IDispatch (dual)
+    propget Name([out, retval] BSTR* Name)
+    propput Name([in] BSTR Name)
+    propget Color([out, retval] Color* Color)
+    propput Color([in] Color Color)
+    propget Area([out, retval] double* Area)
+    propputref Parent([in] IShape* Parent)
+    propget Parent([out, retval] IShape** Parent)
+    propget Tag([out, retval] VARIANT* Tag)
+    propput Tag([in] VARIANT Tag)
+    propputref Tag([in] VARIANT Tag)
+    method Move([in] long dx, [in, optional, defaultvalue(0)] long dy, [in, optional] VARIANT scale, [in, optional, defaultvalue("label")] BSTR label, [in, optional, defaultvalue(2)] Color Color, [in, optional, defaultvalue(1.5)] double factor, [in, optional, defaultvalue(true)] VARIANT_BOOL Flag)
+    propput WriteOnly([in] long value)
+    propget Item([in] VARIANT index, [out, retval] VARIANT* Item)
+    propput Item([in] VARIANT index, [in] VARIANT Item)
+    propget Coordinate([in] long index, [out, retval] long* Value)
+    propget _NewEnum([out, retval] IUnknown** enumerator)
+    method Clone([out, retval] IShape** Clone)
+    method GetEvents([out, retval] DShapeEvents** events)
+    method Dispatch([in] IDispatch* Dispatch, [out, retval] IDispatch** result)
+    method Dates([in] DATE Date, [in] CURRENCY Money, [in] DECIMAL Amount, [out, retval] DATE* result)
+    method Font([out, retval] Font** Font)
+dispinterface DShapeEvents
+    property long Counter
+    property readonly BSTR Description
+    property Color Color
+    method void Changed([in] BSTR property)
+    method long Compute([in] long a, [in, optional] VARIANT b)
+    method void Resize([in, out] long* width, [out] long* height)
+    propget BSTR Title()
+    propput void Title([in] BSTR value)
+    propget VARIANT Item([in] long index)
+    propget long Cell([in] long row, [in] long column)
+    propput void Cell([in] long row, [in] long column, [in] long value)
+    propget IUnknown* _NewEnum()
+    method IShape* GetShape()
+    method SAFEARRAY(BSTR) Names()
+    method DShapeEvents* Self()
+    method void Create()
+interface ICalculator : IUnknown
+    method Add([in] long a, [in] long b, [out, retval] long* result)
+    method Divide([in] double a, [in] double b, [out] double* quotient, [out] double* remainder)
+    method Swap([in, out] long* a, [in, out] long* b)
+    method GetPoint([out, retval] Point* Point)
+    method SetPoint([in] Point Point)
+    method MovePoint([in] Point* Point)
+    method long NoHResult([in] long Value)
+    method void NoReturn([in] long Value)
+    method Strings([in] BSTR bstr, [in] LPWSTR wide, [in] LPSTR ansi, [out, retval] BSTR* result)
+    method Arrays([in] SAFEARRAY(BSTR) Values, [out, retval] SAFEARRAY(long)* result)
+    method Buffer([in] long size, [in] unsigned char* Buffer)
+    method VoidPointer([in] void* pointer)
+    method GetHandle([out, retval] long* Handle)
+    method Locale([in, lcid] long lcid, [out, retval] long* result)
+    method Keywords([in] long params, [in] long lock, [in] long Value, [out, retval] long* result)
+    method Numbers([in] Number Number, [in] Record* Record, [in] GUID* Id, [out, retval] HRESULT* result)
+    method Integers([in] char c, [in] unsigned char b, [in] short s, [in] unsigned short us, [in] int i, [in] unsigned int ui, [in] hyper h, [in] unsigned hyper uh, [in] float f)
+    method enumerator([out, retval] IEnumVARIANT** enumerator)
+interface ICircle : IShape (dual)
+    propget Radius([out, retval] double* Radius)
+    propput Radius([in] double Radius)
+interface IMarshalling : IUnknown
+    method Dates([in] DATE Date, [out] DATE* Next, [out, retval] DATE* result)
+    method Money([in] CURRENCY Money, [in, out] CURRENCY* total, [out, retval] CURRENCY* result)
+    method Strings([in] SAFEARRAY(BSTR) Values, [out, retval] SAFEARRAY(BSTR)* result)
+    method Variants([in] SAFEARRAY(VARIANT)* Values, [out, retval] SAFEARRAY(VARIANT)* result)
+    method Numbers([in, out] SAFEARRAY(long)* Values)
+    method Flags([in] SAFEARRAY(VARIANT_BOOL) Values, [out, retval] SAFEARRAY(double)* result)
+    method Colors([in] SAFEARRAY(Color) Values, [out, retval] SAFEARRAY(Color)* result)
+    method DateArray([in] SAFEARRAY(DATE) Values, [out, retval] SAFEARRAY(DATE)* result)
+    method Unknowns([in] SAFEARRAY(IUnknown*) Values, [out, retval] SAFEARRAY(IUnknown*)* result)
+    method Calculators([in] SAFEARRAY(ICalculator*) Values, [out, retval] SAFEARRAY(ICalculator*)* result)
+    method Dispatches([in] SAFEARRAY(IDispatch*) Values, [out, retval] long* count)
+    method Unsupported([in] SAFEARRAY(Point) points, [in] SAFEARRAY(CURRENCY) Money)
+interface IArrays : IUnknown
+    method Matrix([in] SAFEARRAY(double) Values, [out, retval] SAFEARRAY(double)* result)
+    method Names([in, out] SAFEARRAY(BSTR)* Names)
+    method Values([in] VARIANT Value, [out, retval] VARIANT* result)
+interface IStrings : IUnknown
+    method Echo([in] BSTR Value, [out, retval] BSTR* result)
+    method Append([in, out] BSTR* Value, [in, optional, defaultvalue("!")] BSTR suffix)
+    method Split([in] BSTR Value, [out] BSTR* first, [out] BSTR* rest)
+dispinterface _ShapeEvents
+    method void Moved([in] long X, [in] long Y)
+    method void Closing([in, out] VARIANT_BOOL* Cancel)
+    method void Renamed([in] BSTR Name)
+    method BSTR Describe([in] VARIANT Value, [out] long* length)
+interface IShapeEventsVt : IUnknown
+    method Moved([in] long X, [in] long Y)
+    method Closing([in, out] VARIANT_BOOL* Cancel)
+    method Renamed([in] BSTR Name)
+    method Describe([in] VARIANT Value, [out] long* length, [out, retval] BSTR* result)
+interface IShapeEventsDual : IDispatch (dual)
+    method Moved([in] long X, [in] long Y)
+    method Closing([in, out] VARIANT_BOOL* Cancel)
+    method Renamed([in] BSTR Name)
+    method Describe([in] VARIANT Value, [out] long* length, [out, retval] BSTR* result)
+coclass Shape
+    [default] IShape
+    ICircle
+    [default, source] DShapeEvents
+coclass Calculator
+    [default] ICalculator
+coclass ShapeEvents
+    [default] DShapeEvents
+coclass EventShape
+    [default] IShape
+    [default, source] _ShapeEvents
+    [source] IShapeEventsVt
+    [source] IShapeEventsDual
+module Kernel
+    const long MaxValue = 100
+    const double Pi = 3.14159
+    const LPSTR Greeting = "Hello"
+    const short Small = -5
+    const unsigned char Byte = 255
+    function unsigned long GetTickCount()
+    function long Beep([in] unsigned long frequency, [in] unsigned long duration)
+    function int StringLength([in] LPWSTR Value)
+dispinterface Font (stdole)
+    property BSTR Name
+    property CURRENCY Size
+    property VARIANT_BOOL Bold
+    property VARIANT_BOOL Italic
+    property VARIANT_BOOL Underline
+    property VARIANT_BOOL Strikethrough
+    property short Weight
+    property short Charset

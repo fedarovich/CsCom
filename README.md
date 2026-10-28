@@ -16,14 +16,26 @@ added in .NET 8, so the interop assemblies can be trimmed and used with Native A
 # Generate a C# project with the interop types
 cscom new project C:\Windows\System32\scrrun.dll -o Interop.Scripting
 
-# Regenerate the C# files of a project created with 'new project'
-cscom update project C:\Windows\System32\scrrun.dll -o Interop.Scripting
+# Regenerate the C# files of a project created with 'new project' (from the type library recorded in cscom.json)
+cscom update project -o Interop.Scripting
 
 # Build a ready-to-use interop assembly
 cscom new assembly C:\Windows\System32\scrrun.dll -o bin
+
+# List the types and members of a type library
+cscom list Scripting.Dictionary --type ^IDictionary$
 ```
 
-The type library can be a `.tlb` file or a `.dll`, `.ocx` or `.exe` file with an embedded type library.
+The type library (`TlbPath`) can be:
+- **A file:** a `.tlb` file, or a `.dll`, `.ocx` or `.exe` file with an embedded type library. A resource index can be appended,
+  e.g. `foo.dll\2`.
+- **A registered LIBID:** `{00020813-0000-0000-C000-000000000046}`, optionally with the version as in the registry
+  (`{00020813-0000-0000-C000-000000000046}:1.9`). The highest registered version is used by default.
+- **The ProgID of a registered class,** e.g. `Excel.Application` or `Scripting.Dictionary`, whose type library is used.
+
+Registered type libraries are found in the registry, so Office type libraries don't have to be looked up inside the Office
+installation. `cscom.json` records the LIBID or the ProgID rather than the path, and `update project` looks it up again, e.g.
+after an Office update.
 
 | Option | Description |
 | --- | --- |
@@ -46,13 +58,30 @@ The type library can be a `.tlb` file or a `.dll`, `.ocx` or `.exe` file with an
 | `-v`, `--verbosity <LEVEL>` | `quiet`, `minimal`, `normal` (default), `detailed` or `diagnostic`. |
 
 `new project` writes `<Name>.csproj`, a `cscom.json` file with the options it was generated with, and the C# files into the
-`Generated` folder. `update project` replaces the C# files of the `Generated` folder using the options recorded in `cscom.json`.
-It accepts `--namespace`, `--csharp-version`, `--single-file [true|false]`, the marshalling options, `--event-style`, `--struct-properties` and `--config`
+`Generated` folder. `update project` replaces the C# files of the `Generated` folder using the type library and the options recorded
+in `cscom.json`; a `TlbPath` replaces the recorded type library. It accepts `--namespace`, `--csharp-version`, `--single-file [true|false]`, the marshalling options, `--event-style`, `--struct-properties` and `--config`
 (an empty value removes the file) to change them. Code outside of the `Generated` folder, e.g. partial classes, is not touched.
 
 `new assembly` generates the project in a temporary directory, builds it with `dotnet build` once per runtime identifier and copies
 the assemblies, PDBs and XML documentation (and `CsCom.Runtime.dll`) to the output directory. With a single target framework and at
 most one runtime identifier, the files are copied directly into the output directory; otherwise into `<TFM>\<RID>` subfolders.
+
+### Listing a type library
+
+`cscom list <TlbPath>` writes the types and members of a type library with IDL-like signatures, using the names that the selectors
+of the [configuration file](#configuration-file) match. `--type <REGEX>` (`-t`) selects the types to list, and `--config <PATH>`
+applies the model transformers of a configuration file first, e.g. to check renames.
+
+```
+> cscom list Scripting.Dictionary --type ^IDictionary$
+interface IDictionary : IDispatch (dual)
+    propputref Item([in] VARIANT* Key, [in] VARIANT* pRetItem)
+    propput Item([in] VARIANT* Key, [in] VARIANT* pRetItem)
+    propget Item([in] VARIANT* Key, [out, retval] VARIANT* pRetItem)
+    method Add([in] VARIANT* Key, [in] VARIANT* Item)
+    propget Count([out, retval] long* pCount)
+    ...
+```
 
 ## Configuration file
 
@@ -82,7 +111,7 @@ most one runtime identifier, the files are copied directly into the output direc
 ### Selectors
 
 The `Type`, `Member` and `Parameter` attributes are .NET regular expressions matched against the current names: the type library
-names, unless an earlier transformer renamed them.
+names, unless an earlier transformer renamed them. [`cscom list`](#listing-a-type-library) shows these names.
 - **Matching:** like `Regex.IsMatch`, an expression matches anywhere in the name, so `^IShape$` is needed to match only `IShape`.
   The matching is case-sensitive; `(?i)` makes it case-insensitive.
 - **Omitted selectors:** an omitted `Type`, `Member` or `Parameter` matches everything, where the transformer allows it.

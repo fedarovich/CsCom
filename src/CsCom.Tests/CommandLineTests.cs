@@ -141,6 +141,41 @@ public sealed class CommandLineTests
     }
 
     [TestMethod]
+    public void UpdatesWithoutTheTypeLibrary()
+    {
+        string directory = TestEnvironment.CreateDirectory("cli-update-recorded");
+        Assert.AreEqual(0, Run("new", "project", TestEnvironment.TestTypeLibrary, "-o", directory, "-v", "quiet"));
+
+        Assert.AreEqual(0, Run("update", "project", "-o", directory, "-v", "quiet"));
+        Assert.AreEqual(0, Run("update", "project", "-o", directory, "--single-file", "-v", "quiet"));
+        Assert.IsTrue(CsComManifest.Read(directory).SingleFile);
+    }
+
+    [TestMethod]
+    public void ListsTheModel()
+    {
+        var (exitCode, output) = RunWithOutput("list", TestEnvironment.TestTypeLibrary);
+        Assert.AreEqual(0, exitCode);
+        StringAssert.Contains(output, "interface IShape : IDispatch (dual)");
+        StringAssert.Contains(output, "    propget Name(");
+        StringAssert.Contains(output, "enum AnonymousEnum");
+
+        (exitCode, output) = RunWithOutput("list", TestEnvironment.TestTypeLibrary, "--type", "^Color$");
+        Assert.AreEqual(0, exitCode);
+        StringAssert.StartsWith(output, "enum Color");
+        Assert.IsFalse(output.Contains("interface", StringComparison.Ordinal));
+
+        string configuration = Path.Combine(TestEnvironment.CreateDirectory("cli-list"), "cscom.xml");
+        File.WriteAllText(configuration, """<CsCom><ModelTransformers><RenameType Type="^Color$" NewName="Colour" /></ModelTransformers></CsCom>""");
+        (exitCode, output) = RunWithOutput("list", TestEnvironment.TestTypeLibrary, "-t", "^Col", "--config", configuration);
+        Assert.AreEqual(0, exitCode);
+        StringAssert.StartsWith(output, "enum Colour");
+
+        Assert.AreEqual(1, RunWithOutput("list", TestEnvironment.TestTypeLibrary, "--type", "(").ExitCode);
+        Assert.AreEqual(1, RunWithOutput("list", "CsCom.Does.Not.Exist").ExitCode);
+    }
+
+    [TestMethod]
     public void RejectsInvalidMarshallingOptions()
     {
         Assert.AreNotEqual(0, Run("new", "project", TestEnvironment.TestTypeLibrary, "--date-field-marshalling", "wrapper"));
@@ -190,4 +225,15 @@ public sealed class CommandLineTests
         Output = TextWriter.Null,
         Error = TextWriter.Null,
     });
+
+    private static (int ExitCode, string Output) RunWithOutput(params string[] args)
+    {
+        using var output = new StringWriter();
+        int exitCode = CommandLine.Create().Parse(args).Invoke(new System.CommandLine.InvocationConfiguration
+        {
+            Output = output,
+            Error = TextWriter.Null,
+        });
+        return (exitCode, output.ToString());
+    }
 }
