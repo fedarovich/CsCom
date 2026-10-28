@@ -117,6 +117,30 @@ public sealed class CommandLineTests
     }
 
     [TestMethod]
+    public void ConfigurationFileIsRecordedAndCanBeRemoved()
+    {
+        string root = TestEnvironment.CreateDirectory("cli-config");
+        string directory = Path.Combine(root, "Project");
+        string configuration = Path.Combine(root, "cscom.xml");
+        File.WriteAllText(configuration, "<CsCom><ModelTransformers /><SyntaxTransformers /></CsCom>");
+
+        Assert.AreEqual(0, Run("new", "project", TestEnvironment.TestTypeLibrary, "-o", directory, "--config", configuration, "-v", "quiet"));
+        Assert.AreEqual(@"..\cscom.xml", CsComManifest.Read(directory).Configuration);
+
+        Assert.AreEqual(0, Run("update", "project", TestEnvironment.TestTypeLibrary, "-o", directory, "-v", "quiet"));
+        Assert.AreEqual(@"..\cscom.xml", CsComManifest.Read(directory).Configuration);
+
+        // A file with an unknown transformer is rejected before anything is written.
+        File.WriteAllText(configuration, "<CsCom><ModelTransformers><Unknown /></ModelTransformers></CsCom>");
+        Assert.AreEqual(1, Run("update", "project", TestEnvironment.TestTypeLibrary, "-o", directory, "-v", "quiet"));
+        Assert.AreEqual(1, Run("new", "project", TestEnvironment.TestTypeLibrary, "-o", Path.Combine(root, "Failed"), "--config", configuration, "-v", "quiet"));
+        Assert.IsFalse(Directory.Exists(Path.Combine(root, "Failed")));
+
+        Assert.AreEqual(0, Run("update", "project", TestEnvironment.TestTypeLibrary, "-o", directory, "--config", "", "-v", "quiet"));
+        Assert.IsNull(CsComManifest.Read(directory).Configuration);
+    }
+
+    [TestMethod]
     public void RejectsInvalidMarshallingOptions()
     {
         Assert.AreNotEqual(0, Run("new", "project", TestEnvironment.TestTypeLibrary, "--date-field-marshalling", "wrapper"));

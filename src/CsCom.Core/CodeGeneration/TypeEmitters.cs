@@ -52,23 +52,24 @@ internal sealed partial class TypeEmitters
         {
             string type;
             FieldConversion? conversion = null;
+            var fieldMapper = mapper.WithMarshalling(field.Marshalling);
             if (field.Type is FixedArrayTypeReference array)
             {
                 // Inline arrays rather than fixed buffers, so that the elements can be accessed without an unsafe context.
                 // Their elements have the COM types, because they cannot be converted one by one.
-                var element = mapper.MapField(array.ElementType);
+                var element = fieldMapper.MapField(array.ElementType);
                 type = GetBufferName(field.Name);
                 members.Add(InlineArray(type, element.Name, array.Length));
                 isUnsafe |= element.IsPointer;
             }
             else
             {
-                var mapped = mapper.MapField(field.Type);
+                var mapped = fieldMapper.MapField(field.Type);
                 type = mapped.Name;
                 isUnsafe |= mapped.IsPointer;
                 if (mode != StructProperties.Never)
                 {
-                    conversion = mapper.GetFieldConversion(field.Type);
+                    conversion = fieldMapper.GetFieldConversion(field.Type);
                 }
             }
 
@@ -255,7 +256,7 @@ internal sealed partial class TypeEmitters
 
     private MethodDeclarationSyntax EmitFunction(MethodDefinition function, SignatureBuilder signatures, ref bool isUnsafe)
     {
-        var returnType = signatures.Mapper.MapValue(function.ReturnType);
+        var returnType = signatures.Mapper.WithMarshalling(function.ReturnMarshalling).MapValue(function.ReturnType);
         var parameters = signatures.MapParameters(function.Parameters);
         isUnsafe |= returnType.IsPointer || parameters.Any(static p => p.TypeName.EndsWith('*'));
 

@@ -128,10 +128,10 @@ internal sealed partial class EventEmitter
             // Dual interfaces are also invoked through IDispatch::Invoke, which cannot pass pointers. It passes SAFEARRAYs and
             // BSTRs in VARIANTs, which are converted to .NET arrays and strings rather than to the wrappers or the raw pointers,
             // so these events are only received through the vtable.
-            bool needsVtable = method.Parameters.Any(p => (TypeMapper.TryGetByRefElement(p.Type, out var element) ? element : p.Type) switch
+            bool needsVtable = method.Parameters.Any(p => (TypeMapper.TryGetByRefElement(p.Type, out var element) ? element : p.Type, p.Marshalling?.Apply(marshalling) ?? marshalling) switch
             {
-                SafeArrayTypeReference => marshalling.SafeArrays is SafeArrayMarshalling.Wrapper or SafeArrayMarshalling.None,
-                PrimitiveTypeReference { VarType: VarEnum.VT_BSTR } => marshalling.Bstrs is BstrMarshalling.Wrapper or BstrMarshalling.None,
+                (SafeArrayTypeReference, var options) => options.SafeArrays is SafeArrayMarshalling.Wrapper or SafeArrayMarshalling.None,
+                (PrimitiveTypeReference { VarType: VarEnum.VT_BSTR }, var options) => options.Bstrs is BstrMarshalling.Wrapper or BstrMarshalling.None,
                 _ => false,
             });
             @event = @event with

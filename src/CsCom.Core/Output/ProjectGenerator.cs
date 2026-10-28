@@ -1,4 +1,5 @@
 using CsCom.CodeGeneration;
+using CsCom.Configuration;
 using CsCom.Model;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.Extensions.Logging;
@@ -40,7 +41,9 @@ public sealed partial class ProjectGenerator
             throw new CsComException($"The directory '{directory}' already contains a project. Use 'cscom update project' to update it.");
         }
 
-        string projectPath = WriteProject(directory, manifest, library, request.PackageSource, request.GlobalPackagesFolder);
+        var configuration = LoadConfiguration(manifest.Configuration);
+        manifest = manifest with { Configuration = manifest.Configuration is null ? null : Path.GetRelativePath(directory, manifest.Configuration) };
+        string projectPath = WriteProject(directory, manifest, library, configuration, request.PackageSource, request.GlobalPackagesFolder);
         LogProjectCreated(projectPath);
         return projectPath;
     }
@@ -72,9 +75,16 @@ public sealed partial class ProjectGenerator
             Marshalling = request.Marshalling.Apply(manifest.Marshalling),
             EventStyle = request.EventStyle ?? manifest.EventStyle,
             StructProperties = request.StructProperties ?? manifest.StructProperties,
+            Configuration = request.ConfigurationPath switch
+            {
+                null => manifest.Configuration,
+                "" => null,
+                string path => Path.GetRelativePath(directory, Path.GetFullPath(path)),
+            },
         };
 
-        var documents = _pipeline.GenerateCode(library, CreateCodeGenerationOptions(updated));
+        var configuration = LoadConfiguration(updated.Configuration is null ? null : Path.GetFullPath(Path.Combine(directory, updated.Configuration)));
+        var documents = _pipeline.GenerateCode(library, CreateCodeGenerationOptions(updated), configuration);
         GeneratedFiles.Write(directory, documents);
 
         string? projectPath = FindProjectFile(directory, updated.Name);
@@ -99,12 +109,13 @@ public sealed partial class ProjectGenerator
         string directory,
         CsComManifest manifest,
         TypeLibrary library,
+        PipelineConfiguration configuration,
         string? packageSource,
         string? globalPackagesFolder,
         IReadOnlyDictionary<string, string>? extraProperties = null)
     {
         Directory.CreateDirectory(directory);
-        var documents = _pipeline.GenerateCode(library, CreateCodeGenerationOptions(manifest));
+        var documents = _pipeline.GenerateCode(library, CreateCodeGenerationOptions(manifest), configuration);
         GeneratedFiles.Write(directory, documents);
         LogFilesGenerated(documents.Count, Path.Combine(directory, GeneratedFiles.FolderName));
 
@@ -129,7 +140,23 @@ public sealed partial class ProjectGenerator
     }
 
     /// <summary>
-    /// Validates the options of a new project or assembly and applies the defaults.
+    /// Loads the configuration file with the transformers.
+    /// </summary>
+    /// <param name="path">The full path to the file; no transformers are added when <see langword="null"/>.</param>
+    internal PipelineConfiguration LoadConfiguration(string? path)
+    {
+        if (path is null)
+        {
+            return PipelineConfiguration.Empty;
+        }
+
+        var configuration = PipelineConfiguration.Load(path, _pipeline.Registry);
+        LogConfigurationLoaded(configuration.ModelTransformers.Count, configuration.SyntaxTransformers.Count, path);
+        return configuration;
+    }
+
+    /// <summary>
+    /// Validates the options of a new project or assembly and applies the defaults. The configuration file is recorded with its full path.
     /// </summary>
     internal CsComManifest ResolveSettings(NewOutputRequest request, TypeLibrary library)
     {
@@ -186,6 +213,7 @@ public sealed partial class ProjectGenerator
             Marshalling = request.Marshalling,
             EventStyle = request.EventStyle,
             StructProperties = request.StructProperties,
+            Configuration = string.IsNullOrEmpty(request.ConfigurationPath) ? null : Path.GetFullPath(request.ConfigurationPath),
         };
     }
 
@@ -237,6 +265,9 @@ public sealed partial class ProjectGenerator
         var projects = Directory.GetFiles(directory, "*.csproj");
         return projects.Length == 1 ? projects[0] : null;
     }
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Applying {ModelCount} model and {SyntaxCount} syntax transformers from '{Path}'")]
+    private partial void LogConfigurationLoaded(int modelCount, int syntaxCount, string path);
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Generated {Count} files in '{Directory}'")]
     private partial void LogFilesGenerated(int count, string directory);

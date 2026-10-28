@@ -129,11 +129,13 @@ internal sealed class SignatureBuilder
         ManagedType returnType;
         if (!method.ReturnsHResult)
         {
-            returnType = _mapper.MapValue(method.ReturnType);
+            returnType = _mapper.WithMarshalling(method.ReturnMarshalling).MapValue(method.ReturnType);
         }
         else if (HasRetval(method, out var retvalType))
         {
-            returnType = retvalType is PrimitiveTypeReference { VarType: VarEnum.VT_VOID } ? new ManagedType("void*", IsPointer: true) : _mapper.MapValue(retvalType);
+            returnType = retvalType is PrimitiveTypeReference { VarType: VarEnum.VT_VOID }
+                ? new ManagedType("void*", IsPointer: true)
+                : _mapper.WithMarshalling(method.RetvalParameter!.Marshalling).MapValue(retvalType);
             parameters = method.Parameters.Take(method.Parameters.Count - 1);
         }
         else
@@ -151,9 +153,18 @@ internal sealed class SignatureBuilder
     {
         bool hasRetval = HasRetval(method, out var retvalType);
         var parameters = MapLateBoundParameters(hasRetval ? method.Parameters.Take(method.Parameters.Count - 1) : method.Parameters);
-        var returnType = hasRetval ? _mapper.MapLateBound(retvalType) : method.ReturnsHResult ? LateBoundType.Void : _mapper.MapLateBound(method.ReturnType);
+        var returnType = hasRetval
+            ? _mapper.WithMarshalling(method.RetvalParameter!.Marshalling).MapLateBound(retvalType)
+            : method.ReturnsHResult ? LateBoundType.Void : _mapper.WithMarshalling(method.ReturnMarshalling).MapLateBound(method.ReturnType);
         return (returnType, parameters);
     }
+
+    /// <summary>
+    /// Maps the type of the value of a property getter: its <c>[retval]</c> parameter, or its return value if it has none.
+    /// </summary>
+    public LateBoundType MapLateBoundGetterType(MethodDefinition getter) => HasRetval(getter, out var retvalType)
+        ? _mapper.WithMarshalling(getter.RetvalParameter!.Marshalling).MapLateBound(retvalType)
+        : _mapper.WithMarshalling(getter.ReturnMarshalling).MapLateBound(getter.ReturnType);
 
     /// <summary>
     /// Maps the parameters of a source-generated COM or P/Invoke method.
@@ -176,12 +187,12 @@ internal sealed class SignatureBuilder
                 SyntaxKind modifier = isOut
                     ? isIn ? SyntaxKind.RefKeyword : SyntaxKind.OutKeyword
                     : IsPassedAsIn(element) ? SyntaxKind.InKeyword : SyntaxKind.RefKeyword;
-                var type = _mapper.MapValue(element);
+                var type = _mapper.WithMarshalling(parameter.Marshalling).MapValue(element);
                 result.Add(new SignatureParameter(parameter, element, type.Name, type.Marshalling, modifier));
             }
             else
             {
-                var type = _mapper.MapValue(parameter.Type);
+                var type = _mapper.WithMarshalling(parameter.Marshalling).MapValue(parameter.Type);
                 result.Add(new SignatureParameter(parameter, parameter.Type, type.Name, type.Marshalling, null));
             }
         }
@@ -209,7 +220,7 @@ internal sealed class SignatureBuilder
                 }
             }
 
-            var type = _mapper.MapLateBound(valueType);
+            var type = _mapper.WithMarshalling(parameter.Marshalling).MapLateBound(valueType);
             result.Add(new SignatureParameter(parameter, valueType, type.Name, null, modifier));
         }
 

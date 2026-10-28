@@ -84,3 +84,45 @@ public sealed record MarshallingOptions
     /// </summary>
     public SafeArrayMarshalling SafeArrays { get; init; }
 }
+
+/// <summary>
+/// Changes to <see cref="MarshallingOptions"/>; the options that are <see langword="null"/> are kept. They change the options
+/// of a project, or of a member of the model (see <c>ParameterDefinition.Marshalling</c>).
+/// </summary>
+public sealed record MarshallingOverrides
+{
+    /// <summary>The new representation of <c>DATE</c> parameters, return values and structure members.</summary>
+    public ValueMarshalling? Dates { get; init; }
+
+    /// <summary>The new representation of <c>CURRENCY</c> parameters, return values and structure members.</summary>
+    public ValueMarshalling? Currencies { get; init; }
+
+    /// <summary>The new representation of <c>VARIANT_BOOL</c> parameters, return values and structure members.</summary>
+    public ValueMarshalling? Booleans { get; init; }
+
+    /// <summary>The new representation of <c>BSTR</c> parameters and return values.</summary>
+    public BstrMarshalling? Bstrs { get; init; }
+
+    /// <summary>The new representation of typed <c>SAFEARRAY(T)</c> parameters and return values.</summary>
+    public SafeArrayMarshalling? SafeArrays { get; init; }
+
+    /// <summary>Applies the changes to the options.</summary>
+    public MarshallingOptions Apply(MarshallingOptions options) => options with
+    {
+        Dates = Dates ?? options.Dates,
+        Currencies = Currencies ?? options.Currencies,
+        Booleans = Booleans ?? options.Booleans,
+        Bstrs = Bstrs ?? options.Bstrs,
+        SafeArrays = SafeArrays ?? options.SafeArrays,
+    };
+
+    /// <summary>Combines two sets of changes; the changes of <paramref name="second"/> win.</summary>
+    public static MarshallingOverrides Combine(MarshallingOverrides? first, MarshallingOverrides second) => first is null ? second : new()
+    {
+        Dates = second.Dates ?? first.Dates,
+        Currencies = second.Currencies ?? first.Currencies,
+        Booleans = second.Booleans ?? first.Booleans,
+        Bstrs = second.Bstrs ?? first.Bstrs,
+        SafeArrays = second.SafeArrays ?? first.SafeArrays,
+    };
+}

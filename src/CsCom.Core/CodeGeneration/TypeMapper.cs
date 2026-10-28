@@ -56,12 +56,25 @@ internal sealed class TypeMapper
 
     private readonly EmitContext _context;
     private readonly string _namespace;
+    private readonly MarshallingOptions _marshalling;
 
     public TypeMapper(EmitContext context, string currentNamespace)
+        : this(context, currentNamespace, context.Options.Marshalling)
+    {
+    }
+
+    private TypeMapper(EmitContext context, string currentNamespace, MarshallingOptions marshalling)
     {
         _context = context;
         _namespace = currentNamespace;
+        _marshalling = marshalling;
     }
+
+    /// <summary>
+    /// Gets a mapper that applies the changes of a member of the model to the marshalling options of the project.
+    /// </summary>
+    public TypeMapper WithMarshalling(MarshallingOverrides? overrides) =>
+        overrides is null ? this : new TypeMapper(_context, _namespace, overrides.Apply(_context.Options.Marshalling));
 
     /// <summary>
     /// Whether the type is an interface or a class, so that a single pointer to it is passed as the interface pointer.
@@ -128,11 +141,11 @@ internal sealed class TypeMapper
             case PrimitiveTypeReference { VarType: var vt }:
                 return vt switch
                 {
-                    VarEnum.VT_BOOL => MapField(_context.Options.Marshalling.Booleans, "short", "ComBool"),
+                    VarEnum.VT_BOOL => MapField(_marshalling.Booleans, "short", "ComBool"),
                     VarEnum.VT_BSTR or VarEnum.VT_LPSTR or VarEnum.VT_LPWSTR or VarEnum.VT_UNKNOWN or VarEnum.VT_DISPATCH => ManagedType.IntPtr,
                     VarEnum.VT_VARIANT => new ManagedType($"{Syntax.MarshallingNamespace}.ComVariant"),
-                    VarEnum.VT_CY => MapField(_context.Options.Marshalling.Currencies, "long", "ComCurrency"),
-                    VarEnum.VT_DATE => MapField(_context.Options.Marshalling.Dates, "double", "ComDate"),
+                    VarEnum.VT_CY => MapField(_marshalling.Currencies, "long", "ComCurrency"),
+                    VarEnum.VT_DATE => MapField(_marshalling.Dates, "double", "ComDate"),
                     _ => MapPrimitive(vt) is { Marshalling: null, IsReference: false } mapped ? mapped : ManagedType.IntPtr,
                 };
             case WellKnownTypeReference { Type: WellKnownType.Guid }:
@@ -154,7 +167,7 @@ internal sealed class TypeMapper
     /// </summary>
     public FieldConversion? GetFieldConversion(TypeReference type)
     {
-        var marshalling = _context.Options.Marshalling;
+        var marshalling = _marshalling;
         return type switch
         {
             PrimitiveTypeReference { VarType: VarEnum.VT_BOOL } when marshalling.Booleans == ValueMarshalling.Bcl =>
@@ -216,7 +229,7 @@ internal sealed class TypeMapper
 
             case PointerTypeReference pointer when IsInterfaceLike(pointer.ElementType):
                 return MapLateBoundInterface(pointer.ElementType);
-            case SafeArrayTypeReference when _context.Options.Marshalling.SafeArrays != SafeArrayMarshalling.Array:
+            case SafeArrayTypeReference when _marshalling.SafeArrays != SafeArrayMarshalling.Array:
                 // The values of late-bound calls are copies in VARIANTs, which can hold SAFEARRAYs of any rank.
                 return new LateBoundType("global::System.Array?", static x => $"(global::System.Array?){x}");
             case SafeArrayTypeReference array:
@@ -250,12 +263,12 @@ internal sealed class TypeMapper
         VarEnum.VT_R4 => new("float"),
         VarEnum.VT_R8 => new("double"),
         VarEnum.VT_CY => MapParameter(
-            _context.Options.Marshalling.Currencies,
+            _marshalling.Currencies,
             new("decimal", $"{Syntax.MarshallingNamespace}.MarshalUsing(typeof({_context.Support}.CurrencyMarshaller))"),
             "long",
             "ComCurrency"),
         VarEnum.VT_DATE => MapParameter(
-            _context.Options.Marshalling.Dates,
+            _marshalling.Dates,
             new("global::System.DateTime", $"{Syntax.MarshallingNamespace}.MarshalUsing(typeof({_context.Support}.DateMarshaller))"),
             "double",
             "ComDate"),
@@ -263,7 +276,7 @@ internal sealed class TypeMapper
         VT_INT_PTR => ManagedType.IntPtr,
         VT_UINT_PTR => new("nuint"),
         // String parameters are marshalled as BSTRs by the StringMarshalling of the interfaces and functions.
-        VarEnum.VT_BSTR => _context.Options.Marshalling.Bstrs switch
+        VarEnum.VT_BSTR => _marshalling.Bstrs switch
         {
             BstrMarshalling.Wrapper => new($"{_context.Support}.ComBstr?"),
             BstrMarshalling.None => ManagedType.IntPtr,
@@ -272,7 +285,7 @@ internal sealed class TypeMapper
         VarEnum.VT_LPSTR => new("string?", $"{Syntax.InteropNamespace}.MarshalAs({Syntax.InteropNamespace}.UnmanagedType.LPStr)"),
         VarEnum.VT_LPWSTR => new("string?", $"{Syntax.InteropNamespace}.MarshalAs({Syntax.InteropNamespace}.UnmanagedType.LPWStr)"),
         VarEnum.VT_BOOL => MapParameter(
-            _context.Options.Marshalling.Booleans,
+            _marshalling.Booleans,
             new("bool", $"{Syntax.InteropNamespace}.MarshalAs({Syntax.InteropNamespace}.UnmanagedType.VariantBool)"),
             "short",
             "ComBool"),
@@ -308,7 +321,7 @@ internal sealed class TypeMapper
     /// </summary>
     private ManagedType MapSafeArray(SafeArrayTypeReference array)
     {
-        var marshalling = _context.Options.Marshalling.SafeArrays;
+        var marshalling = _marshalling.SafeArrays;
         string? element = array.ElementType is PrimitiveTypeReference { VarType: VarEnum.VT_UNKNOWN } ? "object?" : GetSafeArrayElement(array.ElementType);
         if (element is null || marshalling == SafeArrayMarshalling.None)
         {

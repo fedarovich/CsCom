@@ -233,7 +233,7 @@ internal sealed partial class InterfaceEmitter
             return null;
         }
 
-        var type = signatures.Mapper.MapValue(retvalType);
+        var type = signatures.Mapper.WithMarshalling(getter.RetvalParameter!.Marshalling).MapValue(retvalType);
         return type.IsVoid || type.IsPointer ? null : new PropertySignature(type.Name, index);
     }
 

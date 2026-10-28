@@ -42,7 +42,7 @@ internal sealed class DispatchWrapperEmitter
 
         foreach (var property in definition.Properties.Where(static p => p.DispId != DispIdNewEnum))
         {
-            var type = mapper.MapLateBound(property.Type);
+            var type = mapper.WithMarshalling(property.Marshalling).MapLateBound(property.Type);
             string id = DispId(property.DispId);
             string get = type.FromObject($"InvokeGet({id})");
             string? set = property.IsReadOnly ? null : $"InvokePut({id}, value)";
@@ -109,7 +109,7 @@ internal sealed class DispatchWrapperEmitter
         string invoke = $"InvokeMethodByRef({id}, __args, [{string.Join(", ", parameters.Select(static p => p.IsByRef ? "true" : "false"))}])";
         statements.Add(Syntax.Statement(returnType.IsVoid ? $"{invoke};" : $"object? __result = {invoke};"));
 
-        var lateBoundTypes = parameters.Select(p => signatures.Mapper.MapLateBound(p.ValueType)).ToList();
+        var lateBoundTypes = parameters.Select(p => signatures.Mapper.WithMarshalling(p.Definition.Marshalling).MapLateBound(p.ValueType)).ToList();
         for (int i = 0; i < parameters.Count; i++)
         {
             if (parameters[i].IsByRef)
@@ -184,7 +184,7 @@ internal sealed class DispatchWrapperEmitter
 
     private static PropertySignature? AnalyzeGetter(MethodDefinition getter, SignatureBuilder signatures)
     {
-        bool hasRetval = SignatureBuilder.HasRetval(getter, out var retvalType);
+        bool hasRetval = SignatureBuilder.HasRetval(getter, out _);
         if (!hasRetval && getter.ReturnsHResult)
         {
             return null;
@@ -196,7 +196,7 @@ internal sealed class DispatchWrapperEmitter
             return null;
         }
 
-        var type = signatures.Mapper.MapLateBound(hasRetval ? retvalType : getter.ReturnType);
+        var type = signatures.MapLateBoundGetterType(getter);
         return type.IsVoid ? null : new PropertySignature(type, index);
     }
 
@@ -213,7 +213,7 @@ internal sealed class DispatchWrapperEmitter
             return null;
         }
 
-        var value = signatures.Mapper.MapLateBound(parameters[^1].ValueType);
+        var value = signatures.Mapper.WithMarshalling(parameters[^1].Definition.Marshalling).MapLateBound(parameters[^1].ValueType);
         return new PropertySignature(value, parameters.Take(parameters.Count - 1).ToList());
     }
 

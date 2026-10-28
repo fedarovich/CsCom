@@ -53,6 +53,7 @@ public sealed partial class AssemblyGenerator
 
         var library = _pipeline.ReadTypeLibrary(request.TypeLibraryPath);
         var manifest = _projectGenerator.ResolveSettings(request, library);
+        var configuration = _projectGenerator.LoadConfiguration(manifest.Configuration);
         string output = Path.GetFullPath(request.OutputDirectory ?? Environment.CurrentDirectory);
         string temp = Path.Combine(Path.GetTempPath(), "cscom", Guid.NewGuid().ToString("N"));
 
@@ -65,7 +66,7 @@ public sealed partial class AssemblyGenerator
         var extraProperties = manifest.SupportCode == SupportCodeMode.Package
             ? new Dictionary<string, string> { ["CopyLocalLockFileAssemblies"] = "true" }
             : null;
-        string projectPath = _projectGenerator.WriteProject(temp, manifest, library, request.PackageSource, request.GlobalPackagesFolder, extraProperties);
+        string projectPath = _projectGenerator.WriteProject(temp, manifest, library, configuration, request.PackageSource, request.GlobalPackagesFolder, extraProperties);
 
         bool succeeded = false;
         try

@@ -1,3 +1,5 @@
+using CsCom.CodeGeneration;
+
 namespace CsCom.Model;
 
 /// <summary>
@@ -61,6 +63,12 @@ public sealed class FieldDefinition
 
     /// <summary>The offset of the field, in bytes.</summary>
     public int Offset { get; init; }
+
+    /// <summary>
+    /// Changes to the marshalling options for this field; the options of the project when <see langword="null"/>. Only the
+    /// representation of <c>DATE</c>, <c>CURRENCY</c> and <c>VARIANT_BOOL</c> values applies to fields.
+    /// </summary>
+    public MarshallingOverrides? Marshalling { get; set; }
 
     /// <summary>The help string.</summary>
     public string? Documentation { get; set; }
@@ -139,6 +147,12 @@ public sealed class DispatchPropertyDefinition
 
     /// <summary>The flags of the property.</summary>
     public MemberFlags Flags { get; set; }
+
+    /// <summary>
+    /// Changes to the marshalling options for this property; the options of the project when <see langword="null"/>. Only the
+    /// representation of <c>SAFEARRAY</c>s applies to the late-bound wrappers of dispinterfaces.
+    /// </summary>
+    public MarshallingOverrides? Marshalling { get; set; }
 
     /// <summary>The help string.</summary>
     public string? Documentation { get; set; }

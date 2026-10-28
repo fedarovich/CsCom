@@ -43,6 +43,9 @@ public abstract class NewOutputRequest
     /// <summary>Whether the members of the generated structures are public fields or properties.</summary>
     public StructProperties StructProperties { get; init; }
 
+    /// <summary>The configuration file with the transformers, relative to the current directory; none when <see langword="null"/>.</summary>
+    public string? ConfigurationPath { get; init; }
+
     /// <summary>An additional NuGet package source that provides the CsCom.Runtime package.</summary>
     public string? PackageSource { get; init; }
 
@@ -97,35 +100,10 @@ public sealed class UpdateProjectRequest
 
     /// <summary>Whether the members of the generated structures are public fields or properties.</summary>
     public StructProperties? StructProperties { get; init; }
-}
 
-/// <summary>
-/// Changes to <see cref="MarshallingOptions"/>; the options that are <see langword="null"/> are kept.
-/// </summary>
-public sealed record MarshallingOverrides
-{
-    /// <summary>The new representation of <c>DATE</c> parameters, return values and structure members.</summary>
-    public ValueMarshalling? Dates { get; init; }
-
-    /// <summary>The new representation of <c>CURRENCY</c> parameters, return values and structure members.</summary>
-    public ValueMarshalling? Currencies { get; init; }
-
-    /// <summary>The new representation of <c>VARIANT_BOOL</c> parameters, return values and structure members.</summary>
-    public ValueMarshalling? Booleans { get; init; }
-
-    /// <summary>The new representation of <c>BSTR</c> parameters and return values.</summary>
-    public BstrMarshalling? Bstrs { get; init; }
-
-    /// <summary>The new representation of typed <c>SAFEARRAY(T)</c> parameters and return values.</summary>
-    public SafeArrayMarshalling? SafeArrays { get; init; }
-
-    /// <summary>Applies the changes to the options.</summary>
-    public MarshallingOptions Apply(MarshallingOptions options) => options with
-    {
-        Dates = Dates ?? options.Dates,
-        Currencies = Currencies ?? options.Currencies,
-        Booleans = Booleans ?? options.Booleans,
-        Bstrs = Bstrs ?? options.Bstrs,
-        SafeArrays = SafeArrays ?? options.SafeArrays,
-    };
+    /// <summary>
+    /// The new configuration file with the transformers, relative to the current directory. The recorded file is kept when
+    /// <see langword="null"/> and removed when empty.
+    /// </summary>
+    public string? ConfigurationPath { get; init; }
 }

@@ -213,6 +213,69 @@ public sealed class ProjectGeneratorTests
         Assert.AreEqual(SafeArrayMarshalling.Array, manifest.Marshalling.SafeArrays);
         Assert.AreEqual(EventStyle.Events, manifest.EventStyle);
         Assert.AreEqual(StructProperties.NonBlittable, manifest.StructProperties);
+        Assert.IsNull(manifest.Configuration);
+    }
+
+    [TestMethod]
+    public void AppliesAndRecordsTheConfiguration()
+    {
+        var pipeline = new InteropPipeline();
+        TestTransformers.Register(pipeline.Registry);
+        var generator = new ProjectGenerator(pipeline);
+        string directory = TestEnvironment.CreateDirectory("configuration");
+        File.WriteAllText(Path.Combine(directory, "cscom.xml"), """
+            <CsCom>
+              <ModelTransformers>
+                <RenameType Type="^IShape$" NewName="IFigure" />
+              </ModelTransformers>
+              <SyntaxTransformers>
+                <RemoveFile Name="Point.cs" />
+              </SyntaxTransformers>
+            </CsCom>
+            """);
+        string generated = Path.Combine(directory, "Generated");
+
+        generator.CreateProject(new NewProjectRequest
+        {
+            TypeLibraryPath = TestEnvironment.TestTypeLibrary,
+            OutputDirectory = directory,
+            ConfigurationPath = Path.Combine(directory, "cscom.xml"),
+        });
+        Assert.AreEqual("cscom.xml", CsComManifest.Read(directory).Configuration);
+        StringAssert.Contains(File.ReadAllText(Path.Combine(directory, CsComManifest.FileName)), "\"configuration\": \"cscom.xml\"");
+        Assert.IsTrue(File.Exists(Path.Combine(generated, "IFigure.cs")));
+        Assert.IsFalse(File.Exists(Path.Combine(generated, "IShape.cs")));
+        Assert.IsFalse(File.Exists(Path.Combine(generated, "Point.cs")));
+
+        generator.UpdateProject(new UpdateProjectRequest { TypeLibraryPath = TestEnvironment.TestTypeLibrary, ProjectDirectory = directory });
+        Assert.AreEqual("cscom.xml", CsComManifest.Read(directory).Configuration);
+        Assert.IsTrue(File.Exists(Path.Combine(generated, "IFigure.cs")));
+        Assert.IsFalse(File.Exists(Path.Combine(generated, "Point.cs")));
+
+        generator.UpdateProject(new UpdateProjectRequest { TypeLibraryPath = TestEnvironment.TestTypeLibrary, ProjectDirectory = directory, ConfigurationPath = "" });
+        Assert.IsNull(CsComManifest.Read(directory).Configuration);
+        Assert.IsTrue(File.Exists(Path.Combine(generated, "IShape.cs")));
+        Assert.IsTrue(File.Exists(Path.Combine(generated, "Point.cs")));
+        Assert.IsFalse(File.Exists(Path.Combine(generated, "IFigure.cs")));
+    }
+
+    [TestMethod]
+    public void RejectsInvalidConfigurationsBeforeWriting()
+    {
+        string directory = TestEnvironment.CreateDirectory("invalid-configuration");
+        string configuration = Path.Combine(directory, "cscom.xml");
+        File.WriteAllText(configuration, "<CsCom><ModelTransformers><Rename /></ModelTransformers></CsCom>");
+
+        var exception = Assert.ThrowsExactly<CsComException>(() => _generator.CreateProject(new NewProjectRequest
+        {
+            TypeLibraryPath = TestEnvironment.TestTypeLibrary,
+            OutputDirectory = directory,
+            ConfigurationPath = configuration,
+        }));
+
+        StringAssert.StartsWith(exception.Message, $"{configuration}(1,28): Unknown model transformer <Rename>.");
+        Assert.IsFalse(File.Exists(Path.Combine(directory, CsComManifest.FileName)));
+        Assert.IsFalse(Directory.Exists(Path.Combine(directory, "Generated")));
     }
 
     [TestMethod]

@@ -56,6 +56,9 @@ public sealed record CsComManifest
     [JsonConverter(typeof(CamelCaseEnumConverter<StructProperties>))]
     public StructProperties StructProperties { get; init; }
 
+    /// <summary>The configuration file with the transformers, relative to the project directory; none when <see langword="null"/>.</summary>
+    public string? Configuration { get; init; }
+
     /// <summary>
     /// Reads the manifest from the project directory.
     /// </summary>

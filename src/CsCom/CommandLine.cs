@@ -104,6 +104,20 @@ internal static class CommandLine
         HelpName = "always|nonblittable|never",
     };
 
+    private const string ConfigDescription = "An XML file that adds and configures model and syntax transformers.";
+
+    private static readonly Option<string?> ConfigOption = new("--config")
+    {
+        Description = ConfigDescription,
+        HelpName = "PATH",
+    };
+
+    private static readonly Option<string?> UpdateConfigOption = new("--config")
+    {
+        Description = ConfigDescription + " The file recorded in cscom.json by default; an empty value removes it.",
+        HelpName = "PATH",
+    };
+
     private static readonly Option<string?> PackageSourceOption = new("--package-source")
     {
         Description = "An additional NuGet package source that provides the CsCom.Runtime package.",
@@ -146,6 +160,7 @@ internal static class CommandLine
                 Marshalling = NewMarshallingOptions.GetOverrides(result).Apply(new MarshallingOptions()),
                 EventStyle = result.GetValue(EventStyleOption),
                 StructProperties = result.GetValue(StructPropertiesOption),
+                ConfigurationPath = result.GetValue(ConfigOption),
                 PackageSource = result.GetValue(PackageSourceOption),
             })));
 
@@ -167,6 +182,7 @@ internal static class CommandLine
                 Marshalling = NewMarshallingOptions.GetOverrides(result).Apply(new MarshallingOptions()),
                 EventStyle = result.GetValue(EventStyleOption),
                 StructProperties = result.GetValue(StructPropertiesOption),
+                ConfigurationPath = result.GetValue(ConfigOption),
                 PackageSource = result.GetValue(PackageSourceOption) ?? GetBundledPackageSource(),
                 KeepTemporaryFiles = result.GetValue(KeepTempOption),
             })));
@@ -182,6 +198,7 @@ internal static class CommandLine
         UpdateMarshallingOptions.AddTo(updateProject);
         updateProject.Options.Add(UpdateEventStyleOption);
         updateProject.Options.Add(UpdateStructPropertiesOption);
+        updateProject.Options.Add(UpdateConfigOption);
         updateProject.SetAction(static result => Run(result, (pipeline, loggerFactory) =>
             new ProjectGenerator(pipeline, loggerFactory).UpdateProject(new UpdateProjectRequest
             {
@@ -193,6 +210,7 @@ internal static class CommandLine
                 Marshalling = UpdateMarshallingOptions.GetOverrides(result),
                 EventStyle = result.GetValue(UpdateEventStyleOption),
                 StructProperties = result.GetValue(UpdateStructPropertiesOption),
+                ConfigurationPath = result.GetValue(UpdateConfigOption),
             })));
 
         return new RootCommand("Generates COM interop code from type libraries using source-generated COM interop.")
@@ -217,6 +235,7 @@ internal static class CommandLine
         NewMarshallingOptions.AddTo(command);
         command.Options.Add(EventStyleOption);
         command.Options.Add(StructPropertiesOption);
+        command.Options.Add(ConfigOption);
         command.Options.Add(PackageSourceOption);
     }
 

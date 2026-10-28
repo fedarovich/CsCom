@@ -40,18 +40,76 @@ The type library can be a `.tlb` file or a `.dll`, `.ocx` or `.exe` file with an
 | `--bstr-marshalling <string\|wrapper\|none>` | How `BSTR` parameters and return values are represented: `string` (default), `wrapper` (`ComBstr`) or `none`, see [BSTRs](#bstrs). |
 | `--safearray-marshalling <array\|sysarray\|wrapper\|none>` | How typed `SAFEARRAY(T)` parameters and return values are represented: `array` (default, `T[]`), `sysarray`, `wrapper` or `none`, see [SAFEARRAYs](#safearrays). |
 | `--event-style <events\|observable\|interface\|none>` | The code generated for the events of coclasses: `events` (default), `observable`, `interface` or `none`, see [Events](#events). |
+| `--config <PATH>` | An XML file that adds and configures model and syntax transformers, see [Configuration file](#configuration-file). |
 | `--package-source <PATH>` | An additional NuGet source with the CsCom.Runtime package. |
 | `--keep-temp` | `new assembly` only: keeps the temporary project used to build the assembly. |
 | `-v`, `--verbosity <LEVEL>` | `quiet`, `minimal`, `normal` (default), `detailed` or `diagnostic`. |
 
 `new project` writes `<Name>.csproj`, a `cscom.json` file with the options it was generated with, and the C# files into the
 `Generated` folder. `update project` replaces the C# files of the `Generated` folder using the options recorded in `cscom.json`.
-It accepts `--namespace`, `--csharp-version`, `--single-file [true|false]`, the marshalling options, `--event-style` and `--struct-properties` to change them. Code outside of the `Generated`
-folder, e.g. partial classes, is not touched.
+It accepts `--namespace`, `--csharp-version`, `--single-file [true|false]`, the marshalling options, `--event-style`, `--struct-properties` and `--config`
+(an empty value removes the file) to change them. Code outside of the `Generated` folder, e.g. partial classes, is not touched.
 
 `new assembly` generates the project in a temporary directory, builds it with `dotnet build` once per runtime identifier and copies
 the assemblies, PDBs and XML documentation (and `CsCom.Runtime.dll`) to the output directory. With a single target framework and at
 most one runtime identifier, the files are copied directly into the output directory; otherwise into `<TFM>\<RID>` subfolders.
+
+## Configuration file
+
+`--config` takes an XML file that adds transformers to the [pipeline](#architecture). Each element of the `ModelTransformers` and
+`SyntaxTransformers` sections adds the transformer with that name, configured by its attributes and child elements:
+
+```xml
+<CsCom>
+  <ModelTransformers>
+    <RenameType Type="^_(.*)$" NewName="$1" />
+    <RenameMember Type="^IShape$" Member="^Get(.*)$" NewName="Fetch$1" />
+    <SetMarshalling Type="^IArrays$" Member="^Matrix$" SafeArrays="wrapper" />
+    <RemoveEnumPrefix />
+  </ModelTransformers>
+</CsCom>
+```
+
+- **Order:** the transformers run in the order of their elements. The model transformers run after the aliases are resolved and
+  before the names are sanitized, so they see the resolved aliases and the names they produce are made valid and unique.
+- **Validation:** unknown transformers, attributes and child elements are reported with their location, e.g.
+  `cscom.xml(3,6): Unknown model transformer <Rename>.` Nothing is written when the file is not valid.
+- **`update project`:** `new project` records the file in `cscom.json`, relative to the project directory, and `update project` applies
+  it again. `--config` replaces it, and `--config ""` removes it.
+- **Custom transformers:** they are registered through the API with `InteropPipeline.Registry.AddModelTransformer(name, element => ...)`
+  and `AddSyntaxTransformer`, whose factories read their element with `ConfigurationElement`.
+
+### Selectors
+
+The `Type`, `Member` and `Parameter` attributes are .NET regular expressions matched against the current names: the type library
+names, unless an earlier transformer renamed them.
+- **Matching:** like `Regex.IsMatch`, an expression matches anywhere in the name, so `^IShape$` is needed to match only `IShape`.
+  The matching is case-sensitive; `(?i)` makes it case-insensitive.
+- **Omitted selectors:** an omitted `Type`, `Member` or `Parameter` matches everything, where the transformer allows it.
+- **New names:** `NewName` replaces the matches of the last selector, like `Regex.Replace`, so it can use substitutions such as `$1`.
+  `Type="Shape" NewName="Figure"` renames `IShapeEvents` to `IFigureEvents`. Invalid characters become `_`, and names that clash
+  get a `_` suffix.
+- **No match:** a transformer whose selectors match nothing logs a warning, e.g. `RenameType: no type matches Type='^IShap$'`, so
+  the same file keeps working with other versions of the type library.
+
+### Model transformers
+
+| Element | Attributes | Effect |
+| --- | --- | --- |
+| `RenameType` | `Type`, `NewName` | Renames the matching types. |
+| `RenameMember` | `Type` (optional), `Member`, `Parameter` (optional), `NewName` | Renames the matching members: methods and properties of interfaces (the accessors of a property together), fields of structures, members of enums, and functions and constants of modules. With `Parameter`, renames the matching parameters of the matching methods instead. |
+| `SetMarshalling` | `Type`, `Member` and `Parameter` (all optional); at least one of `Dates`, `Currencies`, `Booleans` (`bcl\|none\|wrapper`), `Bstrs` (`string\|wrapper\|none`) and `SafeArrays` (`array\|sysarray\|wrapper\|none`) | Changes the [marshalling options](#marshalling-options) of the parameters and return values of the matching methods, and of the matching dispinterface properties and structure fields. With `Parameter`, only of the matching parameters, including `[retval]` parameters. Later elements override the values set by earlier ones. |
+| `RemoveEnumPrefix` | `Type` (optional) | Removes the prefix shared by the members of the matching enums, or of all enums. |
+
+```xml
+<RenameMember Type="^IShape$" Member="^Move$" Parameter="^d(.)$" NewName="delta$1" />    <!-- dx, dy -> deltax, deltay -->
+<SetMarshalling Type="^IStrings$" Member="^Echo$" Parameter="^Value$" Bstrs="none" />   <!-- Echo(nint Value) -->
+<SetMarshalling Type="^Record$" Member="^Date$" Dates="wrapper" />                       <!-- a ComDate field -->
+```
+
+`RemoveEnumPrefix` removes the longest common prefix that ends at a word boundary, after an underscore or before an upper case letter
+that follows a lower case letter or a digit: `xlArea`/`xlBar` become `Area`/`Bar` and `SHAPE_CIRCLE`/`SHAPE_SQUARE` become
+`CIRCLE`/`SQUARE`. Enums with a single member, or whose members would not start with a letter (`Size16`/`Size32`), are not changed.
 
 ## Generated code
 
@@ -214,6 +272,10 @@ the wrappers become `VT_DATE`, `VT_CY` and `VT_BOOL` values. A wrapper parameter
 value, so optional parameters whose default is `true` or non-zero become required. The options do not affect late-bound
 dispinterface wrappers, constants and the elements of `SAFEARRAY`s, which use the .NET types.
 
+All marshalling options, including `--bstr-marshalling` and `--safearray-marshalling`, can be changed for individual methods,
+parameters, dispinterface properties and structure fields with the `SetMarshalling` element of the
+[configuration file](#model-transformers).
+
 ### Structures
 
 Structures keep the layout of the COM structures, so they can be passed by pointer and by reference without marshalling. Their
@@ -335,14 +397,16 @@ The generated projects disable runtime marshalling, which source-generated COM i
 - Types imported from other type libraries are always generated into the project; referencing other interop assemblies is not supported yet.
 - CsCom.Runtime only targets `net10.0` for now. Source-generated COM expects a base interface from another assembly (`IDispatch`)
   to be compiled for the same target framework, so a `net11.0` build of CsCom.Runtime should be added together with .NET 11 support.
-- Transformers can only be registered through the `InteropPipeline` API.
+- No configurable syntax transformers are built in yet: the `SyntaxTransformers` section of the [configuration file](#configuration-file)
+  can only add transformers registered through the `InteropPipeline` API.
 
 ## Architecture
 
 The tool runs the type library through a pipeline (`CsCom.Core`):
 
 1. `TypeLibraryReader` reads the type library with source-generated `ITypeLib`/`ITypeInfo` bindings into the model (`CsCom.Model`).
-2. The model transformers (`IModelTransformer`) change the model. The built-in ones resolve aliases and sanitize names.
+2. The model transformers (`IModelTransformer`) change the model. The built-in ones resolve aliases first and sanitize names last;
+   those of `InteropPipeline.ModelTransformers` and of the [configuration file](#configuration-file) run in between.
 3. `CSharpEmitter` generates the Roslyn syntax trees.
 4. The syntax transformers (`ISyntaxTransformer`) change the syntax trees.
 5. `ProjectGenerator` and `AssemblyGenerator` write the project or build the assembly.

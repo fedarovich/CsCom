@@ -60,6 +60,43 @@ public sealed class IntegrationTests
     }
 
     [TestMethod]
+    public void ConfiguredProjectBuildsWithoutWarnings()
+    {
+        string directory = TestEnvironment.CreateDirectory("build-configured");
+        string configuration = Path.Combine(directory, "cscom.xml");
+        File.WriteAllText(configuration, """
+            <CsCom>
+              <ModelTransformers>
+                <RenameType Type="^I(Shape|Circle)$" NewName="I$1Contract" />
+                <RenameMember Type="^IShapeContract$" Member="^Move$" NewName="MoveBy" />
+                <RenameMember Type="^IShapeContract$" Member="^MoveBy$" Parameter="^d(.)$" NewName="delta$1" />
+                <RenameMember Type="^Record$" Member="^checked$" NewName="IsChecked" />
+                <SetMarshalling Type="^IArrays$" Member="^Matrix$" SafeArrays="wrapper" />
+                <SetMarshalling Type="^IStrings$" Member="^Echo$" Parameter="^Value$" Bstrs="none" />
+                <SetMarshalling Type="^IShapeContract$" Member="^Name$" Parameter="(?i)^name$" Bstrs="wrapper" />
+                <SetMarshalling Type="^IShapeContract$" Member="^Dates$" Dates="wrapper" Currencies="none" />
+                <SetMarshalling Type="^Record$" Member="^(Date|Flag)$" Dates="wrapper" Booleans="none" />
+                <SetMarshalling Type="^IShapeEventsDual$" Member="^Renamed$" Bstrs="wrapper" />
+                <SetMarshalling Type="^DShapeEvents$" Member="^Names$" SafeArrays="sysarray" />
+                <RemoveEnumPrefix />
+              </ModelTransformers>
+            </CsCom>
+            """);
+
+        string project = new ProjectGenerator(_pipeline).CreateProject(new NewProjectRequest
+        {
+            TypeLibraryPath = TestEnvironment.TestTypeLibrary,
+            OutputDirectory = directory,
+            ConfigurationPath = configuration,
+            PackageSource = TestEnvironment.LocalPackages,
+            GlobalPackagesFolder = TestEnvironment.GlobalPackagesFolder,
+        });
+
+        StringAssert.Contains(File.ReadAllText(Path.Combine(directory, "Generated", "IShapeContract.cs")), "void MoveBy(int deltax, int deltay = 0,");
+        Build(project);
+    }
+
+    [TestMethod]
     public void GeneratedProjectCanBeUsedFromCSharp15()
     {
         if (!HasSdk(11))

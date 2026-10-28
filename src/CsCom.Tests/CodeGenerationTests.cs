@@ -1,4 +1,6 @@
+using System.Xml.Linq;
 using CsCom.CodeGeneration;
+using CsCom.Configuration;
 
 namespace CsCom.Tests;
 
@@ -171,10 +173,31 @@ public sealed class CodeGenerationTests : VerifyBase
         StringAssert.Contains(documents.Single(static d => d.RelativePath == "IShape.cs").GetText(), "global::My.Interop.stdole.Font? Font();");
     }
 
-    private static IReadOnlyList<GeneratedDocument> Generate(CodeGenerationOptions options)
+    [TestMethod]
+    public Task GeneratesPerMemberMarshalling()
+    {
+        var documents = Generate(new CodeGenerationOptions { Namespace = "Interop.CsComTest", ToolVersion = TestEnvironment.ToolVersion }, """
+            <CsCom>
+              <ModelTransformers>
+                <SetMarshalling Type="^IArrays$" Member="^Matrix$" SafeArrays="wrapper" />
+                <SetMarshalling Type="^IStrings$" Member="^Echo$" Parameter="^Value$" Bstrs="none" />
+                <SetMarshalling Type="^Record$" Member="^Date$" Dates="wrapper" />
+                <SetMarshalling Type="^IShapeEventsDual$" Member="^Renamed$" Bstrs="wrapper" />
+                <SetMarshalling Type="^DShapeEvents$" Member="^Names$" SafeArrays="sysarray" />
+              </ModelTransformers>
+            </CsCom>
+            """);
+
+        return Verify(ToTargets(documents.Where(static d => d.RelativePath is "IArrays.cs" or "IStrings.cs" or "Record.cs" or "IShapeEventsDual.cs" or "DShapeEvents.cs")));
+    }
+
+    private static IReadOnlyList<GeneratedDocument> Generate(CodeGenerationOptions options, string? configuration = null)
     {
         var pipeline = new InteropPipeline();
-        return pipeline.GenerateCode(pipeline.ReadTypeLibrary(TestEnvironment.TestTypeLibrary), options);
+        return pipeline.GenerateCode(
+            pipeline.ReadTypeLibrary(TestEnvironment.TestTypeLibrary),
+            options,
+            configuration is null ? null : PipelineConfiguration.Parse(XDocument.Parse(configuration), pipeline.Registry));
     }
 
     private static IEnumerable<Target> ToTargets(IEnumerable<GeneratedDocument> documents) =>

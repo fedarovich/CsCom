@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using CsCom.CodeGeneration;
 
 namespace CsCom.Model;
 
@@ -27,6 +28,12 @@ public sealed class MethodDefinition
 
     /// <summary>The native return type, which is <c>VT_HRESULT</c> for most COM methods.</summary>
     public required TypeReference ReturnType { get; set; }
+
+    /// <summary>
+    /// Changes to the marshalling options for the native return value, if it is not an <c>HRESULT</c>; the <c>[retval]</c>
+    /// parameter has its own <see cref="ParameterDefinition.Marshalling"/>.
+    /// </summary>
+    public MarshallingOverrides? ReturnMarshalling { get; set; }
 
     /// <summary>The parameters.</summary>
     public List<ParameterDefinition> Parameters { get; } = [];
@@ -128,6 +135,9 @@ public sealed class ParameterDefinition
 
     /// <summary>The default value, when <see cref="ParameterFlags.HasDefault"/> is set.</summary>
     public object? DefaultValue { get; set; }
+
+    /// <summary>Changes to the marshalling options for this parameter; the options of the project when <see langword="null"/>.</summary>
+    public MarshallingOverrides? Marshalling { get; set; }
 
     /// <inheritdoc/>
     public override string ToString() => $"{Type} {Name}";
