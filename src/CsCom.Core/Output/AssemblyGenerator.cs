@@ -1,12 +1,14 @@
 using System.Text.RegularExpressions;
 using CsCom.CodeGeneration;
+using CsCom.Model;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace CsCom.Output;
 
 /// <summary>
-/// Builds ready-to-use interop assemblies by generating a temporary project and building it with the .NET SDK.
+/// Builds ready-to-use interop assemblies, or NuGet packages of them, by generating a temporary project and building or packing
+/// it with the .NET SDK.
 /// </summary>
 public sealed partial class AssemblyGenerator
 {
@@ -27,6 +29,8 @@ public sealed partial class AssemblyGenerator
         """;
 
     private static readonly string[] OutputExtensions = [".dll", ".pdb", ".xml"];
+
+    private static readonly string[] PackageExtensions = [".nupkg", ".snupkg"];
 
     private readonly InteropPipeline _pipeline;
     private readonly ProjectGenerator _projectGenerator;
@@ -51,35 +55,125 @@ public sealed partial class AssemblyGenerator
     {
         ArgumentNullException.ThrowIfNull(request);
 
+        // The CsCom.Runtime assembly is copied next to the interop assembly, so that both can be referenced directly.
+        return RunInTemporaryProject(
+            request,
+            static (_, manifest) => manifest.SupportCode == SupportCodeMode.Package
+                ? new Dictionary<string, string> { ["CopyLocalLockFileAssemblies"] = "true" }
+                : null,
+            (manifest, temp, projectPath) =>
+            {
+                IReadOnlyList<string?> runtimes = manifest.RuntimeIdentifiers.Count > 0 ? [.. manifest.RuntimeIdentifiers] : [null];
+                foreach (string? runtime in runtimes)
+                {
+                    RunDotNet("build", projectPath, temp, request.Configuration, runtime);
+                }
+
+                string output = Path.GetFullPath(request.OutputDirectory ?? Environment.CurrentDirectory);
+                var files = CopyOutputs(temp, output, manifest, request.Configuration);
+                LogAssemblyCreated(manifest.Name, output);
+                return files;
+            });
+    }
+
+    /// <summary>
+    /// Generates and builds the interop assembly, packs it into a NuGet package and a symbols package, and copies them into
+    /// the output directory.
+    /// </summary>
+    /// <remarks>
+    /// The package is RID-neutral: it contains the assembly and its XML documentation in <c>lib/&lt;tfm&gt;</c> for each target
+    /// framework, and the symbols package contains the PDBs. With <see cref="SupportCodeMode.Package"/>, the package depends on
+    /// the CsCom.Runtime package.
+    /// </remarks>
+    /// <returns>The paths of the copied packages.</returns>
+    public IReadOnlyList<string> PackAssembly(PackAssemblyRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        if (request.RuntimeIdentifiers.Count > 0)
+        {
+            throw new CsComException("The packages are RID-neutral; runtime identifiers are not supported.");
+        }
+
+        if (request.PackageVersion is { } version && !VersionPattern().IsMatch(version))
+        {
+            throw new CsComException($"'{version}' is not a valid package version, e.g. 1.2.3 or 1.2.3-preview.1 is expected.");
+        }
+
+        if (request.PackageProperties.Keys.FirstOrDefault(static n => !PropertyNamePattern().IsMatch(n)) is { } name)
+        {
+            throw new CsComException($"'{name}' is not a valid MSBuild property name.");
+        }
+
+        return RunInTemporaryProject(
+            request,
+            (library, _) => GetPackageProperties(request, library),
+            (manifest, temp, projectPath) =>
+            {
+                string packages = Path.Combine(temp, "packages");
+                RunDotNet("pack", projectPath, temp, request.Configuration, runtime: null, "--output", packages);
+
+                string output = Path.GetFullPath(request.OutputDirectory ?? Environment.CurrentDirectory);
+                Directory.CreateDirectory(output);
+                var files = new List<string>();
+                foreach (string file in Directory.EnumerateFiles(packages).Where(static f => PackageExtensions.Contains(Path.GetExtension(f), StringComparer.OrdinalIgnoreCase)))
+                {
+                    string target = Path.Combine(output, Path.GetFileName(file));
+                    File.Copy(file, target, overwrite: true);
+                    files.Add(target);
+                    LogPackageCreated(target);
+                }
+
+                return files;
+            });
+    }
+
+    // The properties of the package; the properties of the request override the defaults with the same name.
+    private static Dictionary<string, string> GetPackageProperties(PackAssemblyRequest request, TypeLibrary library)
+    {
+        string version = request.PackageVersion
+            ?? (library.MajorVersion == 0 && library.MinorVersion == 0 ? "1.0.0" : $"{library.MajorVersion}.{library.MinorVersion}.0");
+        string title = string.IsNullOrWhiteSpace(library.Documentation) ? library.Name : library.Documentation.Trim();
+        var properties = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["Version"] = version,
+            ["Description"] = $"{title}: COM interop types generated by CsCom.",
+            ["PackageTags"] = "COM;interop;CsCom",
+            ["IncludeSymbols"] = "true",
+            ["SymbolPackageFormat"] = "snupkg",
+        };
+
+        foreach (var (name, value) in request.PackageProperties)
+        {
+            properties[name] = value;
+        }
+
+        return properties;
+    }
+
+    // Generates the project in a temporary directory, runs the action and deletes the directory, unless the action failed or
+    // the temporary files are kept.
+    private IReadOnlyList<string> RunInTemporaryProject(
+        AssemblyRequest request,
+        Func<TypeLibrary, CsComManifest, IReadOnlyDictionary<string, string>?> getProperties,
+        Func<CsComManifest, string, string, IReadOnlyList<string>> action)
+    {
         var library = _pipeline.ReadTypeLibrary(request.TypeLibraryPath, request.ReferencePaths);
         var manifest = _projectGenerator.ResolveSettings(request, library);
         var configuration = _projectGenerator.LoadConfiguration(manifest.Configuration);
-        string output = Path.GetFullPath(request.OutputDirectory ?? Environment.CurrentDirectory);
         string temp = Path.Combine(Path.GetTempPath(), "cscom", Guid.NewGuid().ToString("N"));
 
         Directory.CreateDirectory(temp);
         File.WriteAllText(Path.Combine(temp, "Directory.Build.props"), IsolationProps);
         File.WriteAllText(Path.Combine(temp, "Directory.Build.targets"), IsolationProps);
         File.WriteAllText(Path.Combine(temp, "Directory.Packages.props"), IsolationPackagesProps);
-
-        // The CsCom.Runtime assembly is copied next to the interop assembly, so that both can be referenced directly.
-        var extraProperties = manifest.SupportCode == SupportCodeMode.Package
-            ? new Dictionary<string, string> { ["CopyLocalLockFileAssemblies"] = "true" }
-            : null;
-        string projectPath = _projectGenerator.WriteProject(temp, manifest, library, configuration, request.PackageSource, request.GlobalPackagesFolder, extraProperties);
+        string projectPath = _projectGenerator.WriteProject(
+            temp, manifest, library, configuration, request.PackageSource, request.GlobalPackagesFolder, getProperties(library, manifest));
 
         bool succeeded = false;
         try
         {
-            IReadOnlyList<string?> runtimes = manifest.RuntimeIdentifiers.Count > 0 ? [.. manifest.RuntimeIdentifiers] : [null];
-            foreach (string? runtime in runtimes)
-            {
-                Build(projectPath, temp, request.Configuration, runtime);
-            }
-
-            var files = CopyOutputs(temp, output, manifest, request.Configuration);
+            var files = action(manifest, temp, projectPath);
             succeeded = true;
-            LogAssemblyCreated(manifest.Name, output);
             return files;
         }
         finally
@@ -95,14 +189,16 @@ public sealed partial class AssemblyGenerator
         }
     }
 
-    private void Build(string projectPath, string workingDirectory, string configuration, string? runtime)
+    // Runs 'dotnet build' or 'dotnet pack' on the temporary project.
+    private void RunDotNet(string command, string projectPath, string workingDirectory, string configuration, string? runtime, params string[] extraArguments)
     {
-        List<string> arguments = ["build", projectPath, "--configuration", configuration, "-nodeReuse:false", "-p:UseSharedCompilation=false"];
+        List<string> arguments = [command, projectPath, "--configuration", configuration, "-nodeReuse:false", "-p:UseSharedCompilation=false"];
         if (runtime is not null)
         {
             arguments.AddRange(["--runtime", runtime]);
         }
 
+        arguments.AddRange(extraArguments);
         var (exitCode, output) = DotNetCli.Run(arguments, workingDirectory, _logger);
         if (exitCode != 0)
         {
@@ -111,7 +207,8 @@ public sealed partial class AssemblyGenerator
                 LogBuildError(line.Trim());
             }
 
-            throw new CsComException($"Building the interop assembly failed (exit code {exitCode}). The project is kept in '{workingDirectory}'.");
+            string action = command == "pack" ? "Packing" : "Building";
+            throw new CsComException($"{action} the interop assembly failed (exit code {exitCode}). The project is kept in '{workingDirectory}'.");
         }
     }
 
@@ -166,6 +263,13 @@ public sealed partial class AssemblyGenerator
     [GeneratedRegex(@":\s*error\s+\w+\d+\s*:", RegexOptions.CultureInvariant)]
     private static partial Regex ErrorPattern();
 
+    // A NuGet version: 2 to 4 numbers, with optional prerelease labels and build metadata.
+    [GeneratedRegex(@"^\d+(\.\d+){1,3}(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$", RegexOptions.CultureInvariant)]
+    private static partial Regex VersionPattern();
+
+    [GeneratedRegex(@"^[A-Za-z_][A-Za-z0-9_-]*$", RegexOptions.CultureInvariant)]
+    private static partial Regex PropertyNamePattern();
+
     [LoggerMessage(Level = LogLevel.Error, Message = "{Line}")]
     private partial void LogBuildError(string line);
 
@@ -174,6 +278,9 @@ public sealed partial class AssemblyGenerator
 
     [LoggerMessage(Level = LogLevel.Debug, Message = "Copied '{Path}'")]
     private partial void LogFileCopied(string path);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Created the package '{Path}'")]
+    private partial void LogPackageCreated(string path);
 
     [LoggerMessage(Level = LogLevel.Information, Message = "The temporary project is kept in '{Directory}'")]
     private partial void LogTemporaryProjectKept(string directory);

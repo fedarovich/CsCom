@@ -54,6 +54,11 @@ Generating a .Net assembly:
 cscom assembly build [<OPTIONS>] <TlbPath>
 ```
 
+Packing the .Net assembly into a NuGet package:
+```powershell
+cscom assembly pack [<OPTIONS>] <TlbPath>
+```
+
 ### Well-known options:
 
 + `--output|-o <PATH>` - the output directory

@@ -294,6 +294,14 @@ public sealed class CommandLineTests
         Assert.AreNotEqual(0, Run("project", "create", TestEnvironment.TestTypeLibrary, "--support-code", "nuget"));
         Assert.AreNotEqual(0, Run("assembly", "update", TestEnvironment.TestTypeLibrary));
 
+        // The packages are RID-neutral, and the package options are validated before anything is built.
+        string output = TestEnvironment.CreateDirectory("pack-syntax");
+        Assert.AreNotEqual(0, Run("assembly", "pack", TestEnvironment.TestTypeLibrary, "-o", output, "-r", "win-x64"));
+        Assert.AreEqual(1, Run("assembly", "pack", TestEnvironment.TestTypeLibrary, "-o", output, "--package-version", "1.x", "-v", "quiet"));
+        Assert.AreEqual(1, Run("assembly", "pack", TestEnvironment.TestTypeLibrary, "-o", output, "-p", "Authors", "-v", "quiet"));
+        Assert.AreEqual(1, Run("assembly", "pack", TestEnvironment.TestTypeLibrary, "-o", output, "--property", "1x=y", "-v", "quiet"));
+        Assert.IsEmpty(Directory.GetFileSystemEntries(output));
+
         // The verb-noun commands were renamed.
         Assert.AreNotEqual(0, Run("new", "project", TestEnvironment.TestTypeLibrary));
         Assert.AreNotEqual(0, Run("update", "project"));

@@ -70,15 +70,38 @@ public sealed class CreateProjectRequest : OutputRequest
 }
 
 /// <summary>
-/// The options of the <c>assembly build</c> command.
+/// The options shared by the <c>assembly build</c> and <c>assembly pack</c> commands, which build the assembly in a temporary project.
 /// </summary>
-public sealed class BuildAssemblyRequest : OutputRequest
+public abstract class AssemblyRequest : OutputRequest
 {
     /// <summary>Whether the temporary project is kept after the assembly is built.</summary>
     public bool KeepTemporaryFiles { get; init; }
 
     /// <summary>The build configuration.</summary>
     public string Configuration { get; init; } = "Release";
+}
+
+/// <summary>
+/// The options of the <c>assembly build</c> command.
+/// </summary>
+public sealed class BuildAssemblyRequest : AssemblyRequest
+{
+}
+
+/// <summary>
+/// The options of the <c>assembly pack</c> command. The packages are RID-neutral, so <see cref="OutputRequest.RuntimeIdentifiers"/>
+/// must be empty.
+/// </summary>
+public sealed class PackAssemblyRequest : AssemblyRequest
+{
+    /// <summary>The version of the package and the assembly; <c>&lt;major&gt;.&lt;minor&gt;.0</c> of the type library by default.</summary>
+    public string? PackageVersion { get; init; }
+
+    /// <summary>
+    /// Additional MSBuild properties of the package, e.g. <c>Authors</c> or <c>PackageLicenseExpression</c>; they override the
+    /// properties that CsCom sets.
+    /// </summary>
+    public IReadOnlyDictionary<string, string> PackageProperties { get; init; } = new Dictionary<string, string>();
 }
 
 /// <summary>

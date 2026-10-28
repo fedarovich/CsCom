@@ -175,6 +175,18 @@ internal static class CommandLine
         Description = "Keeps the temporary project used to build the assembly.",
     };
 
+    private static readonly Option<string?> PackageVersionOption = new("--package-version")
+    {
+        Description = "The version of the package and the assembly. <major>.<minor>.0 of the type library by default.",
+        HelpName = "VERSION",
+    };
+
+    private static readonly Option<string[]> PropertyOption = new("--property", "-p")
+    {
+        Description = "An MSBuild property of the package, e.g. Authors=Contoso or PackageLicenseExpression=MIT; can be specified multiple times.",
+        HelpName = "NAME=VALUE",
+    };
+
     private static readonly MarshallingCommandOptions CreateMarshallingOptions = MarshallingCommandOptions.Create(withDefaults: true);
 
     private static readonly MarshallingCommandOptions UpdateMarshallingOptions = MarshallingCommandOptions.Create(withDefaults: false);
@@ -237,6 +249,34 @@ internal static class CommandLine
                 KeepTemporaryFiles = result.GetValue(KeepTempOption),
             })));
 
+        var packAssembly = new Command("pack", "Builds an interop assembly and packs it into a NuGet package with a symbols package.");
+        AddCreateOptions(packAssembly, withRuntimes: false);
+        packAssembly.Options.Add(KeepTempOption);
+        packAssembly.Options.Add(PackageVersionOption);
+        packAssembly.Options.Add(PropertyOption);
+        packAssembly.SetAction(static result => Run(result, (pipeline, loggerFactory) =>
+            new AssemblyGenerator(pipeline, loggerFactory).PackAssembly(new PackAssemblyRequest
+            {
+                TypeLibraryPath = result.GetRequiredValue(TypeLibraryArgument),
+                OutputDirectory = result.GetValue(OutputOption),
+                Name = result.GetValue(NameOption),
+                Namespace = result.GetValue(NamespaceOption),
+                TargetFrameworks = result.GetValue(FrameworkOption) ?? [],
+                LanguageVersion = result.GetValue(LanguageVersionOption),
+                SingleFile = result.GetValue(SingleFileOption),
+                SupportCode = result.GetValue(SupportCodeOption),
+                Marshalling = CreateMarshallingOptions.GetOverrides(result).Apply(new MarshallingOptions()),
+                EventStyle = result.GetValue(EventStyleOption),
+                StructProperties = result.GetValue(StructPropertiesOption),
+                OverloadsForDefaultValues = result.GetValue(OverloadsOption),
+                ConfigurationPath = result.GetValue(ConfigOption),
+                ReferencePaths = result.GetValue(ReferencePathOption) ?? [],
+                PackageSource = result.GetValue(PackageSourceOption) ?? GetBundledPackageSource(),
+                KeepTemporaryFiles = result.GetValue(KeepTempOption),
+                PackageVersion = result.GetValue(PackageVersionOption),
+                PackageProperties = GetPackageProperties(result),
+            })));
+
         var updateProject = new Command("update", "Regenerates the C# files of a project created with 'cscom project create'.")
         {
             UpdateTypeLibraryArgument,
@@ -294,7 +334,7 @@ internal static class CommandLine
         {
             VerbosityOption,
             new Command("project", "Creates or updates an interop project.") { createProject, updateProject },
-            new Command("assembly", "Builds an interop assembly.") { buildAssembly },
+            new Command("assembly", "Builds or packs an interop assembly.") { buildAssembly, packAssembly },
             new Command("config", "Creates configuration files.") { createConfig },
             list,
         };
@@ -324,14 +364,18 @@ internal static class CommandLine
         return true;
     }
 
-    private static void AddCreateOptions(Command command)
+    private static void AddCreateOptions(Command command, bool withRuntimes = true)
     {
         command.Arguments.Add(TypeLibraryArgument);
         command.Options.Add(OutputOption);
         command.Options.Add(NameOption);
         command.Options.Add(NamespaceOption);
         command.Options.Add(FrameworkOption);
-        command.Options.Add(RuntimeOption);
+        if (withRuntimes)
+        {
+            command.Options.Add(RuntimeOption);
+        }
+
         command.Options.Add(LanguageVersionOption);
         command.Options.Add(SingleFileOption);
         command.Options.Add(SupportCodeOption);
@@ -342,6 +386,24 @@ internal static class CommandLine
         command.Options.Add(ConfigOption);
         command.Options.Add(ReferencePathOption);
         command.Options.Add(PackageSourceOption);
+    }
+
+    // The NAME=VALUE pairs of --property; a later value replaces an earlier one with the same name.
+    private static Dictionary<string, string> GetPackageProperties(ParseResult result)
+    {
+        var properties = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (string property in result.GetValue(PropertyOption) ?? [])
+        {
+            int index = property.IndexOf('=', StringComparison.Ordinal);
+            if (index <= 0)
+            {
+                throw new CsComException($"'{property}' is not a valid property: NAME=VALUE is expected.");
+            }
+
+            properties[property[..index].Trim()] = property[(index + 1)..];
+        }
+
+        return properties;
     }
 
     // A flag of 'project update' without a value means true; when the option is omitted, the recorded value is kept.
