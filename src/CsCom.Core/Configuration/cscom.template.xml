@@ -9,6 +9,7 @@
     <!-- Type, Member and Parameter are regular expressions; TypeName, MemberName and ParameterName are exact names. -->
     <!-- <RenameType Type="^_(.*)$" NewName="$1" /> -->
     <!-- <RenameMember TypeName="IShape" Member="^Get(.*)$" NewName="Fetch$1" /> -->
+    <!-- <RenameMembersToPascalCase /> -->
     <!-- <SetMarshalling TypeName="IArrays" MemberName="Matrix" SafeArrays="wrapper" /> -->
     <!-- <RemoveEnumPrefix /> -->
     <!-- <ExcludeType Type="^_" Kind="interface|dispinterface" /> -->

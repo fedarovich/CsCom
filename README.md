@@ -193,6 +193,7 @@ The type selector (`Type`/`TypeName`) can be combined with `Kind`, except for th
 | --- | --- | --- |
 | `RenameType` | `Type`, `NewName` | Renames the matching types. |
 | `RenameMember` | `Type` (optional), `Member`, `Parameter` (optional), `NewName` | Renames the matching members: methods and properties of interfaces (the accessors of a property together), fields of structures, members of enums, and functions and constants of modules. With `Parameter`, renames the matching parameters of the matching methods instead. |
+| `RenameMembersToPascalCase` | `Type` and `Member` (both optional) | Converts the names of the matching members, or of all members, to PascalCase, see below. Parameters and types are not renamed. |
 | `SetMarshalling` | `Type`, `Member` and `Parameter` (all optional); at least one of `Dates`, `Currencies`, `Booleans` (`bcl\|none\|wrapper`), `Bstrs` (`string\|wrapper\|none`) and `SafeArrays` (`array\|sysarray\|wrapper\|none`) | Changes the [marshalling options](#marshalling-options) of the parameters and return values of the matching methods, and of the matching dispinterface properties and structure fields. With `Parameter`, only of the matching parameters, including `[retval]` parameters. Later elements override the values set by earlier ones. |
 | `RemoveEnumPrefix` | `Type` (optional) | Removes the prefix shared by the members of the matching enums, or of all enums. |
 | `ExcludeType` | `Type` and/or `Kind` | Removes the matching types. References to interfaces, dispinterfaces and coclasses become `IDispatch*` (if they are dispatchable) or `IUnknown*`, references to enums `long`, and pointers to structures `void*`. Structures used by value and base interfaces of kept interfaces cannot be removed. |
@@ -203,11 +204,31 @@ The type selector (`Type`/`TypeName`) can be combined with `Kind`, except for th
 <RenameMember Type="^IShape$" Member="^Move$" Parameter="^d(.)$" NewName="delta$1" />    <!-- dx, dy -> deltax, deltay -->
 <SetMarshalling Type="^IStrings$" Member="^Echo$" Parameter="^Value$" Bstrs="none" />   <!-- Echo(nint Value) -->
 <SetMarshalling Type="^Record$" Member="^Date$" Dates="wrapper" />                       <!-- a ComDate field -->
+<RenameMembersToPascalCase Kind="enum|struct" />                                         <!-- MAX_VALUE -> MaxValue, checked -> Checked -->
 ```
 
 `RemoveEnumPrefix` removes the longest common prefix that ends at a word boundary, after an underscore or before an upper case letter
 that follows a lower case letter or a digit: `xlArea`/`xlBar` become `Area`/`Bar` and `SHAPE_CIRCLE`/`SHAPE_SQUARE` become
 `CIRCLE`/`SQUARE`. Enums with a single member, or whose members would not start with a letter (`Size16`/`Size32`), are not changed.
+
+`RenameMembersToPascalCase` splits a name into words at the characters that are not letters or digits, usually `_`, and joins them
+with the first letter of each word in upper case. Words in upper case with more than two letters become title case, and the other
+words keep the rest of their letters, so names that are PascalCase already, acronyms included, are kept:
+
+| Name | New name |
+| --- | --- |
+| `MAX_VALUE`, `checked`, `_NewEnum`, `xlArea` | `MaxValue`, `Checked`, `NewEnum`, `XlArea` |
+| `HWND`, `IO_ERROR`, `OK_BUTTON` | `Hwnd`, `IOError`, `OKButton` (two-letter words stay in upper case) |
+| `Count`, `XMLDocument`, `IO`, `Value2` | not changed |
+| property `SOME_PROPERTY` | `SomeProperty`, with the accessors `get_SomeProperty` and `set_SomeProperty` |
+| method `get_SomeValue` | `GetSomeValue` |
+
+- **Accessors:** the accessors of a property share its name, so only the part after `get_`, `set_` or `putref_` changes. Ordinary
+  methods whose names look like accessors are converted like any other name.
+- **Collisions:** a member keeps its name, with a warning, if the new name is the name of another member of the type, e.g.
+  `count` next to `Count`. Names that would be empty or start with a digit, such as `_1`, are kept as well.
+- **Enum prefixes:** with `RemoveEnumPrefix`, either order gives the same names for enums like `SHAPE_CIRCLE`/`SHAPE_SQUARE`:
+  `Circle`/`Square`.
 
 ### Syntax transformers
 

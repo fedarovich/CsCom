@@ -29,6 +29,9 @@ public sealed class ConfigurationSchemaTests
                 <RenameMember Type="Shape" Kind="all" Member="^Move$" Parameter="^d(.)$" NewName="delta$1" />
                 <RenameMember TypeName="Point" MemberName="X" NewName="Left" />
                 <RenameMember MemberName="Move" ParameterName="dx" NewName="deltaX" />
+                <RenameMembersToPascalCase />
+                <RenameMembersToPascalCase Type="^I" Kind="interface" Member="^_" />
+                <RenameMembersToPascalCase TypeName="Record" MemberName="checked" />
                 <SetMarshalling Type="^IArrays$" Kind="interface" Member="Matrix" Parameter="Values"
                                 Dates="bcl" Currencies="none" Booleans="wrapper" Bstrs="string" SafeArrays="sysarray" />
                 <SetMarshalling TypeName="IArrays" MemberName="Matrix" ParameterName="Values" Bstrs="wrapper" SafeArrays="array" />
@@ -44,7 +47,7 @@ public sealed class ConfigurationSchemaTests
 
         CollectionAssert.AreEqual(Array.Empty<string>(), Validate(document).ToArray());
         var configuration = PipelineConfiguration.Parse(document, TransformerRegistry.CreateDefault());
-        Assert.HasCount(13, configuration.ModelTransformers);
+        Assert.HasCount(16, configuration.ModelTransformers);
         Assert.HasCount(3, configuration.SyntaxTransformers);
     }
 

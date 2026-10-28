@@ -46,6 +46,16 @@
           <xs:attributeGroup ref="NewName" />
         </xs:complexType>
       </xs:element>
+      <xs:element name="RenameMembersToPascalCase">
+        <xs:annotation>
+          <xs:documentation>Converts the names of the matching members, or of all members, to PascalCase: words separated by _ are joined, their first letters are upper-cased, and words in upper case with more than two letters become title case, e.g. MAX_VALUE becomes MaxValue, while XMLDocument and IO are kept. Property accessors keep their get_ and set_ prefixes; parameters and types are not renamed. A member is not renamed if its new name is the name of another member.</xs:documentation>
+        </xs:annotation>
+        <xs:complexType>
+          <xs:attributeGroup ref="TypeSelector" />
+          <xs:attributeGroup ref="KindSelector" />
+          <xs:attributeGroup ref="MemberSelector" />
+        </xs:complexType>
+      </xs:element>
       <xs:element name="SetMarshalling">
         <xs:annotation>
           <xs:documentation>Changes the marshalling options of the parameters and return values of the matching methods, and of the matching dispinterface properties and structure fields; with Parameter, only of the matching parameters.</xs:documentation>

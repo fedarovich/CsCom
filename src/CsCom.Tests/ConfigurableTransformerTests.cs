@@ -84,6 +84,7 @@ public sealed class ConfigurableTransformerTests
     [DataRow("""<RenameMember Kind="coclass" MemberName="Move" NewName="X" />""", "RenameMember: no member matches MemberName='Move', Kind='coclass'")]
     [DataRow("""<SetSafeArrayRank TypeName="IShape" Rank="2" />""", "SetSafeArrayRank: no SAFEARRAY matches TypeName='IShape'")]
     [DataRow("""<SetType TypeName="IShape" MemberName="Nothing" To="Color" />""", "SetType: nothing matches TypeName='IShape', MemberName='Nothing'")]
+    [DataRow("""<RenameMembersToPascalCase Type="^Nothing$" />""", "RenameMembersToPascalCase: no member matches Type='^Nothing$'")]
     public void WarnsWhenNothingMatches(string transformer, string warning)
     {
         var (_, logger) = Apply(transformer);
@@ -153,6 +154,9 @@ public sealed class ConfigurableTransformerTests
         """<SetSafeArrayRank TypeName="IArrays" Rank="4" />""",
         "cscom.xml(1,64): '4' is not a valid value of the attribute 'Rank': an integer from 1 to 3 is expected.")]
     [DataRow("""<SetSafeArrayRank TypeName="IArrays" />""", "cscom.xml(1,28): The attribute 'Rank' is required by <SetSafeArrayRank>.")]
+    [DataRow(
+        """<RenameMembersToPascalCase Parameter="^x$" />""",
+        "cscom.xml(1,54): The attribute 'Parameter' is not supported by <RenameMembersToPascalCase>.")]
     public void ReportsConfigurationErrors(string transformer, string message)
     {
         var exception = Assert.ThrowsExactly<CsComException>(() => Parse(transformer));
@@ -394,6 +398,135 @@ public sealed class ConfigurableTransformerTests
     }
 
     [TestMethod]
+    [DataRow("SOME_PROPERTY", "SomeProperty")]
+    [DataRow("MAX_VALUE", "MaxValue")]
+    [DataRow("get_SomeValue", "GetSomeValue")]
+    [DataRow("get_item", "GetItem")]
+    [DataRow("putref_SOME_VALUE", "PutrefSomeValue")]
+    [DataRow("set_1", "Set1")]
+    [DataRow("IO_ERROR", "IOError")]
+    [DataRow("OK_BUTTON", "OKButton")]
+    [DataRow("_NewEnum", "NewEnum")]
+    [DataRow("checked", "Checked")]
+    [DataRow("HWND", "Hwnd")]
+    [DataRow("SIZE16", "Size16")]
+    [DataRow("xlArea", "XlArea")]
+    [DataRow("lpszName", "LpszName")]
+    [DataRow("a_b_c", "ABC")]
+    [DataRow("__x", "X")]
+    [DataRow("Count", "Count")]
+    [DataRow("XMLDocument", "XMLDocument")]
+    [DataRow("IO", "IO")]
+    [DataRow("Value2", "Value2")]
+    [DataRow("_1", "_1")]
+    [DataRow("_", "_")]
+    public void ConvertsNamesToPascalCase(string name, string expected) => Assert.AreEqual(expected, MemberPascalCaser.ToPascalCase(name));
+
+    [TestMethod]
+    public void RenameMembersToPascalCaseRenamesTheTypeLibrary()
+    {
+        var (original, _) = Apply(string.Empty);
+        var (library, logger) = Apply("<RenameMembersToPascalCase />");
+
+        // The other members of the test type library are in PascalCase already. MIDL stores the name of ICalculator.Enumerator
+        // as enumerator, the name of its parameter, because its name table is case-insensitive.
+        CollectionAssert.AreEquivalent(
+            new[] { "Record.Checked", "ICalculator.Enumerator", "IShape.NewEnum", "DShapeEvents.NewEnum" },
+            GetMemberNames(library).Except(GetMemberNames(original)).ToArray());
+        Assert.AreEqual("NewEnum", Get<InterfaceDefinition>(library, "IShape").Methods.Single(static m => m.MemberId == -4).Name);
+        Assert.AreEqual(2, Get<InterfaceDefinition>(library, "IShape").Methods.Count(static m => m.Name == "Name"));
+        Assert.IsEmpty(logger.Warnings);
+    }
+
+    [TestMethod]
+    public void RenameMembersToPascalCaseUsesTheSelectors()
+    {
+        var (original, _) = Apply(string.Empty);
+        var (library, logger) = Apply("""
+            <RenameMembersToPascalCase TypeName="Record" />
+            <RenameMembersToPascalCase Kind="dispinterface" Member="^_" />
+            """);
+
+        CollectionAssert.AreEquivalent(
+            new[] { "Record.Checked", "DShapeEvents.NewEnum" },
+            GetMemberNames(library).Except(GetMemberNames(original)).ToArray());
+        Assert.IsEmpty(logger.Warnings);
+    }
+
+    [TestMethod]
+    public void RenameMembersToPascalCaseKeepsTheNamesThatCollide()
+    {
+        var definition = new EnumDefinition { Name = "Test", OriginalName = "Test" };
+        definition.Members.AddRange(
+            new[] { "count", "Count", "FOO_BAR", "foo_bar", "HWND", "Hwnd", "h_w_n_d", "other_value" }
+                .Select(static (n, i) => new EnumMember { Name = n, Value = i }));
+        var library = new TypeLibrary { Name = "Test" };
+        library.Types.Add(definition);
+        var logger = new ListLogger();
+
+        new MemberPascalCaser(null, null).Transform(library, new TransformationContext { Options = new CodeGenerationOptions { Namespace = "Test" }, Logger = logger });
+
+        // HWND keeps its name because of Hwnd, and then h_w_n_d keeps its name because of HWND.
+        Assert.AreEqual("count,Count,FOO_BAR,foo_bar,HWND,Hwnd,h_w_n_d,OtherValue", string.Join(",", definition.Members.Select(static m => m.Name)));
+        CollectionAssert.AreEqual(
+            new[] { ("count", "Count"), ("FOO_BAR", "FooBar"), ("foo_bar", "FooBar"), ("HWND", "Hwnd"), ("h_w_n_d", "HWND") }
+                .Select(static c => $"RenameMembersToPascalCase: 'Test.{c.Item1}' is not renamed to '{c.Item2}', because it is the name of another member")
+                .ToArray(),
+            logger.Warnings.ToArray());
+    }
+
+    [TestMethod]
+    public void RenameMembersToPascalCaseKeepsThePrefixesOfPropertyAccessors()
+    {
+        var @int = new PrimitiveTypeReference(System.Runtime.InteropServices.VarEnum.VT_I4);
+        var @interface = new InterfaceDefinition
+        {
+            Name = "IOptions",
+            OriginalName = "IOptions",
+            Guid = Guid.NewGuid(),
+            InterfaceKind = InterfaceKind.Dual,
+            BaseInterface = new PrimitiveTypeReference(System.Runtime.InteropServices.VarEnum.VT_DISPATCH),
+            BaseVtableSlots = 7,
+        };
+        @interface.Methods.Add(Method("SOME_PROPERTY", 1, InvokeKind.PropertyGet, 7, Retval()));
+        @interface.Methods.Add(Method("SOME_PROPERTY", 1, InvokeKind.PropertyPut, 8, new ParameterDefinition { Name = "value", Type = @int, Flags = ParameterFlags.In }));
+        @interface.Methods.Add(Method("get_OTHER_VALUE", 2, InvokeKind.Method, 9, Retval()));
+        var library = new TypeLibrary { Name = "Synthetic" };
+        library.Types.Add(@interface);
+        var pipeline = new InteropPipeline();
+        var configuration = PipelineConfiguration.Parse(
+            XDocument.Parse("<CsCom><ModelTransformers><RenameMembersToPascalCase /></ModelTransformers></CsCom>", LoadOptions.SetLineInfo),
+            pipeline.Registry);
+
+        var documents = pipeline.GenerateCode(library, new CodeGenerationOptions { Namespace = "Test" }, configuration);
+
+        string text = string.Concat(documents.Select(static d => d.GetText()));
+        StringAssert.Contains(text, "int get_SomeProperty()");
+        StringAssert.Contains(text, "void set_SomeProperty(int value)");
+        StringAssert.Contains(text, "public int SomeProperty");
+        StringAssert.Contains(text, "int GetOtherValue()");
+        Assert.IsFalse(text.Contains("get_OtherValue", StringComparison.Ordinal));
+        Assert.IsFalse(text.Contains("GetSomeProperty", StringComparison.Ordinal));
+
+        MethodDefinition Method(string name, int dispId, InvokeKind kind, int slot, ParameterDefinition parameter)
+        {
+            var method = new MethodDefinition
+            {
+                Name = name,
+                OriginalName = name,
+                MemberId = dispId,
+                InvokeKind = kind,
+                VtableSlot = slot,
+                ReturnType = new PrimitiveTypeReference(System.Runtime.InteropServices.VarEnum.VT_HRESULT),
+            };
+            method.Parameters.Add(parameter);
+            return method;
+        }
+
+        ParameterDefinition Retval() => new() { Name = "value", Type = new PointerTypeReference(@int), Flags = ParameterFlags.Out | ParameterFlags.Retval };
+    }
+
+    [TestMethod]
     public void AddFlagsAttributeKeepsTheLayoutOfSingleFiles()
     {
         var (documents, logger) = Generate("""<AddFlagsAttribute Type="^Color$" />""", singleFile: true);
@@ -477,6 +610,9 @@ public sealed class ConfigurableTransformerTests
 
     private static T Get<T>(TypeLibrary library, string name)
         where T : TypeDefinition => library.Types.OfType<T>().Single(t => t.Name == name);
+
+    private static IEnumerable<string> GetMemberNames(TypeLibrary library) =>
+        library.Types.SelectMany(static t => ModelSelectors.GetMembers(t).Select(m => $"{t.Name}.{m.Name}")).Distinct();
 
     private sealed class ListLogger : ILogger
     {
