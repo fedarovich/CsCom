@@ -23,15 +23,19 @@ internal sealed partial class TypeEmitters
 
     public EnumDeclarationSyntax EmitEnum(EnumDefinition definition)
     {
-        var members = definition.Members.Select(static member =>
+        var annotations = _context.Annotations;
+        var members = definition.Members.Select(member => annotations.Annotate(
             EnumMemberDeclaration(Syntax.Identifier(member.Name))
                 .WithEqualsValue(EqualsValueClause(Syntax.Expression(Syntax.IntegerLiteral(member.Value))))
-                .WithDocumentation(member.Documentation));
+                .WithDocumentation(member.Documentation),
+            member));
 
-        return EnumDeclaration(Syntax.Identifier(definition.Name))
-            .WithModifiers(Syntax.Modifiers(_context.Accessibility))
-            .WithMembers(SeparatedList(members))
-            .WithDocumentation(definition.Documentation);
+        return annotations.Annotate(
+            EnumDeclaration(Syntax.Identifier(definition.Name))
+                .WithModifiers(Syntax.Modifiers(_context.Accessibility))
+                .WithMembers(SeparatedList(members))
+                .WithDocumentation(definition.Documentation),
+            definition);
     }
 
     public StructDeclarationSyntax EmitRecord(RecordDefinition definition, string @namespace)
@@ -59,7 +63,7 @@ internal sealed partial class TypeEmitters
                 // Their elements have the COM types, because they cannot be converted one by one.
                 var element = fieldMapper.MapField(array.ElementType);
                 type = GetBufferName(field.Name);
-                members.Add(InlineArray(type, element.Name, array.Length));
+                members.Add(_context.Annotations.Annotate(InlineArray(type, element.Name, array.Length), field, SyntaxRole.InlineArray));
                 isUnsafe |= element.IsPointer;
             }
             else
@@ -84,15 +88,17 @@ internal sealed partial class TypeEmitters
 
             if (!isProperty)
             {
-                members.Add(declaration.WithDocumentation(field.Documentation));
+                members.Add(_context.Annotations.Annotate(declaration.WithDocumentation(field.Documentation), field));
                 continue;
             }
 
             string getter = conversion?.Get(fieldName) ?? fieldName;
             string setter = conversion?.Set("value") ?? "value";
-            members.Add(declaration);
-            members.Add(ParseMember($"public {conversion?.TypeName ?? type} {Syntax.Escape(field.Name)} {{ readonly get => {getter}; set => {fieldName} = {setter}; }}")
-                .WithDocumentation(field.Documentation));
+            members.Add(_context.Annotations.Annotate(declaration, field, SyntaxRole.BackingField));
+            members.Add(_context.Annotations.Annotate(
+                ParseMember($"public {conversion?.TypeName ?? type} {Syntax.Escape(field.Name)} {{ readonly get => {getter}; set => {fieldName} = {setter}; }}")
+                    .WithDocumentation(field.Documentation),
+                field));
         }
 
         string layout = $"{Syntax.InteropNamespace}.LayoutKind.{(definition.IsUnion ? "Explicit" : "Sequential")}";
@@ -105,11 +111,13 @@ internal sealed partial class TypeEmitters
         }
 
         modifiers.Add(SyntaxKind.PartialKeyword);
-        return StructDeclaration(Syntax.Identifier(definition.Name))
-            .WithModifiers(Syntax.Modifiers([.. modifiers]))
-            .WithAttributeLists(SingletonList(Syntax.AttributeList(Syntax.Attribute($"{Syntax.InteropNamespace}.StructLayout", layoutArguments))))
-            .WithMembers(List(members))
-            .WithDocumentation(definition.Documentation);
+        return _context.Annotations.Annotate(
+            StructDeclaration(Syntax.Identifier(definition.Name))
+                .WithModifiers(Syntax.Modifiers([.. modifiers]))
+                .WithAttributeLists(SingletonList(Syntax.AttributeList(Syntax.Attribute($"{Syntax.InteropNamespace}.StructLayout", layoutArguments))))
+                .WithMembers(List(members))
+                .WithDocumentation(definition.Documentation),
+            definition);
     }
 
     public ClassDeclarationSyntax EmitCoClass(CoClassDefinition definition, string @namespace)
@@ -157,10 +165,12 @@ internal sealed partial class TypeEmitters
             }
         }
 
-        return ClassDeclaration(Syntax.Identifier(definition.Name))
-            .WithModifiers(Syntax.Modifiers(_context.Accessibility, SyntaxKind.StaticKeyword, SyntaxKind.PartialKeyword))
-            .WithMembers(List(members))
-            .WithDocumentation(definition.Documentation ?? $"The {definition.OriginalName} class.");
+        return _context.Annotations.Annotate(
+            ClassDeclaration(Syntax.Identifier(definition.Name))
+                .WithModifiers(Syntax.Modifiers(_context.Accessibility, SyntaxKind.StaticKeyword, SyntaxKind.PartialKeyword))
+                .WithMembers(List(members))
+                .WithDocumentation(definition.Documentation ?? $"The {definition.OriginalName} class."),
+            definition);
     }
 
     public ClassDeclarationSyntax? EmitModule(ModuleDefinition definition, string @namespace)
@@ -174,7 +184,7 @@ internal sealed partial class TypeEmitters
         {
             if (EmitConstant(constant, signatures) is { } declaration)
             {
-                members.Add(declaration);
+                members.Add(_context.Annotations.Annotate(declaration, constant));
             }
             else
             {
@@ -205,10 +215,12 @@ internal sealed partial class TypeEmitters
         }
 
         modifiers.Add(SyntaxKind.PartialKeyword);
-        return ClassDeclaration(Syntax.Identifier(definition.Name))
-            .WithModifiers(Syntax.Modifiers([.. modifiers]))
-            .WithMembers(List(members))
-            .WithDocumentation(definition.Documentation);
+        return _context.Annotations.Annotate(
+            ClassDeclaration(Syntax.Identifier(definition.Name))
+                .WithModifiers(Syntax.Modifiers([.. modifiers]))
+                .WithMembers(List(members))
+                .WithDocumentation(definition.Documentation),
+            definition);
     }
 
     private MemberDeclarationSyntax? EmitConstant(ConstantDefinition constant, SignatureBuilder signatures)
@@ -280,12 +292,14 @@ internal sealed partial class TypeEmitters
             attributes.Add(Syntax.ReturnAttributeList(Syntax.Attribute(returnType.Marshalling)));
         }
 
-        return MethodDeclaration(Syntax.Type(returnType.Name), Syntax.Identifier(function.Name))
-            .WithModifiers(Syntax.Modifiers(SyntaxKind.PublicKeyword, SyntaxKind.StaticKeyword, SyntaxKind.PartialKeyword))
-            .WithAttributeLists(List(attributes))
-            .WithParameterList(Syntax.Parameters(parameters.Select(static p => p.ToSyntax())))
-            .WithSemicolonToken(Token(SyntaxKind.SemicolonToken))
-            .WithDocumentation(function.Documentation);
+        return _context.Annotations.Annotate(
+            MethodDeclaration(Syntax.Type(returnType.Name), Syntax.Identifier(function.Name))
+                .WithModifiers(Syntax.Modifiers(SyntaxKind.PublicKeyword, SyntaxKind.StaticKeyword, SyntaxKind.PartialKeyword))
+                .WithAttributeLists(List(attributes))
+                .WithParameterList(Syntax.Parameters(parameters.Select(static p => p.ToSyntax())))
+                .WithSemicolonToken(Token(SyntaxKind.SemicolonToken))
+                .WithDocumentation(function.Documentation),
+            function);
     }
 
     private static FieldDeclarationSyntax Field(string type, string name, SyntaxKind accessibility) =>

@@ -179,26 +179,32 @@ internal sealed partial class EventEmitter
 
     private InterfaceDeclarationSyntax EmitHandlerInterface(Source source)
     {
+        var annotations = _context.Annotations;
         var members = source.Events.Select(e =>
         {
             var outs = e.Parameters.Where(static p => p.Modifier == SyntaxKind.OutKeyword).ToList();
             string body = outs.Count == 0
                 ? e.IsVoid ? "{ }" : "=> default;"
                 : $"{{ {string.Concat(outs.Select(static p => $"{p.Name} = default; "))}{(e.IsVoid ? string.Empty : "return default;")} }}";
-            return ParseMember($"{e.ReturnType} {Syntax.Escape(e.HandlerName)}({Parameters(e)}) {body}").WithDocumentation(e.Method.Documentation);
+            var member = ParseMember($"{e.ReturnType} {Syntax.Escape(e.HandlerName)}({Parameters(e)}) {body}").WithDocumentation(e.Method.Documentation);
+            return annotations.Annotate(AnnotateParameters(member, e.Parameters), e.Method, SyntaxRole.EventHandler);
         });
 
-        return InterfaceDeclaration(Syntax.Identifier(source.HandlerName))
-            .WithModifiers(Modifiers(source.IsUnsafe, SyntaxKind.PartialKeyword))
-            .WithMembers(List(members))
-            .WithDocumentation($"Handles the events of the {source.Definition.OriginalName} event interface. The methods do nothing by default, so only the events of interest have to be implemented.");
+        return annotations.Annotate(
+            InterfaceDeclaration(Syntax.Identifier(source.HandlerName))
+                .WithModifiers(Modifiers(source.IsUnsafe, SyntaxKind.PartialKeyword))
+                .WithMembers(List(members))
+                .WithDocumentation($"Handles the events of the {source.Definition.OriginalName} event interface. The methods do nothing by default, so only the events of interest have to be implemented."),
+            source.Definition,
+            SyntaxRole.EventHandler);
     }
 
     private MemberDeclarationSyntax EmitDelegate(Source source, Event @event)
     {
         string modifiers = Accessibility + (@event.HasPointers ? " unsafe" : string.Empty);
-        return ParseMember($"{modifiers} delegate {@event.ReturnType} {source.DelegateName(@event)}({Parameters(@event)});")
+        var member = ParseMember($"{modifiers} delegate {@event.ReturnType} {source.DelegateName(@event)}({Parameters(@event)});")
             .WithDocumentation($"Represents the method that handles the {@event.Method.OriginalName} event of the {source.Definition.OriginalName} event interface.");
+        return _context.Annotations.Annotate(AnnotateParameters(member, @event.Parameters), @event.Method, SyntaxRole.EventDelegate);
     }
 
     private ClassDeclarationSyntax EmitEventArgs(Source source, Event @event)
@@ -207,9 +213,10 @@ internal sealed partial class EventEmitter
         foreach (var parameter in @event.Parameters)
         {
             string accessor = parameter.IsByRef ? "set" : "init";
-            members.Add(ParseMember($"public {parameter.TypeName} {PropertyName(@event, parameter)} {{ get; {accessor}; }}").WithDocumentation(parameter.IsByRef
+            var property = ParseMember($"public {parameter.TypeName} {PropertyName(@event, parameter)} {{ get; {accessor}; }}").WithDocumentation(parameter.IsByRef
                 ? $"Gets or sets the {parameter.Definition.Name} argument, which is passed back to the COM object."
-                : $"Gets the {parameter.Definition.Name} argument."));
+                : $"Gets the {parameter.Definition.Name} argument.");
+            members.Add(_context.Annotations.Annotate(property, parameter.Definition, SyntaxRole.Property));
         }
 
         if (!@event.IsVoid)
@@ -218,10 +225,32 @@ internal sealed partial class EventEmitter
                 .WithDocumentation("Gets or sets the result of the event, which is passed back to the COM object."));
         }
 
-        return ClassDeclaration(Syntax.Identifier(source.EventArgsName(@event)))
-            .WithModifiers(Modifiers(@event.HasPointers, SyntaxKind.SealedKeyword))
-            .WithMembers(List(members))
-            .WithDocumentation($"Provides data for the {@event.Method.OriginalName} event of the {source.Definition.OriginalName} event interface.");
+        return _context.Annotations.Annotate(
+            ClassDeclaration(Syntax.Identifier(source.EventArgsName(@event)))
+                .WithModifiers(Modifiers(@event.HasPointers, SyntaxKind.SealedKeyword))
+                .WithMembers(List(members))
+                .WithDocumentation($"Provides data for the {@event.Method.OriginalName} event of the {source.Definition.OriginalName} event interface."),
+            @event.Method,
+            SyntaxRole.EventArgs);
+    }
+
+    // Associates the parameters of a member parsed from text with the parameters of the event.
+    private static TNode AnnotateParameters<TNode>(TNode node, IReadOnlyList<SignatureParameter> parameters)
+        where TNode : SyntaxNode
+    {
+        var list = node switch
+        {
+            BaseMethodDeclarationSyntax method => method.ParameterList,
+            DelegateDeclarationSyntax @delegate => @delegate.ParameterList,
+            _ => null,
+        };
+
+        if (list is null || list.Parameters.Count != parameters.Count)
+        {
+            return node;
+        }
+
+        return node.ReplaceNodes(list.Parameters, (original, rewritten) => parameters[list.Parameters.IndexOf(original)].Annotate(rewritten));
     }
 
     private ClassDeclarationSyntax EmitSink(Source source)
@@ -250,9 +279,10 @@ internal sealed partial class EventEmitter
             foreach (var @event in source.Events)
             {
                 string documentation = @event.Method.Documentation ?? $"Occurs when the COM object raises the {@event.Method.OriginalName} event.";
-                members.Add(style == EventStyle.Events
+                var member = style == EventStyle.Events
                     ? ParseMember($"public event {source.DelegateName(@event)}? {Syntax.Escape(@event.Name)};").WithDocumentation(documentation)
-                    : ParseMember($"public global::System.IObservable<{source.EventArgsName(@event)}> {Syntax.Escape(@event.Name)} => __{@event.Name};").WithDocumentation(documentation));
+                    : ParseMember($"public global::System.IObservable<{source.EventArgsName(@event)}> {Syntax.Escape(@event.Name)} => __{@event.Name};").WithDocumentation(documentation);
+                members.Add(_context.Annotations.Annotate(member, @event.Method, SyntaxRole.Event));
             }
 
             string completions = style == EventStyle.Observable ? string.Concat(source.Events.Select(static e => $"__{e.Name}.OnCompleted(); ")) : string.Empty;
@@ -310,7 +340,7 @@ internal sealed partial class EventEmitter
                 .WithBaseList(BaseList(SeparatedList(baseTypes)));
         }
 
-        return declaration.WithMembers(List(members)).WithDocumentation(summary);
+        return _context.Annotations.Annotate(declaration.WithMembers(List(members)).WithDocumentation(summary), source.Definition, SyntaxRole.EventSink);
     }
 
     // The explicit implementation of a handler method that raises the .NET event.

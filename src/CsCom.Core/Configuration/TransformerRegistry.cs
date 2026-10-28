@@ -19,15 +19,17 @@ public sealed class TransformerRegistry
     public IReadOnlyCollection<string> SyntaxTransformerNames => _syntaxTransformers.Keys;
 
     /// <summary>
-    /// Creates a registry with the configurable transformers built into CsCom: <c>RenameType</c> (<see cref="TypeRenamer"/>),
-    /// <c>RenameMember</c> (<see cref="MemberRenamer"/>), <c>SetMarshalling</c> (<see cref="MarshallingSetter"/>) and
-    /// <c>RemoveEnumPrefix</c> (<see cref="EnumPrefixRemover"/>).
+    /// Creates a registry with the configurable transformers built into CsCom: the model transformers <c>RenameType</c>
+    /// (<see cref="TypeRenamer"/>), <c>RenameMember</c> (<see cref="MemberRenamer"/>), <c>SetMarshalling</c>
+    /// (<see cref="MarshallingSetter"/>) and <c>RemoveEnumPrefix</c> (<see cref="EnumPrefixRemover"/>), and the syntax
+    /// transformer <c>AddFlagsAttribute</c> (<see cref="FlagsAttributeAdder"/>).
     /// </summary>
     public static TransformerRegistry CreateDefault() => new TransformerRegistry()
         .AddModelTransformer("RenameType", TypeRenamer.Create)
         .AddModelTransformer("RenameMember", MemberRenamer.Create)
         .AddModelTransformer("SetMarshalling", MarshallingSetter.Create)
-        .AddModelTransformer("RemoveEnumPrefix", EnumPrefixRemover.Create);
+        .AddModelTransformer("RemoveEnumPrefix", EnumPrefixRemover.Create)
+        .AddSyntaxTransformer("AddFlagsAttribute", FlagsAttributeAdder.Create);
 
     /// <summary>
     /// Registers a model transformer.

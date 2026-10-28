@@ -103,23 +103,25 @@ internal static class Syntax
             return node;
         }
 
+        // NormalizeWhitespace does not change the line breaks inside documentation comments.
+        const string eol = SyntaxFormatter.EndOfLine;
         var builder = new System.Text.StringBuilder();
         if (!string.IsNullOrWhiteSpace(summary))
         {
-            builder.Append("/// <summary>\n");
+            builder.Append("/// <summary>").Append(eol);
             foreach (string line in summary.Trim().Split(["\r\n", "\n", "\r"], StringSplitOptions.None))
             {
-                builder.Append("/// ").Append(SecurityElement.Escape(line.Trim())).Append('\n');
+                builder.Append("/// ").Append(SecurityElement.Escape(line.Trim())).Append(eol);
             }
 
-            builder.Append("/// </summary>\n");
+            builder.Append("/// </summary>").Append(eol);
         }
 
         foreach (var (element, text) in extra)
         {
             int space = element.IndexOf(' ', StringComparison.Ordinal);
             string name = space < 0 ? element : element[..space];
-            builder.Append("/// <").Append(element).Append('>').Append(SecurityElement.Escape(text)).Append("</").Append(name).Append(">\n");
+            builder.Append("/// <").Append(element).Append('>').Append(SecurityElement.Escape(text)).Append("</").Append(name).Append('>').Append(eol);
         }
 
         return node.WithLeadingTrivia(node.GetLeadingTrivia().AddRange(ParseLeadingTrivia(builder.ToString())));

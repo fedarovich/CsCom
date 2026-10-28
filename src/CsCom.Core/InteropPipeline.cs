@@ -64,10 +64,12 @@ public sealed class InteropPipeline
             transformer.Transform(library, context);
         }
 
-        IReadOnlyList<GeneratedDocument> documents = new CSharpEmitter(_loggerFactory.CreateLogger<CSharpEmitter>()).Emit(library, options);
+        var annotations = new ModelAnnotations();
+        IReadOnlyList<GeneratedDocument> documents = new CSharpEmitter(_loggerFactory.CreateLogger<CSharpEmitter>()).Emit(library, options, annotations);
+        var syntaxContext = new TransformationContext { Options = context.Options, Logger = context.Logger, Annotations = annotations };
         foreach (var transformer in SyntaxTransformers.Concat(configuration.SyntaxTransformers))
         {
-            documents = transformer.Transform(documents, context);
+            documents = transformer.Transform(documents, syntaxContext);
         }
 
         return documents;

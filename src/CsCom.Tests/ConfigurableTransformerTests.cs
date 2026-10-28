@@ -184,6 +184,67 @@ public sealed class ConfigurableTransformerTests
         Assert.IsEmpty(logger.Warnings);
     }
 
+    [TestMethod]
+    public void AddFlagsAttributeKeepsTheLayoutOfSingleFiles()
+    {
+        var (documents, logger) = Generate("""<AddFlagsAttribute Type="^Color$" />""", singleFile: true);
+
+        string text = documents.Single().GetText().ReplaceLineEndings("\n");
+        StringAssert.Contains(text, "    /// </summary>\n    [global::System.Flags]\n    public enum Color\n");
+        Assert.AreEqual(1, CountFlags(text));
+        Assert.IsEmpty(logger.Warnings);
+    }
+
+    [TestMethod]
+    public void AddFlagsAttributeIsAddedOnce()
+    {
+        var (documents, _) = Generate("""
+            <AddFlagsAttribute Type="^(Color|AnonymousEnum)$" />
+            <AddFlagsAttribute Type="^Color$" />
+            """);
+
+        Assert.AreEqual(1, CountFlags(documents.Single(static d => d.RelativePath == "Color.cs").GetText()));
+        StringAssert.Contains(documents.Single(static d => d.RelativePath == "AnonymousEnum.cs").GetText(), "\r\n[global::System.Flags]\r\npublic enum AnonymousEnum\r\n");
+        Assert.AreEqual(2, documents.Sum(static d => CountFlags(d.GetText())));
+    }
+
+    [TestMethod]
+    public void AddFlagsAttributeWarnsWhenNothingMatches()
+    {
+        var (documents, logger) = Generate("""<AddFlagsAttribute Type="^IShape$" />""");
+
+        CollectionAssert.AreEqual(new[] { "AddFlagsAttribute: no enum matches Type='^IShape$'" }, logger.Warnings.ToArray());
+        Assert.AreEqual(0, documents.Sum(static d => CountFlags(d.GetText())));
+    }
+
+    [TestMethod]
+    public void AddFlagsAttributeRequiresAType()
+    {
+        var exception = Assert.ThrowsExactly<CsComException>(() => PipelineConfiguration.Parse(
+            XDocument.Parse("<CsCom><SyntaxTransformers><AddFlagsAttribute /></SyntaxTransformers></CsCom>", LoadOptions.SetLineInfo),
+            TransformerRegistry.CreateDefault(),
+            "cscom.xml"));
+
+        Assert.AreEqual("cscom.xml(1,29): The attribute 'Type' is required by <AddFlagsAttribute>.", exception.Message);
+    }
+
+    private static int CountFlags(string text) => text.Split("[global::System.Flags]").Length - 1;
+
+    // Generates the code of the test type library with syntax transformers.
+    private static (IReadOnlyList<GeneratedDocument> Documents, ListLogger Logger) Generate(string syntaxTransformers, bool singleFile = false)
+    {
+        var logger = new ListLogger();
+        var pipeline = new InteropPipeline(new ListLoggerFactory(logger));
+        var configuration = PipelineConfiguration.Parse(
+            XDocument.Parse($"<CsCom><SyntaxTransformers>{syntaxTransformers}</SyntaxTransformers></CsCom>", LoadOptions.SetLineInfo),
+            pipeline.Registry);
+        var documents = pipeline.GenerateCode(
+            pipeline.ReadTypeLibrary(TestEnvironment.TestTypeLibrary),
+            new CodeGenerationOptions { Namespace = "Test", SingleFile = singleFile, SingleFileName = "All.cs" },
+            configuration);
+        return (documents, logger);
+    }
+
     // Applies the transformers to the test type library, after the aliases are resolved as the pipeline does.
     private static (TypeLibrary Library, ListLogger Logger) Apply(string transformers)
     {
@@ -221,5 +282,18 @@ public sealed class ConfigurableTransformerTests
 
         public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter) =>
             _entries.Add((logLevel, formatter(state, exception)));
+    }
+
+    private sealed class ListLoggerFactory(ListLogger logger) : ILoggerFactory
+    {
+        public void AddProvider(ILoggerProvider provider)
+        {
+        }
+
+        public ILogger CreateLogger(string categoryName) => logger;
+
+        public void Dispose()
+        {
+        }
     }
 }

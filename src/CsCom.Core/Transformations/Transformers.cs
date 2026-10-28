@@ -16,7 +16,8 @@ public interface IModelTransformer
 }
 
 /// <summary>
-/// Transforms the generated Roslyn syntax trees before they are written.
+/// Transforms the generated Roslyn syntax trees before they are written. The nodes generated for the model elements can be
+/// found with <see cref="TransformationContext.Annotations"/>.
 /// </summary>
 public interface ISyntaxTransformer
 {
@@ -36,4 +37,10 @@ public sealed class TransformationContext
 
     /// <summary>The logger.</summary>
     public required ILogger Logger { get; init; }
+
+    /// <summary>
+    /// Associates the generated syntax nodes with the model elements; empty for the model transformers, which run before the
+    /// code is generated.
+    /// </summary>
+    public ModelAnnotations Annotations { get; init; } = new();
 }

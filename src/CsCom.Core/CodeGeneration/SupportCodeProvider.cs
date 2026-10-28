@@ -25,7 +25,10 @@ internal static class SupportCodeProvider
         {
             using var stream = assembly.GetManifestResourceStream(resource)!;
             using var reader = new StreamReader(stream);
-            var root = (CompilationUnitSyntax)CSharpSyntaxTree.ParseText(reader.ReadToEnd(), Syntax.ParseOptions).GetRoot();
+
+            // The line breaks of the embedded sources depend on how they were checked out.
+            string text = reader.ReadToEnd().ReplaceLineEndings(SyntaxFormatter.EndOfLine);
+            var root = (CompilationUnitSyntax)CSharpSyntaxTree.ParseText(text, Syntax.ParseOptions).GetRoot();
             files.Add((resource[ResourcePrefix.Length..], (CompilationUnitSyntax)rewriter.Visit(root)));
         }
 

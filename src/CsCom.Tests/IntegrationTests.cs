@@ -80,6 +80,9 @@ public sealed class IntegrationTests
                 <SetMarshalling Type="^DShapeEvents$" Member="^Names$" SafeArrays="sysarray" />
                 <RemoveEnumPrefix />
               </ModelTransformers>
+              <SyntaxTransformers>
+                <AddFlagsAttribute Type="^(Color|AnonymousEnum)$" />
+              </SyntaxTransformers>
             </CsCom>
             """);
 
@@ -93,6 +96,7 @@ public sealed class IntegrationTests
         });
 
         StringAssert.Contains(File.ReadAllText(Path.Combine(directory, "Generated", "IShapeContract.cs")), "void MoveBy(int deltax, int deltay = 0,");
+        StringAssert.Contains(File.ReadAllText(Path.Combine(directory, "Generated", "Color.cs")), "[global::System.Flags]");
         Build(project);
     }
 

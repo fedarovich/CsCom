@@ -111,6 +111,20 @@ names, unless an earlier transformer renamed them.
 that follows a lower case letter or a digit: `xlArea`/`xlBar` become `Area`/`Bar` and `SHAPE_CIRCLE`/`SHAPE_SQUARE` become
 `CIRCLE`/`SQUARE`. Enums with a single member, or whose members would not start with a letter (`Size16`/`Size32`), are not changed.
 
+### Syntax transformers
+
+The syntax transformers run after the code is generated, so their selectors match the final names, after the model transformers.
+
+| Element | Attributes | Effect |
+| --- | --- | --- |
+| `AddFlagsAttribute` | `Type` | Adds `[System.Flags]` to the matching enums, which type libraries cannot mark as bit fields. Enums that already have it are not changed. |
+
+```xml
+<SyntaxTransformers>
+  <AddFlagsAttribute Type="^(ShapeFlags|Options)$" />
+</SyntaxTransformers>
+```
+
 ## Generated code
 
 ```csharp
@@ -397,8 +411,6 @@ The generated projects disable runtime marshalling, which source-generated COM i
 - Types imported from other type libraries are always generated into the project; referencing other interop assemblies is not supported yet.
 - CsCom.Runtime only targets `net10.0` for now. Source-generated COM expects a base interface from another assembly (`IDispatch`)
   to be compiled for the same target framework, so a `net11.0` build of CsCom.Runtime should be added together with .NET 11 support.
-- No configurable syntax transformers are built in yet: the `SyntaxTransformers` section of the [configuration file](#configuration-file)
-  can only add transformers registered through the `InteropPipeline` API.
 
 ## Architecture
 
@@ -408,7 +420,10 @@ The tool runs the type library through a pipeline (`CsCom.Core`):
 2. The model transformers (`IModelTransformer`) change the model. The built-in ones resolve aliases first and sanitize names last;
    those of `InteropPipeline.ModelTransformers` and of the [configuration file](#configuration-file) run in between.
 3. `CSharpEmitter` generates the Roslyn syntax trees.
-4. The syntax transformers (`ISyntaxTransformer`) change the syntax trees.
+4. The syntax transformers (`ISyntaxTransformer`) change the syntax trees. The generated declarations carry annotations that
+   associate them with the model elements, which `TransformationContext.Annotations` resolves: `GetElement(node)` gives the
+   element of a node and its role (`SyntaxRole.Declaration`, `Extensions`, `EventSink`, …), and `GetNodes(root, element, role)`
+   finds the nodes generated for an element.
 5. `ProjectGenerator` and `AssemblyGenerator` write the project or build the assembly.
 
 | Project | Description |

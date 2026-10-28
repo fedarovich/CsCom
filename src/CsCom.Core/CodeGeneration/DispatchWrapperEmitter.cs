@@ -46,7 +46,7 @@ internal sealed class DispatchWrapperEmitter
             string id = DispId(property.DispId);
             string get = type.FromObject($"InvokeGet({id})");
             string? set = property.IsReadOnly ? null : $"InvokePut({id}, value)";
-            members.Add(Property(type.Name, property.Name, get, set, property.Documentation));
+            members.Add(_context.Annotations.Annotate(Property(type.Name, property.Name, get, set, property.Documentation), property));
         }
 
         bool hasIndexer = false;
@@ -62,25 +62,31 @@ internal sealed class DispatchWrapperEmitter
             EmitProperty(group, signatures, members, ref hasIndexer);
         }
 
-        bool hasNewEnum = definition.Methods.Any(static m => m.MemberId == DispIdNewEnum) || definition.Properties.Any(static p => p.DispId == DispIdNewEnum);
-        if (hasNewEnum && !memberNames.Contains("GetEnumerator"))
+        object? newEnum = (object?)definition.Methods.FirstOrDefault(static m => m.MemberId == DispIdNewEnum)
+            ?? definition.Properties.FirstOrDefault(static p => p.DispId == DispIdNewEnum);
+        if (newEnum is not null && !memberNames.Contains("GetEnumerator"))
         {
-            members.Add(ParseMember($"public {support}.ComEnumerator GetEnumerator() => GetEnumeratorCore();")
-                .WithDocumentation("Returns an enumerator that iterates through the collection, so that it can be used in foreach loops."));
+            members.Add(_context.Annotations.Annotate(
+                ParseMember($"public {support}.ComEnumerator GetEnumerator() => GetEnumeratorCore();")
+                    .WithDocumentation("Returns an enumerator that iterates through the collection, so that it can be used in foreach loops."),
+                newEnum,
+                SyntaxRole.Enumerator));
         }
 
-        return ClassDeclaration(Syntax.Identifier(definition.Name))
-            .WithModifiers(Syntax.Modifiers(_context.Accessibility, SyntaxKind.SealedKeyword, SyntaxKind.PartialKeyword))
-            .WithAttributeLists(SingletonList(Syntax.AttributeList(Syntax.Attribute(
-                $"{Syntax.MarshallingNamespace}.NativeMarshalling",
-                $"typeof({support}.DispatchWrapperMarshaller<{self}>)"))))
-            .WithBaseList(BaseList(SeparatedList<BaseTypeSyntax>(
-            [
-                SimpleBaseType(Syntax.Type($"{support}.DispatchObject")),
-                SimpleBaseType(Syntax.Type($"{support}.IDispatchWrapper<{self}>")),
-            ])))
-            .WithMembers(List(members))
-            .WithDocumentation(definition.Documentation ?? $"A late-bound wrapper of the {definition.OriginalName} dispinterface.");
+        return _context.Annotations.Annotate(
+            ClassDeclaration(Syntax.Identifier(definition.Name))
+                .WithModifiers(Syntax.Modifiers(_context.Accessibility, SyntaxKind.SealedKeyword, SyntaxKind.PartialKeyword))
+                .WithAttributeLists(SingletonList(Syntax.AttributeList(Syntax.Attribute(
+                    $"{Syntax.MarshallingNamespace}.NativeMarshalling",
+                    $"typeof({support}.DispatchWrapperMarshaller<{self}>)"))))
+                .WithBaseList(BaseList(SeparatedList<BaseTypeSyntax>(
+                [
+                    SimpleBaseType(Syntax.Type($"{support}.DispatchObject")),
+                    SimpleBaseType(Syntax.Type($"{support}.IDispatchWrapper<{self}>")),
+                ])))
+                .WithMembers(List(members))
+                .WithDocumentation(definition.Documentation ?? $"A late-bound wrapper of the {definition.OriginalName} dispinterface."),
+            definition);
     }
 
     private MemberDeclarationSyntax Method(MethodDefinition method, SignatureBuilder signatures)
@@ -95,10 +101,12 @@ internal sealed class DispatchWrapperEmitter
         if (!parameters.Any(static p => p.IsByRef))
         {
             string call = $"InvokeMethod({string.Join(", ", [id, .. parameters.Select(Argument)])})";
-            return declaration
-                .WithExpressionBody(Syntax.Arrow(returnType.IsVoid ? call : returnType.FromObject(call)))
-                .WithSemicolonToken(Token(SyntaxKind.SemicolonToken))
-                .WithDocumentation(method.Documentation);
+            return _context.Annotations.Annotate(
+                declaration
+                    .WithExpressionBody(Syntax.Arrow(returnType.IsVoid ? call : returnType.FromObject(call)))
+                    .WithSemicolonToken(Token(SyntaxKind.SemicolonToken))
+                    .WithDocumentation(method.Documentation),
+                method);
         }
 
         var statements = new List<StatementSyntax>
@@ -123,7 +131,7 @@ internal sealed class DispatchWrapperEmitter
             statements.Add(Syntax.Statement($"return {returnType.FromObject("__result")};"));
         }
 
-        return declaration.WithBody(Block(statements)).WithDocumentation(method.Documentation);
+        return _context.Annotations.Annotate(declaration.WithBody(Block(statements)).WithDocumentation(method.Documentation), method);
     }
 
     private void EmitProperty(IGrouping<string, MethodDefinition> group, SignatureBuilder signatures, List<MemberDeclarationSyntax> members, ref bool hasIndexer)
@@ -151,22 +159,26 @@ internal sealed class DispatchWrapperEmitter
             string index = string.Concat(property.Index.Select(static p => ", " + IndexArgument(p)));
             string? get = getterSignature is null ? null : property.Type.FromObject($"InvokeGet({id}{index})");
             string? set = setterSignature is null ? null : $"{(setter == put ? "InvokePut" : "InvokePutRef")}({id}, value{index})";
+            var accessors = new[] { getterSignature is null ? null : getter, setterSignature is null ? null : setter }
+                .OfType<MethodDefinition>()
+                .Select(a => _context.Annotations.GetAnnotation(a, SyntaxRole.Property))
+                .ToArray();
 
             if (property.Index.Count == 0)
             {
-                members.Add(Property(property.Type.Name, group.Key, get, set, documentation));
+                members.Add(Property(property.Type.Name, group.Key, get, set, documentation).WithAdditionalAnnotations(accessors));
                 emitted = true;
             }
             else if (!hasIndexer && dispId == DispIdValue)
             {
-                var parameters = property.Index.Select(static p => Syntax.Parameter(p.TypeName, IndexParameterName(p.Definition.Name).TrimStart('@')));
+                var parameters = property.Index.Select(static p => p.Annotate(Syntax.Parameter(p.TypeName, IndexParameterName(p.Definition.Name).TrimStart('@'))));
                 var indexer = IndexerDeclaration(Syntax.Type(property.Type.Name))
                     .WithModifiers(Syntax.Modifiers(SyntaxKind.PublicKeyword))
                     .WithParameterList(Syntax.BracketedParameters(parameters));
                 indexer = set is null
                     ? indexer.WithExpressionBody(Syntax.Arrow(get!)).WithSemicolonToken(Token(SyntaxKind.SemicolonToken))
                     : indexer.WithAccessorList(InterfaceEmitter.Accessors(get, set));
-                members.Add(indexer.WithDocumentation(documentation));
+                members.Add(indexer.WithDocumentation(documentation).WithAdditionalAnnotations(accessors));
                 hasIndexer = true;
                 emitted = true;
             }

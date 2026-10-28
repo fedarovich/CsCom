@@ -191,6 +191,40 @@ public sealed class CodeGenerationTests : VerifyBase
         return Verify(ToTargets(documents.Where(static d => d.RelativePath is "IArrays.cs" or "IStrings.cs" or "Record.cs" or "IShapeEventsDual.cs" or "DShapeEvents.cs")));
     }
 
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public void GeneratesWindowsLineEndings(bool singleFile)
+    {
+        // The snapshots do not catch mixed line endings, because Verify normalizes them.
+        var documents = Generate(new CodeGenerationOptions
+        {
+            Namespace = "Interop.CsComTest",
+            SupportCode = SupportCodeMode.Internal,
+            SingleFile = singleFile,
+            SingleFileName = "Interop.CsComTest.cs",
+        });
+
+        foreach (var document in documents)
+        {
+            Assert.IsFalse(document.GetText().Replace("\r\n", string.Empty, StringComparison.Ordinal).Contains('\n', StringComparison.Ordinal), document.RelativePath);
+        }
+    }
+
+    [TestMethod]
+    public Task GeneratesFlagsAttribute()
+    {
+        var documents = Generate(new CodeGenerationOptions { Namespace = "Interop.CsComTest", ToolVersion = TestEnvironment.ToolVersion }, """
+            <CsCom>
+              <SyntaxTransformers>
+                <AddFlagsAttribute Type="^Color$" />
+              </SyntaxTransformers>
+            </CsCom>
+            """);
+
+        return Verify(ToTargets(documents.Where(static d => d.RelativePath is "Color.cs")));
+    }
+
     private static IReadOnlyList<GeneratedDocument> Generate(CodeGenerationOptions options, string? configuration = null)
     {
         var pipeline = new InteropPipeline();

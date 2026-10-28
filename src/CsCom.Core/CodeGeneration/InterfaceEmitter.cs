@@ -76,7 +76,7 @@ internal sealed partial class InterfaceEmitter
             declaration = declaration.WithBaseList(BaseList(SingletonSeparatedList<BaseTypeSyntax>(SimpleBaseType(Syntax.Type(baseType)))));
         }
 
-        yield return declaration;
+        yield return _context.Annotations.Annotate(declaration, definition);
 
         if (EmitExtensions(definition, @namespace, signatures) is { } extensions)
         {
@@ -151,6 +151,7 @@ internal sealed partial class InterfaceEmitter
             string? documentation = (getter ?? setterMethod)!.Documentation;
             string? getExpression = getterSignature is null ? null : $"@this.{Syntax.Escape(SignatureBuilder.GetMethodName(getter!))}({Arguments(property.Index)})";
             string? setExpression = setterSignature is null ? null : $"@this.{Syntax.Escape(SignatureBuilder.GetMethodName(setterMethod!))}({Arguments(property.Index, "value")})";
+            MethodDefinition?[] accessors = [getterSignature is null ? null : getter, setterSignature is null ? null : setterMethod];
 
             if (property.Index.Count == 0)
             {
@@ -159,11 +160,11 @@ internal sealed partial class InterfaceEmitter
                     continue;
                 }
 
-                members.Add(Property(property.Type, group.Key, getExpression, setExpression, documentation));
+                members.Add(AnnotateAccessors(Property(property.Type, group.Key, getExpression, setExpression, documentation), accessors));
             }
             else if (_context.Options.SupportsExtensionIndexers && !hasIndexer && IsDefaultMember(definition, group))
             {
-                members.Add(Indexer(property.Type, property.Index, getExpression, setExpression, documentation));
+                members.Add(AnnotateAccessors(Indexer(property.Type, property.Index, getExpression, setExpression, documentation), accessors));
                 hasIndexer = true;
             }
         }
@@ -172,11 +173,14 @@ internal sealed partial class InterfaceEmitter
             m.MemberId == DispIdNewEnum && m.InvokeKind is InvokeKind.Method or InvokeKind.PropertyGet && m.Parameters.Count == 1 && SignatureBuilder.HasRetval(m, out _));
         if (newEnum is not null && !methodNames.Contains("GetEnumerator"))
         {
-            members.Add(MethodDeclaration(Syntax.Type($"{_context.Support}.ComEnumerator"), Syntax.Identifier("GetEnumerator"))
-                .WithModifiers(Syntax.Modifiers(SyntaxKind.PublicKeyword))
-                .WithExpressionBody(Syntax.Arrow($"{_context.Support}.ComEnumerator.FromObject(@this.{Syntax.Escape(SignatureBuilder.GetMethodName(newEnum))}())"))
-                .WithSemicolonToken(Token(SyntaxKind.SemicolonToken))
-                .WithDocumentation("Returns an enumerator that iterates through the collection, so that it can be used in foreach loops."));
+            members.Add(_context.Annotations.Annotate(
+                MethodDeclaration(Syntax.Type($"{_context.Support}.ComEnumerator"), Syntax.Identifier("GetEnumerator"))
+                    .WithModifiers(Syntax.Modifiers(SyntaxKind.PublicKeyword))
+                    .WithExpressionBody(Syntax.Arrow($"{_context.Support}.ComEnumerator.FromObject(@this.{Syntax.Escape(SignatureBuilder.GetMethodName(newEnum))}())"))
+                    .WithSemicolonToken(Token(SyntaxKind.SemicolonToken))
+                    .WithDocumentation("Returns an enumerator that iterates through the collection, so that it can be used in foreach loops."),
+                newEnum,
+                SyntaxRole.Enumerator));
         }
 
         if (members.Count == 0)
@@ -191,11 +195,19 @@ internal sealed partial class InterfaceEmitter
             .WithMembers(List(members))
             .WithCloseBraceToken(Token(SyntaxKind.CloseBraceToken));
 
-        return ClassDeclaration(Syntax.Identifier(EmitContext.GetExtensionsClassName(definition)))
-            .WithModifiers(Syntax.Modifiers(_context.Accessibility, SyntaxKind.StaticKeyword, SyntaxKind.PartialKeyword))
-            .WithMembers(SingletonList<MemberDeclarationSyntax>(extension))
-            .WithDocumentation($"Provides the properties of the {definition.Name} interface.");
+        return _context.Annotations.Annotate(
+            ClassDeclaration(Syntax.Identifier(EmitContext.GetExtensionsClassName(definition)))
+                .WithModifiers(Syntax.Modifiers(_context.Accessibility, SyntaxKind.StaticKeyword, SyntaxKind.PartialKeyword))
+                .WithMembers(SingletonList<MemberDeclarationSyntax>(extension))
+                .WithDocumentation($"Provides the properties of the {definition.Name} interface."),
+            definition,
+            SyntaxRole.Extensions);
     }
+
+    // Associates a property or an indexer with the accessors it calls.
+    private TNode AnnotateAccessors<TNode>(TNode node, IEnumerable<MethodDefinition?> accessors)
+        where TNode : SyntaxNode =>
+        node.WithAdditionalAnnotations(accessors.OfType<MethodDefinition>().Select(a => _context.Annotations.GetAnnotation(a, SyntaxRole.Property)));
 
     private static bool IsDefaultMember(InterfaceDefinition definition, IGrouping<string, MethodDefinition> group) =>
         group.Any(static m => m.MemberId == DispIdValue)
@@ -281,7 +293,7 @@ internal sealed partial class InterfaceEmitter
 
     private static IndexerDeclarationSyntax Indexer(string type, IReadOnlyList<SignatureParameter> index, string? getExpression, string? setExpression, string? documentation)
     {
-        var parameters = index.Select(static p => Syntax.Parameter(p.TypeName, IndexParameterName(p.Definition.Name).TrimStart('@')));
+        var parameters = index.Select(static p => p.Annotate(Syntax.Parameter(p.TypeName, IndexParameterName(p.Definition.Name).TrimStart('@'))));
         var indexer = IndexerDeclaration(Syntax.Type(type))
             .WithModifiers(Syntax.Modifiers(SyntaxKind.PublicKeyword))
             .WithParameterList(Syntax.BracketedParameters(parameters));

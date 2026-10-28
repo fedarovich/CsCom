@@ -10,10 +10,11 @@ namespace CsCom.CodeGeneration;
 /// </summary>
 internal sealed class EmitContext
 {
-    public EmitContext(TypeLibrary library, CodeGenerationOptions options, ILogger logger)
+    public EmitContext(TypeLibrary library, CodeGenerationOptions options, ModelAnnotations annotations, ILogger logger)
     {
         Library = library;
         Options = options;
+        Annotations = annotations;
         Logger = logger;
         Support = "global::" + options.SupportNamespace;
     }
@@ -21,6 +22,9 @@ internal sealed class EmitContext
     public TypeLibrary Library { get; }
 
     public CodeGenerationOptions Options { get; }
+
+    /// <summary>Associates the generated syntax nodes with the model elements.</summary>
+    public ModelAnnotations Annotations { get; }
 
     public ILogger Logger { get; }
 

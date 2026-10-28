@@ -30,13 +30,14 @@ public sealed class CSharpEmitter
     /// </summary>
     /// <param name="library">The library, usually after the model transformers have been applied.</param>
     /// <param name="options">The options.</param>
+    /// <param name="annotations">Receives the associations between the generated syntax nodes and the model elements.</param>
     /// <returns>The generated files.</returns>
-    public IReadOnlyList<GeneratedDocument> Emit(TypeLibrary library, CodeGenerationOptions options)
+    public IReadOnlyList<GeneratedDocument> Emit(TypeLibrary library, CodeGenerationOptions options, ModelAnnotations? annotations = null)
     {
         ArgumentNullException.ThrowIfNull(library);
         ArgumentNullException.ThrowIfNull(options);
 
-        var context = new EmitContext(library, options, _logger);
+        var context = new EmitContext(library, options, annotations ?? new ModelAnnotations(), _logger);
         var interfaces = new InterfaceEmitter(context);
         var wrappers = new DispatchWrapperEmitter(context);
         var events = new EventEmitter(context);

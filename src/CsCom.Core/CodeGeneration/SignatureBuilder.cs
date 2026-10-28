@@ -24,13 +24,19 @@ internal sealed record SignatureParameter(ParameterDefinition Definition, TypeRe
     /// <summary>Whether the parameter is an optional <c>VARIANT</c>, whose <see langword="null"/> value means an omitted argument.</summary>
     public bool IsOptionalVariant { get; set; }
 
+    /// <summary>The annotation that associates the parameter syntax with <see cref="Definition"/>.</summary>
+    public SyntaxAnnotation? Annotation { get; init; }
+
     public string Name => Syntax.Escape(Definition.Name);
 
     public bool IsByRef => Modifier is SyntaxKind.RefKeyword or SyntaxKind.OutKeyword;
 
+    /// <summary>Associates a parameter declared for this parameter with <see cref="Definition"/>.</summary>
+    public ParameterSyntax Annotate(ParameterSyntax parameter) => Annotation is null ? parameter : parameter.WithAdditionalAnnotations(Annotation);
+
     public ParameterSyntax ToSyntax(bool includeMarshalling = true)
     {
-        var parameter = Parameter(Syntax.Identifier(Definition.Name)).WithType(Syntax.Type(TypeName));
+        var parameter = Annotate(Parameter(Syntax.Identifier(Definition.Name)).WithType(Syntax.Type(TypeName)));
         if (Modifier is { } modifier)
         {
             parameter = parameter.WithModifiers(TokenList(Token(modifier)));
@@ -116,7 +122,7 @@ internal sealed class SignatureBuilder
         }
 
         isUnsafe |= returnType.IsPointer || signature.Any(static p => p.TypeName.EndsWith('*'));
-        return declaration.WithAttributeLists(List(attributes)).WithDocumentation(method.Documentation);
+        return _context.Annotations.Annotate(declaration.WithAttributeLists(List(attributes)).WithDocumentation(method.Documentation), method);
     }
 
     /// <summary>
@@ -178,7 +184,7 @@ internal sealed class SignatureBuilder
             {
                 if (element is PrimitiveTypeReference { VarType: VarEnum.VT_VOID })
                 {
-                    result.Add(new SignatureParameter(parameter, parameter.Type, "void*", null, null));
+                    result.Add(CreateParameter(parameter, parameter.Type, "void*", null, null));
                     continue;
                 }
 
@@ -188,12 +194,12 @@ internal sealed class SignatureBuilder
                     ? isIn ? SyntaxKind.RefKeyword : SyntaxKind.OutKeyword
                     : IsPassedAsIn(element) ? SyntaxKind.InKeyword : SyntaxKind.RefKeyword;
                 var type = _mapper.WithMarshalling(parameter.Marshalling).MapValue(element);
-                result.Add(new SignatureParameter(parameter, element, type.Name, type.Marshalling, modifier));
+                result.Add(CreateParameter(parameter, element, type.Name, type.Marshalling, modifier));
             }
             else
             {
                 var type = _mapper.WithMarshalling(parameter.Marshalling).MapValue(parameter.Type);
-                result.Add(new SignatureParameter(parameter, parameter.Type, type.Name, type.Marshalling, null));
+                result.Add(CreateParameter(parameter, parameter.Type, type.Name, type.Marshalling, null));
             }
         }
 
@@ -221,12 +227,15 @@ internal sealed class SignatureBuilder
             }
 
             var type = _mapper.WithMarshalling(parameter.Marshalling).MapLateBound(valueType);
-            result.Add(new SignatureParameter(parameter, valueType, type.Name, null, modifier));
+            result.Add(CreateParameter(parameter, valueType, type.Name, null, modifier));
         }
 
         ApplyDefaults(result, lateBound: true);
         return result;
     }
+
+    private SignatureParameter CreateParameter(ParameterDefinition definition, TypeReference valueType, string typeName, string? marshalling, SyntaxKind? modifier) =>
+        new(definition, valueType, typeName, marshalling, modifier) { Annotation = _context.Annotations.GetAnnotation(definition) };
 
     private static bool IsPassedAsIn(TypeReference element) =>
         element is PrimitiveTypeReference { VarType: VarEnum.VT_VARIANT }
