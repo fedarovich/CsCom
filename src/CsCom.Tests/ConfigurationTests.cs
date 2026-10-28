@@ -37,7 +37,7 @@ public sealed class ConfigurationTests
               </SyntaxTransformers>
               <ModelTransformers>
                 <Rename Name="A" NewName="B" />
-                <Options Enabled="TRUE" Mode="always">
+                <Options Enabled="TRUE" Mode="auto">
                   <Item>x</Item>
                   <Item><![CDATA[y]]></Item>
                 </Options>
@@ -51,7 +51,7 @@ public sealed class ConfigurationTests
         Assert.AreEqual(("A", "B"), (first.Name, first.NewName));
         var options = (OptionsTransformer)configuration.ModelTransformers[1];
         Assert.IsTrue(options.Enabled);
-        Assert.AreEqual(StructProperties.Always, options.Mode);
+        Assert.AreEqual(StructProperties.Auto, options.Mode);
         CollectionAssert.AreEqual(new[] { "x", "y" }, options.Items.ToArray());
         Assert.AreEqual("C", ((TestRenameTransformer)configuration.ModelTransformers[2]).Name);
         Assert.AreEqual("IShape.cs", ((RemoveFileTransformer)configuration.SyntaxTransformers.Single()).Name);
@@ -136,10 +136,10 @@ public sealed class ConfigurationTests
         "cscom.xml(1,36): 'yes' is not a valid value of the attribute 'Enabled': true or false is expected.")]
     [DataRow(
         "<CsCom><ModelTransformers><Options Mode='1' /></ModelTransformers></CsCom>",
-        "cscom.xml(1,36): '1' is not a valid value of the attribute 'Mode': one of NonBlittable, Always, Never is expected.")]
+        "cscom.xml(1,36): '1' is not a valid value of the attribute 'Mode': one of Auto, Never is expected.")]
     [DataRow(
-        "<CsCom><ModelTransformers><Options Mode='Always, Never' /></ModelTransformers></CsCom>",
-        "cscom.xml(1,36): 'Always, Never' is not a valid value of the attribute 'Mode': one of NonBlittable, Always, Never is expected.")]
+        "<CsCom><ModelTransformers><Options Mode='Auto, Never' /></ModelTransformers></CsCom>",
+        "cscom.xml(1,36): 'Auto, Never' is not a valid value of the attribute 'Mode': one of Auto, Never is expected.")]
     public void ReportsErrorsWithTheirLocation(string xml, string message)
     {
         var exception = Assert.ThrowsExactly<CsComException>(() => Parse(xml, "cscom.xml"));

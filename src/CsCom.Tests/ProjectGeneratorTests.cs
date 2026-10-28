@@ -212,7 +212,7 @@ public sealed class ProjectGeneratorTests
         Assert.AreEqual(BstrMarshalling.String, manifest.Marshalling.Bstrs);
         Assert.AreEqual(SafeArrayMarshalling.Array, manifest.Marshalling.SafeArrays);
         Assert.AreEqual(EventStyle.Events, manifest.EventStyle);
-        Assert.AreEqual(StructProperties.NonBlittable, manifest.StructProperties);
+        Assert.AreEqual(StructProperties.Auto, manifest.StructProperties);
         Assert.IsNull(manifest.Configuration);
         Assert.IsFalse(manifest.OverloadsForDefaultValues);
     }

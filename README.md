@@ -51,7 +51,7 @@ after an Office update.
 | `--single-file` | Generates all types into a single C# file instead of a file per type. |
 | `--support-code <package\|public\|internal>` | Where the support code comes from, see below. `package` by default. |
 | `--date-marshalling`, `--currency-marshalling`, `--bool-marshalling` `<bcl\|none\|wrapper>` | How `DATE`, `CURRENCY` and `VARIANT_BOOL` parameters, return values and structure members are represented: `bcl` (default), `none` or `wrapper`, see [Marshalling options](#marshalling-options). |
-| `--struct-properties <always\|nonblittable\|never>` | Whether structure members are public fields or properties: `nonblittable` (default), `always` or `never`, see [Structures](#structures). |
+| `--struct-properties <auto\|never>` | Whether structure members converted to .NET types are properties (`auto`, default) or all members are public fields of the COM types (`never`), see [Structures](#structures). |
 | `--bstr-marshalling <string\|wrapper\|none>` | How `BSTR` parameters and return values are represented: `string` (default), `wrapper` (`ComBstr`) or `none`, see [BSTRs](#bstrs). |
 | `--safearray-marshalling <array\|sysarray\|wrapper\|none>` | How typed `SAFEARRAY(T)` parameters and return values are represented: `array` (default, `T[]`), `sysarray`, `wrapper` or `none`, see [SAFEARRAYs](#safearrays). |
 | `--event-style <events\|observable\|interface\|none>` | The code generated for the events of coclasses: `events` (default), `observable`, `interface` or `none`, see [Events](#events). |
@@ -436,20 +436,17 @@ stored as `double`, `long` and `short` or as the wrappers. `--struct-properties`
 
 | Value | Members with the COM type or a wrapper | `bcl` members (`DateTime`, `decimal`, `bool`) |
 | --- | --- | --- |
-| `nonblittable` (default) | public fields | properties that convert private fields |
-| `always` | properties over private fields | properties that convert private fields |
+| `auto` (default) | public fields | properties that convert private fields |
 | `never` | public fields | public fields of the COM types |
 
 ```csharp
-// --struct-properties nonblittable (default)
+// --struct-properties auto (default)
 public ComBstrValue Name;               // BSTR
 private short _flag;
 public bool Flag { readonly get => _flag != 0; set => _flag = value ? (short)-1 : (short)0; }
 ```
 
-With `always`, the properties return copies of nested structures and inline arrays, so `rect.TopLeft.X = 5` does not compile;
-assign a modified copy (`var topLeft = rect.TopLeft; topLeft.X = 5; rect.TopLeft = topLeft;`) or use `nonblittable` or `never`,
-which keep them as fields.
+Nested structures and inline arrays are always fields, so their members can be changed in place (`rect.TopLeft.X = 5`).
 
 `ComBstrValue` is a pointer-sized view of a `BSTR` field: `IsNull`, `Length`, `ToString()` and the implicit conversion to `string?`
 read it, and `AsComBstr()` gives a `ComBstr` that does not own it. As in C, the owner of the structure owns its strings, so

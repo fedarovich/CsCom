@@ -105,20 +105,20 @@ internal static class CommandLine
     };
 
     private const string StructPropertiesDescription =
-        "Whether structure members are generated as public fields, or as properties over private fields: properties only for the members " +
-        "converted to .NET types (nonblittable), for all members (always), or none (never).";
+        "Whether structure members converted to .NET types are generated as properties over private fields of the COM types (auto), " +
+        "or all members are public fields of the COM types (never).";
 
     private static readonly Option<StructProperties> StructPropertiesOption = new("--struct-properties")
     {
         Description = StructPropertiesDescription,
-        DefaultValueFactory = static _ => StructProperties.NonBlittable,
-        HelpName = "always|nonblittable|never",
+        DefaultValueFactory = static _ => StructProperties.Auto,
+        HelpName = "auto|never",
     };
 
     private static readonly Option<StructProperties?> UpdateStructPropertiesOption = new("--struct-properties")
     {
         Description = StructPropertiesDescription + " The value recorded in cscom.json by default.",
-        HelpName = "always|nonblittable|never",
+        HelpName = "auto|never",
     };
 
     private const string OverloadsDescription =

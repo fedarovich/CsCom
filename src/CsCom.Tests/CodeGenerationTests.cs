@@ -130,11 +130,10 @@ public sealed class CodeGenerationTests : VerifyBase
     }
 
     [TestMethod]
-    [DataRow(StructProperties.Always)]
     [DataRow(StructProperties.Never)]
     public Task GeneratesStructProperties(StructProperties mode)
     {
-        // The default NonBlittable mode is covered by GeneratesFilePerType.
+        // The default Auto mode is covered by GeneratesFilePerType.
         var documents = Generate(new CodeGenerationOptions { Namespace = "Interop.CsComTest", ToolVersion = TestEnvironment.ToolVersion, StructProperties = mode });
 
         return Verify(ToTargets(documents.Where(static d => d.RelativePath is "Record.cs" or "Number.cs" or "Point.cs")))

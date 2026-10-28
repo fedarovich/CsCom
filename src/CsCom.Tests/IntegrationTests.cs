@@ -16,20 +16,19 @@ public sealed class IntegrationTests
     private readonly InteropPipeline _pipeline = new();
 
     [TestMethod]
-    [DataRow(SupportCodeMode.Package, false, "default", EventStyle.Events, StructProperties.NonBlittable)]
-    [DataRow(SupportCodeMode.Public, false, "default", EventStyle.Events, StructProperties.NonBlittable)]
-    [DataRow(SupportCodeMode.Internal, true, "default", EventStyle.Events, StructProperties.NonBlittable)]
-    [DataRow(SupportCodeMode.Package, false, "none", EventStyle.Events, StructProperties.NonBlittable)]
-    [DataRow(SupportCodeMode.Internal, false, "wrapper", EventStyle.Events, StructProperties.NonBlittable)]
-    [DataRow(SupportCodeMode.Public, true, "default", EventStyle.Observable, StructProperties.NonBlittable)]
-    [DataRow(SupportCodeMode.Internal, false, "wrapper", EventStyle.Interface, StructProperties.NonBlittable)]
-    [DataRow(SupportCodeMode.Package, false, "default", EventStyle.None, StructProperties.NonBlittable)]
-    [DataRow(SupportCodeMode.Package, false, "safearray-sysarray", EventStyle.Events, StructProperties.NonBlittable)]
-    [DataRow(SupportCodeMode.Internal, true, "safearray-wrapper", EventStyle.Events, StructProperties.NonBlittable)]
-    [DataRow(SupportCodeMode.Public, false, "safearray-none", EventStyle.Events, StructProperties.NonBlittable)]
-    [DataRow(SupportCodeMode.Internal, true, "bstr-wrapper", EventStyle.Events, StructProperties.NonBlittable)]
-    [DataRow(SupportCodeMode.Package, false, "bstr-none", EventStyle.Events, StructProperties.NonBlittable)]
-    [DataRow(SupportCodeMode.Public, false, "default", EventStyle.Events, StructProperties.Always)]
+    [DataRow(SupportCodeMode.Package, false, "default", EventStyle.Events, StructProperties.Auto)]
+    [DataRow(SupportCodeMode.Public, false, "default", EventStyle.Events, StructProperties.Auto)]
+    [DataRow(SupportCodeMode.Internal, true, "default", EventStyle.Events, StructProperties.Auto)]
+    [DataRow(SupportCodeMode.Package, false, "none", EventStyle.Events, StructProperties.Auto)]
+    [DataRow(SupportCodeMode.Internal, false, "wrapper", EventStyle.Events, StructProperties.Auto)]
+    [DataRow(SupportCodeMode.Public, true, "default", EventStyle.Observable, StructProperties.Auto)]
+    [DataRow(SupportCodeMode.Internal, false, "wrapper", EventStyle.Interface, StructProperties.Auto)]
+    [DataRow(SupportCodeMode.Package, false, "default", EventStyle.None, StructProperties.Auto)]
+    [DataRow(SupportCodeMode.Package, false, "safearray-sysarray", EventStyle.Events, StructProperties.Auto)]
+    [DataRow(SupportCodeMode.Internal, true, "safearray-wrapper", EventStyle.Events, StructProperties.Auto)]
+    [DataRow(SupportCodeMode.Public, false, "safearray-none", EventStyle.Events, StructProperties.Auto)]
+    [DataRow(SupportCodeMode.Internal, true, "bstr-wrapper", EventStyle.Events, StructProperties.Auto)]
+    [DataRow(SupportCodeMode.Package, false, "bstr-none", EventStyle.Events, StructProperties.Auto)]
     [DataRow(SupportCodeMode.Internal, true, "wrapper", EventStyle.Events, StructProperties.Never)]
     public void GeneratedTestProjectBuildsWithoutWarnings(SupportCodeMode supportCode, bool singleFile, string marshalling, EventStyle eventStyle, StructProperties structProperties)
     {
@@ -1346,7 +1345,7 @@ public sealed class IntegrationTests
         bool singleFile,
         MarshallingOptions? marshalling = null,
         EventStyle eventStyle = EventStyle.Events,
-        StructProperties structProperties = StructProperties.NonBlittable) =>
+        StructProperties structProperties = StructProperties.Auto) =>
         new ProjectGenerator(_pipeline).CreateProject(new NewProjectRequest
         {
             TypeLibraryPath = typeLibrary,

@@ -55,8 +55,8 @@ public sealed record CsComManifest
     [JsonConverter(typeof(CamelCaseEnumConverter<EventStyle>))]
     public EventStyle EventStyle { get; init; }
 
-    /// <summary>Whether the members of the generated structures are public fields or properties; <see cref="StructProperties.NonBlittable"/> when missing.</summary>
-    [JsonConverter(typeof(CamelCaseEnumConverter<StructProperties>))]
+    /// <summary>Whether the members of the generated structures that are converted to .NET types are properties; <see cref="StructProperties.Auto"/> when missing.</summary>
+    [JsonConverter(typeof(StructPropertiesConverter))]
     public StructProperties StructProperties { get; init; }
 
     /// <summary>Whether overloads are generated for the default values that C# cannot express; <see langword="false"/> when missing.</summary>
@@ -117,4 +117,18 @@ internal sealed partial class CsComJsonContext : JsonSerializerContext
 internal sealed class CamelCaseEnumConverter<TEnum>() : JsonStringEnumConverter<TEnum>(JsonNamingPolicy.CamelCase, allowIntegerValues: false)
     where TEnum : struct, Enum
 {
+}
+
+// Also reads the values of earlier versions, nonblittable and always, as auto, so that their projects can be updated.
+internal sealed class StructPropertiesConverter : JsonConverter<StructProperties>
+{
+    public override StructProperties Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options) => reader.GetString() switch
+    {
+        "auto" or "nonblittable" or "always" => StructProperties.Auto,
+        "never" => StructProperties.Never,
+        var value => throw new JsonException($"'{value}' is not a valid value of structProperties: auto or never is expected."),
+    };
+
+    public override void Write(Utf8JsonWriter writer, StructProperties value, JsonSerializerOptions options) =>
+        writer.WriteStringValue(value == StructProperties.Never ? "never" : "auto");
 }

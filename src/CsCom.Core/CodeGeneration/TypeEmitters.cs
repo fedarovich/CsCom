@@ -77,8 +77,8 @@ internal sealed partial class TypeEmitters
                 }
             }
 
-            // The fields keep the layout of the COM structure; properties expose them and convert them to .NET types if needed.
-            bool isProperty = conversion is not null || mode == StructProperties.Always;
+            // The fields keep the layout of the COM structure; properties expose the members converted to .NET types.
+            bool isProperty = conversion is not null;
             string fieldName = isProperty ? GetBackingFieldName(field.Name, names) : field.Name;
             var declaration = Field(type, fieldName, isProperty ? SyntaxKind.PrivateKeyword : SyntaxKind.PublicKeyword);
             if (definition.IsUnion)

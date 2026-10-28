@@ -102,17 +102,27 @@ public sealed class CommandLineTests
     {
         string directory = TestEnvironment.CreateDirectory("cli-struct-properties");
 
-        Assert.AreEqual(0, Run("new", "project", TestEnvironment.TestTypeLibrary, "-o", directory, "-v", "quiet"));
-        Assert.AreEqual(CodeGeneration.StructProperties.NonBlittable, CsComManifest.Read(directory).StructProperties);
-        StringAssert.Contains(File.ReadAllText(Path.Combine(directory, CsComManifest.FileName)), "\"structProperties\": \"nonblittable\"");
+        string manifest = Path.Combine(directory, CsComManifest.FileName);
+        string record = Path.Combine(directory, "Generated", "Record.cs");
 
-        Assert.AreEqual(0, Run("update", "project", TestEnvironment.TestTypeLibrary, "-o", directory, "--struct-properties", "always", "-v", "quiet"));
-        Assert.AreEqual(CodeGeneration.StructProperties.Always, CsComManifest.Read(directory).StructProperties);
-        StringAssert.Contains(File.ReadAllText(Path.Combine(directory, "Generated", "Record.cs")), "private global::CsCom.Runtime.ComBstrValue _name;");
+        Assert.AreEqual(0, Run("new", "project", TestEnvironment.TestTypeLibrary, "-o", directory, "-v", "quiet"));
+        Assert.AreEqual(CodeGeneration.StructProperties.Auto, CsComManifest.Read(directory).StructProperties);
+        StringAssert.Contains(File.ReadAllText(manifest), "\"structProperties\": \"auto\"");
+        StringAssert.Contains(File.ReadAllText(record), "private short _flag;");
+
+        Assert.AreEqual(0, Run("update", "project", TestEnvironment.TestTypeLibrary, "-o", directory, "--struct-properties", "never", "-v", "quiet"));
+        Assert.AreEqual(CodeGeneration.StructProperties.Never, CsComManifest.Read(directory).StructProperties);
+        StringAssert.Contains(File.ReadAllText(record), "public short Flag;");
 
         Assert.AreEqual(0, Run("update", "project", TestEnvironment.TestTypeLibrary, "-o", directory, "-v", "quiet"));
-        Assert.AreEqual(CodeGeneration.StructProperties.Always, CsComManifest.Read(directory).StructProperties);
+        Assert.AreEqual(CodeGeneration.StructProperties.Never, CsComManifest.Read(directory).StructProperties);
 
+        // The values of earlier versions are read as auto.
+        File.WriteAllText(manifest, File.ReadAllText(manifest).Replace("\"structProperties\": \"never\"", "\"structProperties\": \"always\"", StringComparison.Ordinal));
+        Assert.AreEqual(0, Run("update", "project", "-o", directory, "-v", "quiet"));
+        StringAssert.Contains(File.ReadAllText(manifest), "\"structProperties\": \"auto\"");
+
+        Assert.AreNotEqual(0, Run("new", "project", TestEnvironment.TestTypeLibrary, "--struct-properties", "always"));
         Assert.AreNotEqual(0, Run("new", "project", TestEnvironment.TestTypeLibrary, "--struct-properties", "sometimes"));
     }
 
