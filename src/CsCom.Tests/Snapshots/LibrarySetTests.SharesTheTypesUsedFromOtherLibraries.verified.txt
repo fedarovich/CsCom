@@ -7,7 +7,8 @@
       MinorVersion: 2,
       Namespace: Interop.CsComTest,
       IsReferenced: true,
-      TypeCount: 20
+      TypeCount: 20,
+      Documentation: CsCom test type library
     },
     {
       Name: CsComDrawing,
@@ -15,7 +16,8 @@
       MajorVersion: 1,
       Namespace: Interop.CsComDrawing,
       IsReferenced: true,
-      TypeCount: 3
+      TypeCount: 3,
+      Documentation: CsCom drawing test type library
     },
     {
       Name: stdole,

@@ -17,9 +17,10 @@ internal static partial class ProjectFile
     /// Creates the text of a project file.
     /// </summary>
     /// <param name="manifest">The settings of the project.</param>
+    /// <param name="rootNamespace">The root namespace: the namespace of the first source.</param>
     /// <param name="runtimePackageVersion">The version of the CsCom.Runtime package, or <see langword="null"/> when the version is managed centrally.</param>
     /// <param name="extraProperties">Additional MSBuild properties.</param>
-    public static string Create(CsComManifest manifest, string? runtimePackageVersion, IReadOnlyDictionary<string, string>? extraProperties = null)
+    public static string Create(CsComManifest manifest, string rootNamespace, string? runtimePackageVersion, IReadOnlyDictionary<string, string>? extraProperties = null)
     {
         bool usePackage = manifest.SupportCode == SupportCodeMode.Package;
         var builder = new StringBuilder();
@@ -46,7 +47,7 @@ internal static partial class ProjectFile
         AppendProperty(builder, "IsAotCompatible", "true");
         AppendProperty(builder, "GenerateDocumentationFile", "true");
         AppendProperty(builder, "AssemblyName", manifest.Name);
-        AppendProperty(builder, "RootNamespace", manifest.Namespace);
+        AppendProperty(builder, "RootNamespace", rootNamespace);
         if (usePackage)
         {
             builder.AppendLine("    <!-- CS1591: not all members of the type library are documented. -->");

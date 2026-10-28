@@ -26,7 +26,7 @@ public sealed class CommandLineTests
         Assert.AreEqual(0, exitCode);
         var manifest = CsComManifest.Read(directory);
         Assert.AreEqual("Cli.Interop", manifest.Name);
-        Assert.AreEqual("Cli.Namespace", manifest.Namespace);
+        Assert.AreEqual("Cli.Namespace", manifest.Namespaces!["CsComTest"]);
         CollectionAssert.AreEqual(new[] { "net10.0-windows", "net11.0-windows" }, manifest.TargetFrameworks.ToArray());
         CollectionAssert.AreEqual(new[] { "win-x64" }, manifest.RuntimeIdentifiers.ToArray());
         Assert.AreEqual(14, manifest.LanguageVersion);
@@ -77,9 +77,9 @@ public sealed class CommandLineTests
                 SafeArrays = CodeGeneration.SafeArrayMarshalling.SysArray,
             },
             CsComManifest.Read(directory).Marshalling);
-        StringAssert.Contains(File.ReadAllText(Path.Combine(directory, "Generated", "IStrings.cs")), "nint Echo(nint Value);");
+        StringAssert.Contains(File.ReadAllText(Path.Combine(directory, "Generated", "Interop.CsComTest", "IStrings.cs")), "nint Echo(nint Value);");
         StringAssert.Contains(File.ReadAllText(Path.Combine(directory, CsComManifest.FileName)), "\"safeArrays\": \"sysarray\"");
-        StringAssert.Contains(File.ReadAllText(Path.Combine(directory, "Generated", "IArrays.cs")), "global::System.Array? Matrix(");
+        StringAssert.Contains(File.ReadAllText(Path.Combine(directory, "Generated", "Interop.CsComTest", "IArrays.cs")), "global::System.Array? Matrix(");
     }
 
     [TestMethod]
@@ -105,7 +105,7 @@ public sealed class CommandLineTests
         string directory = TestEnvironment.CreateDirectory("cli-struct-properties");
 
         string manifest = Path.Combine(directory, CsComManifest.FileName);
-        string record = Path.Combine(directory, "Generated", "Record.cs");
+        string record = Path.Combine(directory, "Generated", "Interop.CsComTest", "Record.cs");
 
         Assert.AreEqual(0, Run("project", "create", TestEnvironment.TestTypeLibrary, "-o", directory, "-v", "quiet"));
         Assert.AreEqual(CodeGeneration.StructProperties.Auto, CsComManifest.Read(directory).StructProperties);
@@ -137,10 +137,10 @@ public sealed class CommandLineTests
         File.WriteAllText(configuration, "<CsCom><ModelTransformers /><SyntaxTransformers /></CsCom>");
 
         Assert.AreEqual(0, Run("project", "create", TestEnvironment.TestTypeLibrary, "-o", directory, "-c", configuration, "-v", "quiet"));
-        Assert.AreEqual(@"..\cscom.xml", CsComManifest.Read(directory).Configuration);
+        Assert.AreEqual(@"..\cscom.xml", CsComManifest.Read(directory).Configurations!["CsComTest"]);
 
         Assert.AreEqual(0, Run("project", "update", TestEnvironment.TestTypeLibrary, "-o", directory, "-v", "quiet"));
-        Assert.AreEqual(@"..\cscom.xml", CsComManifest.Read(directory).Configuration);
+        Assert.AreEqual(@"..\cscom.xml", CsComManifest.Read(directory).Configurations!["CsComTest"]);
 
         // A file with an unknown transformer is rejected before anything is written.
         File.WriteAllText(configuration, "<CsCom><ModelTransformers><Unknown /></ModelTransformers></CsCom>");
@@ -149,7 +149,7 @@ public sealed class CommandLineTests
         Assert.IsFalse(Directory.Exists(Path.Combine(root, "Failed")));
 
         Assert.AreEqual(0, Run("project", "update", TestEnvironment.TestTypeLibrary, "-o", directory, "--config", "", "-v", "quiet"));
-        Assert.IsNull(CsComManifest.Read(directory).Configuration);
+        Assert.IsNull(CsComManifest.Read(directory).Configurations);
     }
 
     [TestMethod]
@@ -161,10 +161,10 @@ public sealed class CommandLineTests
 
         Assert.AreEqual(0, Run("project", "create", TestEnvironment.TestInteropAssembly, "-o", directory, "--reference-path", references, "-v", "quiet"));
         var manifest = CsComManifest.Read(directory);
-        Assert.AreEqual(Path.GetFullPath(TestEnvironment.TestInteropAssembly), manifest.TypeLibrary);
+        CollectionAssert.AreEqual(new[] { Path.GetFullPath(TestEnvironment.TestInteropAssembly) }, manifest.Sources.ToArray());
         Assert.AreEqual("Interop.CsComTest", manifest.Name);
         CollectionAssert.AreEqual(new[] { @"..\References" }, manifest.ReferencePaths!.ToList());
-        Assert.IsTrue(File.Exists(Path.Combine(directory, "Generated", "IShape.cs")));
+        Assert.IsTrue(File.Exists(Path.Combine(directory, "Generated", "Interop.CsComTest", "IShape.cs")));
 
         Assert.AreEqual(0, Run("project", "update", "-o", directory, "-v", "quiet"));
         CollectionAssert.AreEqual(new[] { @"..\References" }, CsComManifest.Read(directory).ReferencePaths!.ToList());
@@ -175,7 +175,7 @@ public sealed class CommandLineTests
 
         var (exitCode, output) = RunWithOutput("list", TestEnvironment.TestInteropAssembly, "--type", "^IShape$");
         Assert.AreEqual(0, exitCode);
-        StringAssert.StartsWith(output, "interface IShape : IDispatch (dual)");
+        StringAssert.StartsWith(output, $"// CsComTest 1.2: Interop.CsComTest{Environment.NewLine}interface IShape : IDispatch (dual)");
     }
 
     [TestMethod]
@@ -192,6 +192,45 @@ public sealed class CommandLineTests
     }
 
     [TestMethod]
+    public void GeneratesSeveralSources()
+    {
+        string root = TestEnvironment.CreateDirectory("cli-several");
+        string directory = Path.Combine(root, "Project");
+        string configuration = Path.Combine(root, "drawing.xml");
+        File.WriteAllText(configuration, """<CsCom><ModelTransformers><RenameType TypeName="ICanvas" NewName="ISurface" /></ModelTransformers></CsCom>""");
+        string generated = Path.Combine(directory, "Generated");
+
+        // The name is required, and the namespaces and configuration files are given by library name.
+        Assert.AreEqual(1, Run("project", "create", TestEnvironment.TestTypeLibrary, TestEnvironment.DrawingTypeLibrary, "-o", directory, "-v", "quiet"));
+        Assert.AreEqual(1, Run("project", "create", TestEnvironment.TestTypeLibrary, TestEnvironment.DrawingTypeLibrary, "-o", directory, "-n", "Set.Interop", "--ns", "Set.Interop", "-v", "quiet"));
+        Assert.AreEqual(1, Run("project", "create", TestEnvironment.TestTypeLibrary, TestEnvironment.DrawingTypeLibrary, "-o", directory, "-n", "Set.Interop", "-c", configuration, "-v", "quiet"));
+        Assert.IsFalse(Directory.Exists(directory));
+
+        Assert.AreEqual(0, Run(
+            "project", "create", TestEnvironment.TestTypeLibrary, TestEnvironment.DrawingTypeLibrary,
+            "-o", directory,
+            "-n", "Set.Interop",
+            "--ns", "CsComDrawing=Drawing.Interop",
+            "--ns", "stdole=Ole.Interop",
+            "-c", $"CsComDrawing={configuration}",
+            "-v", "quiet"));
+
+        Assert.IsTrue(File.Exists(Path.Combine(directory, "Set.Interop.csproj")));
+        Assert.IsTrue(File.Exists(Path.Combine(generated, "Drawing.Interop", "ISurface.cs")));
+        Assert.IsTrue(File.Exists(Path.Combine(generated, "Ole.Interop", "Font.cs")));
+        var manifest = CsComManifest.Read(directory);
+        Assert.AreEqual("Drawing.Interop", manifest.Namespaces!["CsComDrawing"]);
+        Assert.AreEqual(@"..\drawing.xml", manifest.Configurations!["CsComDrawing"]);
+
+        // The recorded sources, namespaces and configuration files are kept; LIBRARY= removes a namespace.
+        Assert.AreEqual(0, Run("project", "update", "-o", directory, "--ns", "stdole=", "-v", "quiet"));
+        Assert.IsTrue(File.Exists(Path.Combine(generated, "Drawing.Interop", "ISurface.cs")));
+        Assert.IsTrue(File.Exists(Path.Combine(generated, "Interop.stdole", "Font.cs")));
+        Assert.IsFalse(Directory.Exists(Path.Combine(generated, "Ole.Interop")));
+        Assert.AreEqual(2, CsComManifest.Read(directory).Sources.Count);
+    }
+
+    [TestMethod]
     public void ListsTheModel()
     {
         var (exitCode, output) = RunWithOutput("list", TestEnvironment.TestTypeLibrary);
@@ -200,16 +239,27 @@ public sealed class CommandLineTests
         StringAssert.Contains(output, "    propget Name(");
         StringAssert.Contains(output, "enum AnonymousEnum");
 
+        StringAssert.Contains(output, $"{Environment.NewLine}{Environment.NewLine}// stdole 2.0 (used types): Interop.stdole{Environment.NewLine}");
+
         (exitCode, output) = RunWithOutput("list", TestEnvironment.TestTypeLibrary, "--type", "^Color$");
         Assert.AreEqual(0, exitCode);
-        StringAssert.StartsWith(output, "enum Color");
+        StringAssert.StartsWith(output, $"// CsComTest 1.2: Interop.CsComTest{Environment.NewLine}enum Color");
         Assert.IsFalse(output.Contains("interface", StringComparison.Ordinal));
+        Assert.IsFalse(output.Contains("stdole", StringComparison.Ordinal), "The libraries without matching types are not listed.");
 
         string configuration = Path.Combine(TestEnvironment.CreateDirectory("cli-list"), "cscom.xml");
         File.WriteAllText(configuration, """<CsCom><ModelTransformers><RenameType Type="^Color$" NewName="Colour" /></ModelTransformers></CsCom>""");
         (exitCode, output) = RunWithOutput("list", TestEnvironment.TestTypeLibrary, "-t", "^Col", "--config", configuration);
         Assert.AreEqual(0, exitCode);
-        StringAssert.StartsWith(output, "enum Colour");
+        StringAssert.StartsWith(output, $"// CsComTest 1.2: Interop.CsComTest{Environment.NewLine}enum Colour");
+
+        // With several sources, the configuration files are given by library name.
+        (exitCode, output) = RunWithOutput("list", TestEnvironment.TestTypeLibrary, TestEnvironment.DrawingTypeLibrary, "-t", "^(Colour|Font)$", "-c", $"CsComTest={configuration}", "--ns", "stdole=Ole.Interop");
+        Assert.AreEqual(0, exitCode);
+        StringAssert.StartsWith(output, $"// CsComTest 1.2: Interop.CsComTest{Environment.NewLine}enum Colour");
+        StringAssert.Contains(output, $"// stdole 2.0 (used types): Ole.Interop{Environment.NewLine}dispinterface Font");
+        Assert.IsFalse(output.Contains("CsComDrawing", StringComparison.Ordinal));
+        Assert.AreEqual(1, RunWithOutput("list", TestEnvironment.TestTypeLibrary, TestEnvironment.DrawingTypeLibrary, "-c", configuration).ExitCode);
 
         Assert.AreEqual(1, RunWithOutput("list", TestEnvironment.TestTypeLibrary, "--type", "(").ExitCode);
         Assert.AreEqual(1, RunWithOutput("list", "CsCom.Does.Not.Exist").ExitCode);
@@ -219,7 +269,7 @@ public sealed class CommandLineTests
     public void OverloadsForDefaultValuesAreRecordedAndCanBeTurnedOff()
     {
         string directory = TestEnvironment.CreateDirectory("cli-overloads");
-        string shape = Path.Combine(directory, "Generated", "IShape.cs");
+        string shape = Path.Combine(directory, "Generated", "Interop.CsComTest", "IShape.cs");
 
         Assert.AreEqual(0, Run("project", "create", TestEnvironment.TestTypeLibrary, "-o", directory, "--bool-marshalling", "wrapper", "--overloads-for-default-values", "-v", "quiet"));
         Assert.IsTrue(CsComManifest.Read(directory).OverloadsForDefaultValues);
@@ -278,7 +328,7 @@ public sealed class CommandLineTests
 
         Assert.AreEqual(0, Run("project", "update", TestEnvironment.TestTypeLibrary, "-o", directory, "--single-file", "false", "-v", "quiet"));
         Assert.IsFalse(CsComManifest.Read(directory).SingleFile);
-        Assert.IsTrue(Directory.GetFiles(Path.Combine(directory, "Generated")).Length > 1);
+        Assert.IsTrue(Directory.GetFiles(Path.Combine(directory, "Generated"), "*.cs", SearchOption.AllDirectories).Length > 1);
     }
 
     [TestMethod]

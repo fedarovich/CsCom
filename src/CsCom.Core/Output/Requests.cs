@@ -3,24 +3,35 @@ using CsCom.CodeGeneration;
 namespace CsCom.Output;
 
 /// <summary>
-/// The options shared by the <c>project create</c> and <c>assembly build</c> commands, which create a new project or assembly.
+/// The options shared by the <c>project create</c>, <c>assembly build</c> and <c>assembly pack</c> commands, which create a new
+/// project or assembly.
 /// </summary>
 public abstract class OutputRequest
 {
     /// <summary>
-    /// The source of the interop types: a type library file, a registered LIBID or ProgID, or a .NET interop assembly, see
-    /// <see cref="TypeLibraries.TypeLibrarySource"/>.
+    /// The sources of the interop types: type library files, registered LIBIDs or ProgIDs, or .NET interop assemblies, see
+    /// <see cref="TypeLibraries.TypeLibrarySource"/>. Each library is generated into its own namespace, and the types that
+    /// they use from other libraries into the namespaces of these libraries.
     /// </summary>
-    public required string Source { get; init; }
+    public required IReadOnlyList<string> Sources { get; init; }
 
     /// <summary>The output directory.</summary>
     public string? OutputDirectory { get; init; }
 
-    /// <summary>The project and assembly name; <c>Interop.&lt;Library&gt;</c> by default.</summary>
+    /// <summary>
+    /// The project and assembly name; <c>Interop.&lt;Library&gt;</c> by default with a single source, and required with
+    /// several sources.
+    /// </summary>
     public string? Name { get; init; }
 
-    /// <summary>The namespace; <c>Interop.&lt;Library&gt;</c> by default.</summary>
+    /// <summary>The namespace of a single source; <c>Interop.&lt;Library&gt;</c> by default. See <see cref="Namespaces"/> for several sources.</summary>
     public string? Namespace { get; init; }
+
+    /// <summary>
+    /// The namespaces of libraries by their names, e.g. <c>Excel</c> or <c>stdole</c>, whether they are sources or are only
+    /// used by them; <c>Interop.&lt;Library&gt;</c> by default.
+    /// </summary>
+    public IReadOnlyDictionary<string, string> Namespaces { get; init; } = new Dictionary<string, string>();
 
     /// <summary>The target frameworks; <see cref="TargetFrameworks.Default"/> when empty.</summary>
     public IReadOnlyList<string> TargetFrameworks { get; init; } = [];
@@ -49,8 +60,17 @@ public abstract class OutputRequest
     /// <summary>Whether overloads are generated for the default values that C# cannot express.</summary>
     public bool OverloadsForDefaultValues { get; init; }
 
-    /// <summary>The configuration file with the transformers, relative to the current directory; none when <see langword="null"/>.</summary>
+    /// <summary>
+    /// The configuration file with the transformers of a single source, relative to the current directory; none when
+    /// <see langword="null"/>. See <see cref="ConfigurationPaths"/> for several sources.
+    /// </summary>
     public string? ConfigurationPath { get; init; }
+
+    /// <summary>
+    /// The configuration files of libraries by their names, whether they are sources or are only used by them, relative to
+    /// the current directory.
+    /// </summary>
+    public IReadOnlyDictionary<string, string> ConfigurationPaths { get; init; } = new Dictionary<string, string>();
 
     /// <summary>
     /// For interop assemblies, the assemblies or directories that contain the assemblies they reference, relative to the
@@ -103,7 +123,10 @@ public sealed class BuildAssemblyRequest : AssemblyRequest
 /// </summary>
 public sealed class PackAssemblyRequest : AssemblyRequest
 {
-    /// <summary>The version of the package and the assembly; <c>&lt;major&gt;.&lt;minor&gt;.0</c> of the type library by default.</summary>
+    /// <summary>
+    /// The version of the package and the assembly; <c>&lt;major&gt;.&lt;minor&gt;.0</c> of the type library by default with a
+    /// single source, and <c>1.0.0</c> with several sources.
+    /// </summary>
     public string? PackageVersion { get; init; }
 }
 
@@ -113,16 +136,22 @@ public sealed class PackAssemblyRequest : AssemblyRequest
 public sealed class UpdateProjectRequest
 {
     /// <summary>
-    /// The source of the interop types: a type library file, a registered LIBID or ProgID, or a .NET interop assembly, see
-    /// <see cref="TypeLibraries.TypeLibrarySource"/>; the source recorded in <c>cscom.json</c> when <see langword="null"/>.
+    /// The new sources of the interop types: type library files, registered LIBIDs or ProgIDs, or .NET interop assemblies, see
+    /// <see cref="TypeLibraries.TypeLibrarySource"/>; the sources recorded in <c>cscom.json</c> when <see langword="null"/> or empty.
     /// </summary>
-    public string? Source { get; init; }
+    public IReadOnlyList<string>? Sources { get; init; }
 
     /// <summary>The directory of the project; the current directory by default.</summary>
     public string? ProjectDirectory { get; init; }
 
-    /// <summary>The new namespace.</summary>
+    /// <summary>The new namespace of a single source.</summary>
     public string? Namespace { get; init; }
+
+    /// <summary>
+    /// The changes to the namespaces of libraries by their names, which are merged into the recorded ones; an empty namespace
+    /// removes the recorded one.
+    /// </summary>
+    public IReadOnlyDictionary<string, string> Namespaces { get; init; } = new Dictionary<string, string>();
 
     /// <summary>The new C# version.</summary>
     public int? LanguageVersion { get; init; }
@@ -143,10 +172,16 @@ public sealed class UpdateProjectRequest
     public bool? OverloadsForDefaultValues { get; init; }
 
     /// <summary>
-    /// The new configuration file with the transformers, relative to the current directory. The recorded file is kept when
-    /// <see langword="null"/> and removed when empty.
+    /// The new configuration file with the transformers of a single source, relative to the current directory. The recorded
+    /// files are kept when <see langword="null"/>, and all of them are removed when empty.
     /// </summary>
     public string? ConfigurationPath { get; init; }
+
+    /// <summary>
+    /// The changes to the configuration files of libraries by their names, relative to the current directory, which are merged
+    /// into the recorded ones; an empty path removes the recorded one.
+    /// </summary>
+    public IReadOnlyDictionary<string, string> ConfigurationPaths { get; init; } = new Dictionary<string, string>();
 
     /// <summary>
     /// The new paths of the assemblies referenced by an interop assembly, relative to the current directory. The recorded

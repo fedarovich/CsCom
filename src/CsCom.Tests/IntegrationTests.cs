@@ -170,20 +170,21 @@ public sealed class IntegrationTests
 
         string project = new ProjectGenerator(_pipeline).CreateProject(new CreateProjectRequest
         {
-            Source = TestEnvironment.TestTypeLibrary,
+            Sources = [TestEnvironment.TestTypeLibrary],
             OutputDirectory = directory,
             ConfigurationPath = configuration,
             PackageSource = TestEnvironment.LocalPackages,
             GlobalPackagesFolder = TestEnvironment.GlobalPackagesFolder,
         });
 
-        StringAssert.Contains(File.ReadAllText(Path.Combine(directory, "Generated", "IShapeContract.cs")), "void MoveBy(int deltax, int deltay = 0,");
-        StringAssert.Contains(File.ReadAllText(Path.Combine(directory, "Generated", "Color.cs")), "[global::System.Flags]");
-        StringAssert.Contains(File.ReadAllText(Path.Combine(directory, "Generated", "ICircleContract.cs")), "[System.ComponentModel.EditorBrowsable(");
-        Assert.IsFalse(File.Exists(Path.Combine(directory, "Generated", "IShapeEventsVt.cs")));
-        Assert.IsFalse(File.Exists(Path.Combine(directory, "Generated", "Kernel.cs")));
-        Assert.IsTrue(File.Exists(Path.Combine(directory, "Generated", "CsComSafeArrayMarshallers.cs")));
-        StringAssert.Contains(File.ReadAllText(Path.Combine(directory, "Generated", "Record.cs")), "ComBstrValue Name;");
+        string generated = Path.Combine(directory, "Generated", "Interop.CsComTest");
+        StringAssert.Contains(File.ReadAllText(Path.Combine(generated, "IShapeContract.cs")), "void MoveBy(int deltax, int deltay = 0,");
+        StringAssert.Contains(File.ReadAllText(Path.Combine(generated, "Color.cs")), "[global::System.Flags]");
+        StringAssert.Contains(File.ReadAllText(Path.Combine(generated, "ICircleContract.cs")), "[System.ComponentModel.EditorBrowsable(");
+        Assert.IsFalse(File.Exists(Path.Combine(generated, "IShapeEventsVt.cs")));
+        Assert.IsFalse(File.Exists(Path.Combine(generated, "Kernel.cs")));
+        Assert.IsTrue(File.Exists(Path.Combine(generated, "CsComSafeArrayMarshallers.cs")));
+        StringAssert.Contains(File.ReadAllText(Path.Combine(generated, "Record.cs")), "ComBstrValue Name;");
         Build(project);
     }
 
@@ -198,7 +199,7 @@ public sealed class IntegrationTests
         string directory = TestEnvironment.CreateDirectory("build-csharp15");
         string project = new ProjectGenerator(_pipeline).CreateProject(new CreateProjectRequest
         {
-            Source = TestEnvironment.TestTypeLibrary,
+            Sources = [TestEnvironment.TestTypeLibrary],
             OutputDirectory = directory,
             TargetFrameworks = ["net11.0-windows"],
             PackageSource = TestEnvironment.LocalPackages,
@@ -266,7 +267,7 @@ public sealed class IntegrationTests
         string root = TestEnvironment.CreateDirectory("late-bound");
         string interop = new ProjectGenerator(pipeline).CreateProject(new CreateProjectRequest
         {
-            Source = TestEnvironment.ScriptingRuntime,
+            Sources = [TestEnvironment.ScriptingRuntime],
             OutputDirectory = Path.Combine(root, "Interop"),
             PackageSource = TestEnvironment.LocalPackages,
             GlobalPackagesFolder = TestEnvironment.GlobalPackagesFolder,
@@ -711,7 +712,7 @@ public sealed class IntegrationTests
         string root = TestEnvironment.CreateDirectory("default-overloads");
         string interop = new ProjectGenerator(_pipeline).CreateProject(new CreateProjectRequest
         {
-            Source = TestEnvironment.TestTypeLibrary,
+            Sources = [TestEnvironment.TestTypeLibrary],
             OutputDirectory = Path.Combine(root, "Interop"),
             Marshalling = AllWrappers with { Bstrs = BstrMarshalling.Wrapper },
             OverloadsForDefaultValues = true,
@@ -761,7 +762,7 @@ public sealed class IntegrationTests
             """);
         string interop = new ProjectGenerator(_pipeline).CreateProject(new CreateProjectRequest
         {
-            Source = TestEnvironment.TestTypeLibrary,
+            Sources = [TestEnvironment.TestTypeLibrary],
             OutputDirectory = Path.Combine(root, "Interop"),
             ConfigurationPath = configuration,
             PackageSource = TestEnvironment.LocalPackages,
@@ -1323,7 +1324,7 @@ public sealed class IntegrationTests
 
         var files = new AssemblyGenerator(_pipeline).BuildAssembly(new BuildAssemblyRequest
         {
-            Source = TestEnvironment.TestTypeLibrary,
+            Sources = [TestEnvironment.TestTypeLibrary],
             OutputDirectory = output,
             RuntimeIdentifiers = ["win-x64", "win-arm64"],
             PackageSource = TestEnvironment.LocalPackages,
@@ -1348,7 +1349,7 @@ public sealed class IntegrationTests
 
         new AssemblyGenerator(_pipeline).BuildAssembly(new BuildAssemblyRequest
         {
-            Source = TestEnvironment.TestTypeLibrary,
+            Sources = [TestEnvironment.TestTypeLibrary],
             OutputDirectory = output,
             SupportCode = SupportCodeMode.Internal,
             Name = "Flat.Interop",
@@ -1372,7 +1373,7 @@ public sealed class IntegrationTests
 
         var files = new AssemblyGenerator(_pipeline).PackAssembly(new PackAssemblyRequest
         {
-            Source = TestEnvironment.TestTypeLibrary,
+            Sources = [TestEnvironment.TestTypeLibrary],
             OutputDirectory = output,
             PackageVersion = "2.3.4-test",
             Properties = new Dictionary<string, string> { ["Authors"] = "CsCom Tests", ["PackageLicenseExpression"] = "MIT" },
@@ -1408,7 +1409,7 @@ public sealed class IntegrationTests
 
         var files = new AssemblyGenerator(_pipeline).PackAssembly(new PackAssemblyRequest
         {
-            Source = TestEnvironment.TestTypeLibrary,
+            Sources = [TestEnvironment.TestTypeLibrary],
             OutputDirectory = output,
             SupportCode = SupportCodeMode.Internal,
         });
@@ -1419,6 +1420,66 @@ public sealed class IntegrationTests
         var (_, nuspec) = ReadPackage(files.Single(static f => f.EndsWith(".nupkg", StringComparison.Ordinal)));
         Assert.AreEqual("1.2.0", NuspecValue(nuspec, "version"));
         Assert.IsFalse(nuspec.Descendants().Any(static e => e.Name.LocalName == "dependency"));
+    }
+
+    [TestMethod]
+    public void PackAssemblyOfSeveralSources()
+    {
+        string output = TestEnvironment.CreateDirectory("pack-several");
+        var request = new PackAssemblyRequest
+        {
+            Sources = [TestEnvironment.TestTypeLibrary, TestEnvironment.DrawingTypeLibrary],
+            OutputDirectory = output,
+            SupportCode = SupportCodeMode.Internal,
+        };
+
+        var exception = Assert.ThrowsExactly<CsComException>(() => new AssemblyGenerator(_pipeline).PackAssembly(request));
+        var files = new AssemblyGenerator(_pipeline).PackAssembly(new PackAssemblyRequest
+        {
+            Sources = request.Sources,
+            OutputDirectory = output,
+            SupportCode = SupportCodeMode.Internal,
+            Name = "Set.Interop",
+        });
+
+        Assert.AreEqual("The name of the project or assembly must be specified when there are several sources.", exception.Message);
+        CollectionAssert.AreEquivalent(new[] { "Set.Interop.1.0.0.nupkg", "Set.Interop.1.0.0.snupkg" }, files.Select(Path.GetFileName).ToArray());
+        var (_, nuspec) = ReadPackage(files.Single(static f => f.EndsWith(".nupkg", StringComparison.Ordinal)));
+        Assert.AreEqual("CsComTest, CsComDrawing: COM interop types generated by CsCom.", NuspecValue(nuspec, "description"));
+    }
+
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public void ProjectOfSeveralSourcesBuildsWithoutWarnings(bool singleFile)
+    {
+        string root = TestEnvironment.CreateDirectory($"build-several-{singleFile}");
+        string project = new ProjectGenerator(_pipeline).CreateProject(new CreateProjectRequest
+        {
+            Sources = [TestEnvironment.TestTypeLibrary, TestEnvironment.DrawingTypeLibrary, "Scripting.Dictionary"],
+            OutputDirectory = Path.Combine(root, "Interop"),
+            Name = "Set.Interop",
+            Namespaces = new Dictionary<string, string> { ["CsComDrawing"] = "Drawing.Interop" },
+            SingleFile = singleFile,
+            PackageSource = TestEnvironment.LocalPackages,
+            GlobalPackagesFolder = TestEnvironment.GlobalPackagesFolder,
+        });
+        Build(project);
+
+        var output = RunConsumer(root, project, """
+            using Interop.Scripting;
+
+            var dictionary = Dictionary.Create();
+            dictionary.Add("a", "one");
+            Console.WriteLine($"Count={dictionary.Count}");
+            Console.WriteLine(typeof(Drawing.Interop.ICanvas).FullName);
+            Console.WriteLine(typeof(Interop.stdole.Font).FullName);
+            Console.WriteLine(typeof(Interop.CsComTest.IShape).FullName);
+            """);
+
+        CollectionAssert.AreEqual(
+            new[] { "Count=1", "Drawing.Interop.ICanvas", "Interop.stdole.Font", "Interop.CsComTest.IShape" },
+            output.TakeLast(4).ToArray());
     }
 
     // Reads the names of the entries and the nuspec of a package.
@@ -1482,7 +1543,7 @@ public sealed class IntegrationTests
         StructProperties structProperties = StructProperties.Auto) =>
         new ProjectGenerator(_pipeline).CreateProject(new CreateProjectRequest
         {
-            Source = typeLibrary,
+            Sources = [typeLibrary],
             OutputDirectory = directory,
             SupportCode = supportCode,
             SingleFile = singleFile,

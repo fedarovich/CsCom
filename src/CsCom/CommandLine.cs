@@ -3,6 +3,7 @@ using System.CommandLine.Parsing;
 using System.Text.RegularExpressions;
 using CsCom.CodeGeneration;
 using CsCom.Configuration;
+using CsCom.LibrarySets;
 using CsCom.Output;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Console;
@@ -17,15 +18,19 @@ internal static class CommandLine
     private const string SourceDescription =
         "The source of the interop types: a type library (a .tlb file, or a .dll, .ocx or .exe file with an embedded type library), a registered LIBID ({GUID} or {GUID}:major.minor) or ProgID, or a .NET interop assembly, such as a primary interop assembly or the output of TlbImp.";
 
-    private static readonly Argument<string> SourceArgument = new("Source")
+    private const string SourcesDescription =
+        " Several sources are generated together, each library into its own namespace, and the types that they use from other libraries into the namespaces of these libraries.";
+
+    private static readonly Argument<string[]> SourceArgument = new("Source")
     {
-        Description = SourceDescription,
+        Description = SourceDescription + SourcesDescription,
+        Arity = ArgumentArity.OneOrMore,
     };
 
-    private static readonly Argument<string?> UpdateSourceArgument = new("Source")
+    private static readonly Argument<string[]> UpdateSourceArgument = new("Source")
     {
-        Description = SourceDescription + " The source recorded in cscom.json by default.",
-        Arity = ArgumentArity.ZeroOrOne,
+        Description = SourceDescription + SourcesDescription + " The sources recorded in cscom.json by default.",
+        Arity = ArgumentArity.ZeroOrMore,
     };
 
     private static readonly Option<string?> TypeFilterOption = new("--type", "-t")
@@ -42,14 +47,23 @@ internal static class CommandLine
 
     private static readonly Option<string?> NameOption = new("--name", "-n")
     {
-        Description = "The project and assembly name. Interop.<TlbName> by default.",
+        Description = "The project and assembly name. Interop.<Library> by default with a single source; required with several sources.",
         HelpName = "NAME",
     };
 
-    private static readonly Option<string?> NamespaceOption = new("--namespace", "--ns")
+    private const string NamespaceDescription =
+        "The namespace of a library, e.g. Excel=Office.Excel, whether it is a source or is used by them; can be repeated. A namespace without a library name is the namespace of a single source. Interop.<Library> by default.";
+
+    private static readonly Option<string[]> NamespaceOption = new("--namespace", "--ns")
     {
-        Description = "The namespace of the generated types. Interop.<TlbName> by default.",
-        HelpName = "NAMESPACE",
+        Description = NamespaceDescription,
+        HelpName = "[LIBRARY=]NAMESPACE",
+    };
+
+    private static readonly Option<string[]> UpdateNamespaceOption = new("--namespace", "--ns")
+    {
+        Description = NamespaceDescription + " The namespaces recorded in cscom.json by default; LIBRARY= removes the namespace of a library.",
+        HelpName = "[LIBRARY=]NAMESPACE",
     };
 
     private static readonly Option<string[]> FrameworkOption = new("--framework", "-f")
@@ -135,18 +149,19 @@ internal static class CommandLine
         Arity = ArgumentArity.ZeroOrOne,
     };
 
-    private const string ConfigDescription = "An XML file that adds and configures model and syntax transformers.";
+    private const string ConfigDescription =
+        "An XML file that adds and configures the model and syntax transformers of a library, e.g. Excel=excel.cscom.xml, whether it is a source or is used by them; can be repeated. A file without a library name applies to a single source.";
 
-    private static readonly Option<string?> ConfigOption = new("--config", "-c")
+    private static readonly Option<string[]> ConfigOption = new("--config", "-c")
     {
         Description = ConfigDescription,
-        HelpName = "PATH",
+        HelpName = "[LIBRARY=]PATH",
     };
 
-    private static readonly Option<string?> UpdateConfigOption = new("--config", "-c")
+    private static readonly Option<string[]> UpdateConfigOption = new("--config", "-c")
     {
-        Description = ConfigDescription + " The file recorded in cscom.json by default; an empty value removes it.",
-        HelpName = "PATH",
+        Description = ConfigDescription + " The files recorded in cscom.json by default; LIBRARY= removes the file of a library, and an empty value removes all of them.",
+        HelpName = "[LIBRARY=]PATH",
     };
 
     private const string ReferencePathDescription =
@@ -201,15 +216,16 @@ internal static class CommandLine
 
     public static RootCommand Create()
     {
-        var createProject = new Command("create", "Generates a new C# project with the interop types of a type library or an interop assembly.");
+        var createProject = new Command("create", "Generates a new C# project with the interop types of type libraries or interop assemblies.");
         AddCreateOptions(createProject);
         createProject.SetAction(static result => Run(result, (pipeline, loggerFactory) =>
             new ProjectGenerator(pipeline, loggerFactory).CreateProject(new CreateProjectRequest
             {
-                Source = result.GetRequiredValue(SourceArgument),
+                Sources = result.GetRequiredValue(SourceArgument),
                 OutputDirectory = result.GetValue(OutputOption),
                 Name = result.GetValue(NameOption),
-                Namespace = result.GetValue(NamespaceOption),
+                Namespace = GetLibraryValues(result, NamespaceOption, "namespace").Single,
+                Namespaces = GetLibraryValues(result, NamespaceOption, "namespace").ByLibrary,
                 TargetFrameworks = result.GetValue(FrameworkOption) ?? [],
                 RuntimeIdentifiers = result.GetValue(RuntimeOption) ?? [],
                 LanguageVersion = result.GetValue(LanguageVersionOption),
@@ -219,22 +235,24 @@ internal static class CommandLine
                 EventStyle = result.GetValue(EventStyleOption),
                 StructProperties = result.GetValue(StructPropertiesOption),
                 OverloadsForDefaultValues = result.GetValue(OverloadsOption),
-                ConfigurationPath = result.GetValue(ConfigOption),
+                ConfigurationPath = GetLibraryValues(result, ConfigOption, "configuration file").Single,
+                ConfigurationPaths = GetLibraryValues(result, ConfigOption, "configuration file").ByLibrary,
                 ReferencePaths = result.GetValue(ReferencePathOption) ?? [],
                 PackageSource = result.GetValue(PackageSourceOption),
             })));
 
-        var buildAssembly = new Command("build", "Builds a ready-to-use interop assembly from a type library or an interop assembly.");
+        var buildAssembly = new Command("build", "Builds a ready-to-use interop assembly from type libraries or interop assemblies.");
         AddCreateOptions(buildAssembly);
         buildAssembly.Options.Add(KeepTempOption);
         buildAssembly.Options.Add(PropertyOption);
         buildAssembly.SetAction(static result => Run(result, (pipeline, loggerFactory) =>
             new AssemblyGenerator(pipeline, loggerFactory).BuildAssembly(new BuildAssemblyRequest
             {
-                Source = result.GetRequiredValue(SourceArgument),
+                Sources = result.GetRequiredValue(SourceArgument),
                 OutputDirectory = result.GetValue(OutputOption),
                 Name = result.GetValue(NameOption),
-                Namespace = result.GetValue(NamespaceOption),
+                Namespace = GetLibraryValues(result, NamespaceOption, "namespace").Single,
+                Namespaces = GetLibraryValues(result, NamespaceOption, "namespace").ByLibrary,
                 TargetFrameworks = result.GetValue(FrameworkOption) ?? [],
                 RuntimeIdentifiers = result.GetValue(RuntimeOption) ?? [],
                 LanguageVersion = result.GetValue(LanguageVersionOption),
@@ -244,7 +262,8 @@ internal static class CommandLine
                 EventStyle = result.GetValue(EventStyleOption),
                 StructProperties = result.GetValue(StructPropertiesOption),
                 OverloadsForDefaultValues = result.GetValue(OverloadsOption),
-                ConfigurationPath = result.GetValue(ConfigOption),
+                ConfigurationPath = GetLibraryValues(result, ConfigOption, "configuration file").Single,
+                ConfigurationPaths = GetLibraryValues(result, ConfigOption, "configuration file").ByLibrary,
                 ReferencePaths = result.GetValue(ReferencePathOption) ?? [],
                 PackageSource = result.GetValue(PackageSourceOption) ?? GetBundledPackageSource(),
                 KeepTemporaryFiles = result.GetValue(KeepTempOption),
@@ -259,10 +278,11 @@ internal static class CommandLine
         packAssembly.SetAction(static result => Run(result, (pipeline, loggerFactory) =>
             new AssemblyGenerator(pipeline, loggerFactory).PackAssembly(new PackAssemblyRequest
             {
-                Source = result.GetRequiredValue(SourceArgument),
+                Sources = result.GetRequiredValue(SourceArgument),
                 OutputDirectory = result.GetValue(OutputOption),
                 Name = result.GetValue(NameOption),
-                Namespace = result.GetValue(NamespaceOption),
+                Namespace = GetLibraryValues(result, NamespaceOption, "namespace").Single,
+                Namespaces = GetLibraryValues(result, NamespaceOption, "namespace").ByLibrary,
                 TargetFrameworks = result.GetValue(FrameworkOption) ?? [],
                 LanguageVersion = result.GetValue(LanguageVersionOption),
                 SingleFile = result.GetValue(SingleFileOption),
@@ -271,7 +291,8 @@ internal static class CommandLine
                 EventStyle = result.GetValue(EventStyleOption),
                 StructProperties = result.GetValue(StructPropertiesOption),
                 OverloadsForDefaultValues = result.GetValue(OverloadsOption),
-                ConfigurationPath = result.GetValue(ConfigOption),
+                ConfigurationPath = GetLibraryValues(result, ConfigOption, "configuration file").Single,
+                ConfigurationPaths = GetLibraryValues(result, ConfigOption, "configuration file").ByLibrary,
                 ReferencePaths = result.GetValue(ReferencePathOption) ?? [],
                 PackageSource = result.GetValue(PackageSourceOption) ?? GetBundledPackageSource(),
                 KeepTemporaryFiles = result.GetValue(KeepTempOption),
@@ -283,7 +304,7 @@ internal static class CommandLine
         {
             UpdateSourceArgument,
             OutputOption,
-            NamespaceOption,
+            UpdateNamespaceOption,
             LanguageVersionOption,
             UpdateSingleFileOption,
         };
@@ -296,16 +317,18 @@ internal static class CommandLine
         updateProject.SetAction(static result => Run(result, (pipeline, loggerFactory) =>
             new ProjectGenerator(pipeline, loggerFactory).UpdateProject(new UpdateProjectRequest
             {
-                Source = result.GetValue(UpdateSourceArgument),
+                Sources = result.GetValue(UpdateSourceArgument),
                 ProjectDirectory = result.GetValue(OutputOption),
-                Namespace = result.GetValue(NamespaceOption),
+                Namespace = GetLibraryValues(result, UpdateNamespaceOption, "namespace").Single,
+                Namespaces = GetLibraryValues(result, UpdateNamespaceOption, "namespace").ByLibrary,
                 LanguageVersion = result.GetValue(LanguageVersionOption),
                 SingleFile = GetFlag(result, UpdateSingleFileOption),
                 Marshalling = UpdateMarshallingOptions.GetOverrides(result),
                 EventStyle = result.GetValue(UpdateEventStyleOption),
                 StructProperties = result.GetValue(UpdateStructPropertiesOption),
                 OverloadsForDefaultValues = GetFlag(result, UpdateOverloadsOption),
-                ConfigurationPath = result.GetValue(UpdateConfigOption),
+                ConfigurationPath = GetLibraryValues(result, UpdateConfigOption, "configuration file").Single,
+                ConfigurationPaths = GetLibraryValues(result, UpdateConfigOption, "configuration file").ByLibrary,
                 ReferencePaths = result.GetResult(UpdateReferencePathOption) is { Implicit: false }
                     ? [.. (result.GetValue(UpdateReferencePathOption) ?? []).Where(static path => path.Length > 0)]
                     : null,
@@ -323,14 +346,15 @@ internal static class CommandLine
             return path;
         }));
 
-        var list = new Command("list", "Lists the types and members of a type library or an interop assembly with the names that the transformers of configuration files match.")
+        var list = new Command("list", "Lists the types and members of type libraries or interop assemblies, by library, with the names that the transformers of configuration files match.")
         {
             SourceArgument,
             TypeFilterOption,
         };
+        list.Options.Add(NamespaceOption);
         list.Options.Add(ConfigOption);
         list.Options.Add(ReferencePathOption);
-        list.SetAction(static result => Run(result, (pipeline, _) => List(result, pipeline), quietByDefault: true));
+        list.SetAction(static result => Run(result, (pipeline, loggerFactory) => List(result, pipeline, loggerFactory), quietByDefault: true));
 
         return new RootCommand("Generates COM interop code from type libraries and interop assemblies using source-generated COM interop.")
         {
@@ -342,9 +366,9 @@ internal static class CommandLine
         };
     }
 
-    // Writes the model after the aliases are resolved and the model transformers of the configuration are applied, before
-    // the names are sanitized: the names that the selectors of configuration files match.
-    private static bool List(ParseResult result, InteropPipeline pipeline)
+    // Writes the models of the libraries after the aliases are resolved and the model transformers of the configurations are
+    // applied, before the names are sanitized: the names that the selectors of configuration files match.
+    private static bool List(ParseResult result, InteropPipeline pipeline, ILoggerFactory loggerFactory)
     {
         Regex? filter = null;
         if (result.GetValue(TypeFilterOption) is { } pattern)
@@ -359,10 +383,42 @@ internal static class CommandLine
             }
         }
 
-        var library = pipeline.ReadTypeLibrary(result.GetRequiredValue(SourceArgument), result.GetValue(ReferencePathOption) ?? []);
-        var configuration = result.GetValue(ConfigOption) is { } path ? PipelineConfiguration.Load(Path.GetFullPath(path), pipeline.Registry) : null;
-        pipeline.TransformModel(library, new CodeGenerationOptions { Namespace = "Interop" }, configuration, sanitizeNames: false);
-        ModelPrinter.Write(library, result.InvocationConfiguration.Output, filter);
+        string[] sources = result.GetRequiredValue(SourceArgument);
+        var (@namespace, namespaces) = GetLibraryValues(result, NamespaceOption, "namespace");
+        var (configuration, configurations) = GetLibraryValues(result, ConfigOption, "configuration file");
+        if (sources.Length > 1 && (@namespace ?? configuration) is { } single)
+        {
+            throw new CsComException($"'{single}' cannot be used with several sources without a library name, e.g. Excel={single}.");
+        }
+
+        var references = sources.Select(source => new LibrarySetReference
+        {
+            Source = source,
+            ReferencePaths = result.GetValue(ReferencePathOption) ?? [],
+            Namespace = @namespace,
+            ConfigurationPath = string.IsNullOrEmpty(configuration) ? null : configuration,
+        }).ToList();
+        var models = new LibrarySetGenerator(pipeline, loggerFactory).Transform(
+            references,
+            new LibrarySetOptions { Namespaces = namespaces, ConfigurationPaths = configurations },
+            sanitizeNames: false);
+
+        // A header introduces the types of each library that has types to list.
+        var output = result.InvocationConfiguration.Output;
+        bool first = true;
+        foreach (var (library, model) in models.Where(m => m.Model.Types.Any(t => filter?.IsMatch(t.Name) != false)))
+        {
+            if (!first)
+            {
+                output.WriteLine();
+            }
+
+            first = false;
+            string used = library.IsReferenced ? string.Empty : " (used types)";
+            output.WriteLine($"// {library.Name} {library.MajorVersion}.{library.MinorVersion}{used}: {library.Namespace}");
+            ModelPrinter.Write(model, output, filter);
+        }
+
         return true;
     }
 
@@ -388,6 +444,32 @@ internal static class CommandLine
         command.Options.Add(ConfigOption);
         command.Options.Add(ReferencePathOption);
         command.Options.Add(PackageSourceOption);
+    }
+
+    // The values of --namespace and --config: LIBRARY=VALUE pairs, and at most one value without a library name, which is that
+    // of a single source. A value whose part before = contains \, / or : is a path, e.g. C:\a=b\cscom.xml.
+    private static (string? Single, Dictionary<string, string> ByLibrary) GetLibraryValues(ParseResult result, Option<string[]> option, string name)
+    {
+        string? single = null;
+        var byLibrary = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (string value in result.GetValue(option) ?? [])
+        {
+            int index = value.IndexOf('=', StringComparison.Ordinal);
+            if (index > 0 && value.AsSpan(0, index).IndexOfAny(@"\/:") < 0)
+            {
+                byLibrary[value[..index].Trim()] = value[(index + 1)..].Trim();
+            }
+            else if (single is null)
+            {
+                single = value;
+            }
+            else
+            {
+                throw new CsComException($"Only one {name} can be specified without a library name, but there are '{single}' and '{value}'.");
+            }
+        }
+
+        return (single, byLibrary);
     }
 
     // The NAME=VALUE pairs of --property; a later value replaces an earlier one with the same name.

@@ -21,7 +21,7 @@ internal sealed class LibrarySetEntry
     public LibrarySetReference? Reference { get; init; }
 
     /// <summary>The transformers of the library.</summary>
-    public PipelineConfiguration Configuration { get; init; } = PipelineConfiguration.Empty;
+    public PipelineConfiguration Configuration { get; set; } = PipelineConfiguration.Empty;
 }
 
 /// <summary>
@@ -35,14 +35,16 @@ internal sealed class LibrarySetEntry
 internal sealed partial class LibrarySetMerger
 {
     private readonly ILogger _logger;
+    private readonly IReadOnlyDictionary<string, string> _namespaces;
     private readonly List<LibrarySetEntry> _entries = [];
     private readonly Dictionary<string, LibrarySetEntry> _entriesByLibrary = new(StringComparer.Ordinal);
     private readonly Dictionary<LibrarySetEntry, Dictionary<string, TypeDefinition>> _types = [];
     private readonly Dictionary<TypeDefinition, TypeDefinition> _replacements = new(ReferenceEqualityComparer.Instance);
     private readonly HashSet<string> _versionWarnings = new(StringComparer.Ordinal);
 
-    private LibrarySetMerger(ILogger logger)
+    private LibrarySetMerger(IReadOnlyDictionary<string, string> namespaces, ILogger logger)
     {
+        _namespaces = namespaces;
         _logger = logger;
     }
 
@@ -50,11 +52,15 @@ internal sealed partial class LibrarySetMerger
     /// Merges the models of the references.
     /// </summary>
     /// <param name="references">The references with their models, which are changed, and their configurations.</param>
+    /// <param name="namespaces">The namespaces by library name, case-insensitive, unless the reference has one.</param>
     /// <param name="logger">The logger.</param>
     /// <returns>The libraries: the references in order, then the libraries they use.</returns>
-    public static List<LibrarySetEntry> Merge(IReadOnlyList<(LibrarySetReference Reference, TypeLibrary Library, PipelineConfiguration Configuration)> references, ILogger logger)
+    public static List<LibrarySetEntry> Merge(
+        IReadOnlyList<(LibrarySetReference Reference, TypeLibrary Library, PipelineConfiguration Configuration)> references,
+        IReadOnlyDictionary<string, string> namespaces,
+        ILogger logger)
     {
-        var merger = new LibrarySetMerger(logger);
+        var merger = new LibrarySetMerger(namespaces, logger);
         var imported = new List<TypeDefinition>();
         foreach (var (reference, library, configuration) in references)
         {
@@ -157,7 +163,7 @@ internal sealed partial class LibrarySetMerger
         var entry = new LibrarySetEntry
         {
             Library = library,
-            Namespace = reference.Namespace ?? "Interop." + NameSanitizer.ToIdentifier(library.Name),
+            Namespace = reference.Namespace ?? GetNamespace(library.Name),
             Reference = reference,
             Configuration = configuration,
         };
@@ -179,7 +185,7 @@ internal sealed partial class LibrarySetMerger
             entry = new LibrarySetEntry
             {
                 Library = new TypeLibrary { Name = origin.Name, Guid = origin.Guid, MajorVersion = origin.MajorVersion, MinorVersion = origin.MinorVersion },
-                Namespace = "Interop." + NameSanitizer.ToIdentifier(origin.Name),
+                Namespace = GetNamespace(origin.Name),
             };
             Add(key, entry);
         }
@@ -203,6 +209,9 @@ internal sealed partial class LibrarySetMerger
         types.Add(GetTypeKey(type), type);
         entry.Library.Types.Add(type);
     }
+
+    private string GetNamespace(string library) =>
+        _namespaces.TryGetValue(library, out string? @namespace) ? @namespace : "Interop." + NameSanitizer.ToIdentifier(library);
 
     private void Add(string key, LibrarySetEntry entry)
     {

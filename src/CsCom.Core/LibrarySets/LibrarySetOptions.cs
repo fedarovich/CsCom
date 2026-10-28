@@ -14,8 +14,26 @@ public sealed class LibrarySetOptions
     /// <summary>Where the support code comes from; it is generated once for all the libraries.</summary>
     public SupportCodeMode SupportCode { get; init; }
 
-    /// <summary>The namespace of the generated support code; <c>Interop.ComSupport</c> by default.</summary>
+    /// <summary>The namespace of the generated support code; <c>&lt;Namespace of the first reference&gt;.ComSupport</c> by default.</summary>
     public string? SupportNamespace { get; init; }
+
+    /// <summary>
+    /// The namespaces of libraries by their names, e.g. <c>Excel</c> or <c>stdole</c>, whether they are references or are only
+    /// used by them; <c>Interop.&lt;Library&gt;</c> by default. The namespace of a <see cref="LibrarySetReference"/> wins.
+    /// </summary>
+    public IReadOnlyDictionary<string, string> Namespaces { get; init; } = new Dictionary<string, string>();
+
+    /// <summary>
+    /// The configuration files of libraries by their names, whether they are references or are only used by them. The
+    /// configuration file of a <see cref="LibrarySetReference"/> wins.
+    /// </summary>
+    public IReadOnlyDictionary<string, string> ConfigurationPaths { get; init; } = new Dictionary<string, string>();
+
+    /// <summary>Whether all the types of all the libraries are generated into a single file.</summary>
+    public bool SingleFile { get; init; }
+
+    /// <summary>The name of the file generated when <see cref="SingleFile"/> is set.</summary>
+    public string SingleFileName { get; init; } = "Interop.cs";
 
     /// <summary>How <c>DATE</c>, <c>CURRENCY</c>, <c>VARIANT_BOOL</c>, <c>BSTR</c> and <c>SAFEARRAY</c> values are represented.</summary>
     public MarshallingOptions Marshalling { get; init; } = new();

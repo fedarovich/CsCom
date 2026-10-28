@@ -1,6 +1,6 @@
 using System.Text.RegularExpressions;
 using CsCom.CodeGeneration;
-using CsCom.Model;
+using CsCom.LibrarySets;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -32,7 +32,6 @@ public sealed partial class AssemblyGenerator
 
     private static readonly string[] PackageExtensions = [".nupkg", ".snupkg"];
 
-    private readonly InteropPipeline _pipeline;
     private readonly ProjectGenerator _projectGenerator;
     private readonly ILogger _logger;
 
@@ -42,7 +41,6 @@ public sealed partial class AssemblyGenerator
     public AssemblyGenerator(InteropPipeline pipeline, ILoggerFactory? loggerFactory = null)
     {
         loggerFactory ??= NullLoggerFactory.Instance;
-        _pipeline = pipeline;
         _projectGenerator = new ProjectGenerator(pipeline, loggerFactory);
         _logger = loggerFactory.CreateLogger<AssemblyGenerator>();
     }
@@ -103,7 +101,7 @@ public sealed partial class AssemblyGenerator
         ValidateProperties(request);
         return RunInTemporaryProject(
             request,
-            (library, _) => GetPackageProperties(request, library),
+            (result, _) => GetPackageProperties(request, result),
             (manifest, temp, projectPath) =>
             {
                 string packages = Path.Combine(temp, "packages");
@@ -124,12 +122,19 @@ public sealed partial class AssemblyGenerator
             });
     }
 
-    // The properties of the package.
-    private static Dictionary<string, string> GetPackageProperties(PackAssemblyRequest request, TypeLibrary library)
+    // The properties of the package: the version and the description of a single source, or those of several sources.
+    private static Dictionary<string, string> GetPackageProperties(PackAssemblyRequest request, LibrarySetResult result)
     {
-        string version = request.PackageVersion
-            ?? (library.MajorVersion == 0 && library.MinorVersion == 0 ? "1.0.0" : $"{library.MajorVersion}.{library.MinorVersion}.0");
-        string title = string.IsNullOrWhiteSpace(library.Documentation) ? library.Name : library.Documentation.Trim();
+        var sources = result.Libraries.Where(static l => l.IsReferenced).ToList();
+        string version = request.PackageVersion ?? sources switch
+        {
+            [{ MajorVersion: 0, MinorVersion: 0 }] or [_, _, ..] => "1.0.0",
+            [var library] => $"{library.MajorVersion}.{library.MinorVersion}.0",
+            _ => "1.0.0",
+        };
+        string title = sources is [{ Documentation: { } documentation }] && !string.IsNullOrWhiteSpace(documentation)
+            ? documentation.Trim()
+            : string.Join(", ", sources.Select(static l => l.Name));
         return MergeProperties(
             [
                 new("Version", version),
@@ -165,12 +170,11 @@ public sealed partial class AssemblyGenerator
     // the temporary files are kept.
     private IReadOnlyList<string> RunInTemporaryProject(
         AssemblyRequest request,
-        Func<TypeLibrary, CsComManifest, IReadOnlyDictionary<string, string>?> getProperties,
+        Func<LibrarySetResult, CsComManifest, IReadOnlyDictionary<string, string>?> getProperties,
         Func<CsComManifest, string, string, IReadOnlyList<string>> action)
     {
-        var library = _pipeline.ReadTypeLibrary(request.Source, request.ReferencePaths);
-        var manifest = _projectGenerator.ResolveSettings(request, library);
-        var configuration = _projectGenerator.LoadConfiguration(manifest.Configuration);
+        var generated = _projectGenerator.Generate(request);
+        var manifest = generated.Manifest;
         string temp = Path.Combine(Path.GetTempPath(), "cscom", Guid.NewGuid().ToString("N"));
 
         Directory.CreateDirectory(temp);
@@ -178,7 +182,7 @@ public sealed partial class AssemblyGenerator
         File.WriteAllText(Path.Combine(temp, "Directory.Build.targets"), IsolationProps);
         File.WriteAllText(Path.Combine(temp, "Directory.Packages.props"), IsolationPackagesProps);
         string projectPath = _projectGenerator.WriteProject(
-            temp, manifest, library, configuration, request.PackageSource, request.GlobalPackagesFolder, getProperties(library, manifest));
+            temp, manifest, generated.Documents, generated.RootNamespace, request.PackageSource, request.GlobalPackagesFolder, getProperties(generated.Result, manifest));
 
         bool succeeded = false;
         try

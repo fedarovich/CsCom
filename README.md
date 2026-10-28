@@ -17,7 +17,10 @@ added in .NET 8, so the interop assemblies can be trimmed and used with Native A
 # Generate a C# project with the interop types
 cscom project create C:\Windows\System32\scrrun.dll -o Interop.Scripting
 
-# Regenerate the C# files of a project created with 'project create' (from the type library recorded in cscom.json)
+# Generate several type libraries into one project, each into its own namespace
+cscom project create Excel.Application Scripting.Dictionary -n Office.Interop --ns Excel=Office.Excel
+
+# Regenerate the C# files of a project created with 'project create' (from the sources recorded in cscom.json)
 cscom project update -o Interop.Scripting
 
 # Build a ready-to-use interop assembly
@@ -30,7 +33,7 @@ cscom assembly pack C:\Windows\System32\scrrun.dll -o packages --package-version
 cscom list Scripting.Dictionary --type ^IDictionary$
 ```
 
-The source (`Source`) can be:
+A source (`Source`, which can be repeated, see [Several sources](#several-sources)) can be:
 - **A file:** a `.tlb` file, or a `.dll`, `.ocx` or `.exe` file with an embedded type library. A resource index can be appended,
   e.g. `foo.dll\2`.
 - **A registered LIBID:** `{00020813-0000-0000-C000-000000000046}`, optionally with the version as in the registry
@@ -43,11 +46,33 @@ Registered type libraries are found in the registry, so Office type libraries do
 installation. `cscom.json` records the LIBID or the ProgID rather than the path, and `project update` looks it up again, e.g.
 after an Office update.
 
+### Several sources
+
+The commands generate the sources together into one project, assembly or package, as [CsCom.Build](#msbuild-integration) does:
+
+```powershell
+cscom project create Excel.Application Scripting.Dictionary -n Office.Interop --ns Excel=Office.Excel -c Excel=excel.cscom.xml
+```
+
+- **Namespaces:** each library is generated into `Interop.<Library>`, after the name of its type library (e.g. `Interop.Scripting`
+  for `scrrun.dll`), into a folder of the same name in `Generated`, e.g. `Generated/Interop.Scripting/IDictionary.cs`.
+- **Used libraries:** the types that the sources use from other type libraries are generated into the namespace of their library,
+  e.g. `Interop.stdole`, or `Interop.Office` and `Interop.VBIDE` for Excel: only the used types, once for all the sources that use
+  them. When the other library is a source too, all its types are generated and the other sources use them.
+- **Options by library:** `--namespace` and `--config` take the name of the library: `--ns Excel=Office.Excel` or
+  `-c stdole=stdole.cscom.xml`, also for the libraries that are only used. Without a library name, they apply to a single source.
+  Two libraries with the same namespace are an error.
+- **Name:** `--name` is required with several sources; with a single source, it is `Interop.<Library>` by default.
+- **Single file:** `--single-file` generates one file with a namespace block per library.
+
+A single source is generated the same way. The projects of earlier versions, which generated the types used from other libraries
+into nested namespaces (`<Namespace>.<Library>`), are converted by `project update`.
+
 | Option | Description |
 | --- | --- |
 | `-o`, `--output <PATH>` | The output directory: `./<Name>` for `project create`, the current directory for `assembly build` and `assembly pack`, and the project directory for `project update`. |
-| `-n`, `--name <NAME>` | The project and assembly name. `Interop.<TlbName>` by default. |
-| `--ns`, `--namespace <NAMESPACE>` | The namespace of the generated types. `Interop.<TlbName>` by default. |
+| `-n`, `--name <NAME>` | The project and assembly name. `Interop.<Library>` by default with a single source; required with several sources. |
+| `--ns`, `--namespace <[LIBRARY=]NAMESPACE>` | The namespace of a library, e.g. `Excel=Office.Excel`, whether it is a source or is only used; can be specified multiple times. Without a library name, the namespace of a single source. `Interop.<Library>` by default. |
 | `-f`, `--framework <TFM>` | The target framework; can be specified multiple times. `net10.0-windows` by default. |
 | `-r`, `--runtime <RID>` | The runtime identifier; can be specified multiple times. `AnyCPU` (no runtime identifier) by default. Not supported by `assembly pack`, whose packages are RID-neutral. |
 | `-l`, `--cs`, `--csharp-version <VERSION>` | The C# version. C# 14 for .NET 10 and C# 15 for .NET 11 by default; only later versions can be specified. |
@@ -59,18 +84,21 @@ after an Office update.
 | `--safearray-marshalling <array\|sysarray\|wrapper\|none>` | How typed `SAFEARRAY(T)` parameters and return values are represented: `array` (default, `T[]`), `sysarray`, `wrapper` or `none`, see [SAFEARRAYs](#safearrays). |
 | `-e`, `--event-style <events\|observable\|interface\|none>` | The code generated for the events of coclasses: `events` (default), `observable`, `interface` or `none`, see [Events](#events). |
 | `--overloads-for-default-values` | Generates overloads for the methods whose optional parameters have default values that C# cannot express, see [Optional parameters](#optional-parameters). |
-| `-c`, `--config <PATH>` | An XML file that adds and configures model and syntax transformers, see [Configuration file](#configuration-file). |
+| `-c`, `--config <[LIBRARY=]PATH>` | An XML file that adds and configures the model and syntax transformers of a library, e.g. `Excel=excel.cscom.xml`; can be specified multiple times. Without a library name, the file of a single source. See [Configuration file](#configuration-file). |
 | `--reference-path <PATH>` | For interop assemblies: an assembly they reference, or a directory of such assemblies; can be specified multiple times, see [Interop assemblies](#interop-assemblies). |
 | `--package-source <PATH>` | An additional NuGet source with the CsCom.Runtime package. |
 | `--keep-temp` | `assembly build` and `assembly pack` only: keeps the temporary project used to build the assembly. |
-| `--package-version <VERSION>` | `assembly pack` only: the version of the package and the assembly. `<major>.<minor>.0` of the type library by default. |
+| `--package-version <VERSION>` | `assembly pack` only: the version of the package and the assembly. `<major>.<minor>.0` of the type library by default with a single source, `1.0.0` with several sources. |
 | `-p`, `--property <NAME=VALUE>` | `assembly build` and `assembly pack` only: an MSBuild property of the temporary project, e.g. `Version=1.2.3`, `Company=Contoso` or `PackageLicenseExpression=MIT`; can be specified multiple times. |
 | `-v`, `--verbosity <LEVEL>` | `quiet`, `minimal`, `normal` (default), `detailed` or `diagnostic`. |
 
-`project create` writes `<Name>.csproj`, a `cscom.json` file with the options it was generated with, and the C# files into the
-`Generated` folder. `project update` replaces the C# files of the `Generated` folder using the type library and the options recorded
-in `cscom.json`; a `Source` replaces the recorded type library. It accepts `--namespace`, `--csharp-version`, `--single-file [true|false]`, the marshalling options, `--event-style`, `--struct-properties`, `--overloads-for-default-values [true|false]`, `--config`
-(an empty value removes the file) and `--reference-path` (an empty value removes the paths) to change them. Code outside of the `Generated` folder, e.g. partial classes, is not touched.
+`project create` writes `<Name>.csproj`, a `cscom.json` file with the sources and the options it was generated with, and the C#
+files into the `Generated` folder, in a folder per namespace. `project update` replaces the C# files of the `Generated` folder using
+the sources and the options recorded in `cscom.json`; `Source` arguments replace the recorded sources. It accepts `--namespace` and
+`--config`, which change the recorded values of the libraries they name (`LIBRARY=` removes one, and `--config ""` removes all the
+configuration files), `--csharp-version`, `--single-file [true|false]`, the marshalling options, `--event-style`, `--struct-properties`,
+`--overloads-for-default-values [true|false]` and `--reference-path` (an empty value removes the paths) to change them. Code outside of
+the `Generated` folder, e.g. partial classes, is not touched.
 
 `assembly build` generates the project in a temporary directory, builds it with `dotnet build` once per runtime identifier and copies
 the assemblies, PDBs and XML documentation (and `CsCom.Runtime.dll`) to the output directory. With a single target framework and at
@@ -83,7 +111,8 @@ project).
 XML documentation in `lib/<TFM>` for each target framework, and `<Name>.<Version>.snupkg` with the PDBs. The package is RID-neutral,
 because the interop assembly is IL-only.
 - **Metadata:** the package ID is the assembly name (`--name`), the version is `--package-version` or the type library version
-  (Excel 1.9 gives `1.9.0`), and the description is `<help string of the type library>: COM interop types generated by CsCom.`
+  (Excel 1.9 gives `1.9.0`; `1.0.0` with several sources), and the description is `<help string of the type library>: COM interop
+  types generated by CsCom.` (`<Library>, <Library>: …` with several sources).
   `--property` sets any other MSBuild property, such as `Authors`, `PackageLicenseExpression`, `RepositoryUrl` or `Copyright`, and
   overrides the defaults.
 - **Dependencies:** with `--support-code package`, the package depends on the CsCom.Runtime package of the same version as the
@@ -91,12 +120,14 @@ because the interop assembly is IL-only.
 
 ### Listing a type library
 
-`cscom list <Source>` writes the types and members of a type library with IDL-like signatures, using the names that the selectors
-of the [configuration file](#configuration-file) match. `--type <REGEX>` (`-t`) selects the types to list, and `--config <PATH>` (`-c`)
-applies the model transformers of a configuration file first, e.g. to check renames.
+`cscom list <Source>...` writes the types and members of the libraries with IDL-like signatures, using the names that the
+selectors of the [configuration file](#configuration-file) match. Each library starts with a header with its name, version and
+namespace; the libraries whose types are only used are marked `(used types)`. `--type <REGEX>` (`-t`) selects the types to list, and
+`--config <[LIBRARY=]PATH>` (`-c`) applies the model transformers of configuration files first, e.g. to check renames.
 
 ```
 > cscom list Scripting.Dictionary --type ^IDictionary$
+// Scripting 1.0: Interop.Scripting
 interface IDictionary : IDispatch (dual)
     propputref Item([in] VARIANT* Key, [in] VARIANT* pRetItem)
     propput Item([in] VARIANT* Key, [in] VARIANT* pRetItem)
@@ -244,8 +275,9 @@ of the items override them for a reference:
   before the names are sanitized, so they see the resolved aliases and the names they produce are made valid and unique.
 - **Validation:** unknown transformers, attributes and child elements are reported with their location, e.g.
   `cscom.xml(3,6): Unknown model transformer <Rename>.` Nothing is written when the file is not valid.
-- **`project update`:** `project create` records the file in `cscom.json`, relative to the project directory, and `project update`
-  applies it again. `--config` replaces it, and `--config ""` removes it.
+- **`project update`:** `project create` records the files in `cscom.json` by library name, relative to the project directory, and
+  `project update` applies them again. `--config LIBRARY=PATH` replaces the file of a library, `--config LIBRARY=` removes it, and
+  `--config ""` removes all of them.
 - **Custom transformers:** they are registered through the API with `InteropPipeline.Registry.AddModelTransformer(name, element => ...)`
   and `AddSyntaxTransformer`, whose factories read their element with `ConfigurationElement`.
 - **Schema and starter file:** `cscom config create [-o <dir>]` writes `cscom.xsd`, the schema of the configuration files, and a
@@ -361,7 +393,8 @@ foreach (object? key in dictionary)                 // _NewEnum via IEnumVARIANT
   `CURRENCY` and `VARIANT_BOOL` members are converted by properties, see [Structures](#structures).
 - **Modules** become static classes with `[LibraryImport]` functions and constants.
 - **Aliases** are replaced by the aliased types.
-- **Types imported from other type libraries** are generated into `<Namespace>.<LibraryName>`. The well-known OLE Automation types
+- **Types imported from other type libraries** are generated into the namespace of their library, `Interop.<Library>` by default,
+  see [Several sources](#several-sources). The well-known OLE Automation types
   `IUnknown`, `IDispatch`, `IEnumVARIANT` and `GUID` are mapped to `object`, `IDispatch`, `IEnumVARIANT` and `Guid`.
 
 | Type library | C# |
@@ -704,9 +737,8 @@ The generated projects disable runtime marshalling, which source-generated COM i
   `VARIANT_BOOL` members are converted.
 - `SAFEARRAY`s are converted to zero-based .NET arrays of up to three dimensions, and `T[,]`/`T[,,]` require a
   [known rank](#known-ranks); only `ComSafeArray<T>` keeps their bounds and supports more dimensions.
-- The commands generate the types imported from other type libraries into the project, in nested namespaces; referencing other
-  interop assemblies is not supported yet. CsCom.Build generates them into the namespaces of their libraries, see
-  [MSBuild integration](#msbuild-integration).
+- The types used from other type libraries are generated into the project, in the namespaces of their libraries; referencing
+  other interop assemblies that contain them is not supported yet.
 - Interop assemblies lack the documentation, the functions of modules and some type information of their type libraries, see
   [Interop assemblies](#interop-assemblies).
 - CsCom.Runtime only targets `net10.0` for now. Source-generated COM expects a base interface from another assembly (`IDispatch`)
