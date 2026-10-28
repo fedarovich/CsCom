@@ -1,18 +1,24 @@
 <#
 .SYNOPSIS
-    Compiles CsComTest.idl into CsComTest.tlb with MIDL and imports it into Interop.CsComTest.dll with TlbImp.
+    Compiles the test type libraries with MIDL: CsComTest.idl into CsComTest.tlb, which TlbImp imports into
+    Interop.CsComTest.dll, and CsComDrawing.idl into CsComDrawing.tlb.
 
 .DESCRIPTION
     Requires Visual Studio with the C++ build tools (MIDL uses the C preprocessor) and the Windows SDK with the .NET Framework
-    tools (TlbImp). The compiled type library and the interop assembly are committed, so this script only has to be run after
-    changing the IDL.
+    tools (TlbImp). The compiled type libraries and the interop assembly are committed, so this script only has to be run after
+    changing an IDL file, for that library.
 
     TlbImp reports warnings for the parts of the type library that it cannot import, which the tests expect: a platform
     agnostic assembly (TI3002), the properties and _NewEnum of the source dispinterface DShapeEvents (TI3013, TI3007) and the
     pointer to a structure in Record.Next (TI3016).
+.PARAMETER Library
+    The libraries to compile: CsComTest, CsComDrawing, or both by default.
 #>
 [CmdletBinding()]
-param()
+param(
+    [ValidateSet('CsComTest', 'CsComDrawing')]
+    [string[]] $Library = @('CsComTest', 'CsComDrawing')
+)
 
 $ErrorActionPreference = 'Stop'
 
@@ -33,20 +39,24 @@ if (-not $tlbImp) {
 $output = Join-Path ([System.IO.Path]::GetTempPath()) "cscom-midl-$([guid]::NewGuid())"
 New-Item -ItemType Directory -Path $output | Out-Null
 try {
-    $command = "`"$vsPath\Common7\Tools\VsDevCmd.bat`" -arch=amd64 -host_arch=amd64 -no_logo && midl /nologo /env x64 /out `"$output`" /tlb CsComTest.tlb `"$PSScriptRoot\CsComTest.idl`""
-    & cmd.exe /c $command
-    if ($LASTEXITCODE -ne 0) {
-        throw "MIDL failed with exit code $LASTEXITCODE."
-    }
+    foreach ($name in $Library) {
+        $command = "`"$vsPath\Common7\Tools\VsDevCmd.bat`" -arch=amd64 -host_arch=amd64 -no_logo && midl /nologo /env x64 /out `"$output`" /tlb $name.tlb `"$PSScriptRoot\$name.idl`""
+        & cmd.exe /c $command
+        if ($LASTEXITCODE -ne 0) {
+            throw "MIDL failed with exit code $LASTEXITCODE."
+        }
 
-    $typeLibrary = Join-Path $PSScriptRoot 'CsComTest.tlb'
-    Copy-Item (Join-Path $output 'CsComTest.tlb') $typeLibrary -Force
-    Write-Host "Created $typeLibrary"
+        $typeLibrary = Join-Path $PSScriptRoot "$name.tlb"
+        Copy-Item (Join-Path $output "$name.tlb") $typeLibrary -Force
+        Write-Host "Created $typeLibrary"
 
-    $assembly = Join-Path $PSScriptRoot 'Interop.CsComTest.dll'
-    & $tlbImp.FullName $typeLibrary /nologo /namespace:CsComTest "/out:$assembly"
-    if ($LASTEXITCODE -ne 0) {
-        throw "TlbImp failed with exit code $LASTEXITCODE."
+        if ($name -eq 'CsComTest') {
+            $assembly = Join-Path $PSScriptRoot 'Interop.CsComTest.dll'
+            & $tlbImp.FullName $typeLibrary /nologo /namespace:CsComTest "/out:$assembly"
+            if ($LASTEXITCODE -ne 0) {
+                throw "TlbImp failed with exit code $LASTEXITCODE."
+            }
+        }
     }
 }
 finally {

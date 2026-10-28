@@ -249,7 +249,9 @@ public sealed class ConfigurationElement
             (false, null) => string.Empty,
             (false, _) => $"{filePath}: ",
         };
-        return new CsComException(location + message, innerException);
+        return lineInfo.HasLineInfo()
+            ? new CsComException(location, message, filePath, lineInfo.LineNumber, lineInfo.LinePosition, innerException)
+            : new CsComException(location, message, filePath, 0, 0, innerException);
     }
 
     // Reports the first attribute, child element or text that was not read, including those of the child elements.

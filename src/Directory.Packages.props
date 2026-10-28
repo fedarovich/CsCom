@@ -6,6 +6,9 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- MSBuild 18 is the version of the .NET 10 SDK and Visual Studio 2026; the task is compiled against its netstandard2.0 reference assemblies. -->
+    <PackageVersion Include="Microsoft.Build.Framework" Version="18.0.2" />
+    <PackageVersion Include="Microsoft.Build.Utilities.Core" Version="18.0.2" />
     <PackageVersion Include="Microsoft.CodeAnalysis.CSharp" Version="5.9.0" />
     <PackageVersion Include="Microsoft.Extensions.Logging" Version="10.0.13" />
     <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.13" />

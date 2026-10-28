@@ -10,16 +10,20 @@ namespace CsCom.CodeGeneration;
 /// </summary>
 internal sealed class EmitContext
 {
-    public EmitContext(TypeLibrary library, CodeGenerationOptions options, ModelAnnotations annotations, ILogger logger)
+    public EmitContext(TypeLibrary library, CodeGenerationOptions options, ModelAnnotations annotations, ILogger logger, EmitScope? scope = null)
     {
         Library = library;
         Options = options;
         Annotations = annotations;
         Logger = logger;
+        Scope = scope;
         Support = "global::" + options.SupportNamespace;
     }
 
     public TypeLibrary Library { get; }
+
+    /// <summary>The libraries generated together with <see cref="Library"/>, if any.</summary>
+    public EmitScope? Scope { get; }
 
     public CodeGenerationOptions Options { get; }
 
@@ -34,8 +38,19 @@ internal sealed class EmitContext
     /// <summary>The accessibility of the generated types.</summary>
     public SyntaxKind Accessibility => Options.SupportCode == SupportCodeMode.Internal ? SyntaxKind.InternalKeyword : SyntaxKind.PublicKeyword;
 
-    public string GetNamespace(TypeDefinition definition) =>
-        definition.ImportedFrom is null ? Options.Namespace : $"{Options.Namespace}.{NameSanitizer.ToIdentifier(definition.ImportedFrom.Name)}";
+    /// <summary>
+    /// Gets the namespace of a type: its library's namespace when several libraries are generated together, otherwise
+    /// <see cref="CodeGenerationOptions.Namespace"/>, with a nested namespace for the types imported from other libraries.
+    /// </summary>
+    public string GetNamespace(TypeDefinition definition)
+    {
+        if (Scope is not null && Scope.Namespaces.TryGetValue(definition, out string? @namespace))
+        {
+            return @namespace;
+        }
+
+        return definition.ImportedFrom is null ? Options.Namespace : $"{Options.Namespace}.{NameSanitizer.ToIdentifier(definition.ImportedFrom.Name)}";
+    }
 
     /// <summary>
     /// Gets the name of the type as it can be used from <paramref name="currentNamespace"/>.

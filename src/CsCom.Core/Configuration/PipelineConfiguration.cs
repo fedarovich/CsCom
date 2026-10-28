@@ -81,7 +81,7 @@ public sealed class PipelineConfiguration
         }
         catch (XmlException e)
         {
-            throw new CsComException($"'{path}' is not a valid XML file: {e.Message}", e);
+            throw new CsComException($"'{path}' is not a valid XML file: ", e.Message, path, e.LineNumber, e.LinePosition, e);
         }
 
         return Parse(document, registry, path);

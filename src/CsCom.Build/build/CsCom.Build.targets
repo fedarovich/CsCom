@@ -1,0 +1,59 @@
+<Project>
+
+  <UsingTask TaskName="CsCom.Build.CsComGenerate" AssemblyFile="$(MSBuildThisFileDirectory)..\tasks\netstandard2.0\CsCom.Build.dll" />
+
+  <PropertyGroup>
+    <!-- The generated files are written into the intermediate output, per target framework. -->
+    <CsComOutputPath Condition="'$(CsComOutputPath)' == ''">$(IntermediateOutputPath)CsCom\</CsComOutputPath>
+    <CsComSupportNamespace Condition="'$(CsComSupportNamespace)' == ''">$(RootNamespace).ComSupport</CsComSupportNamespace>
+    <_CsComGeneratorPath>$(MSBuildThisFileDirectory)..\tools\net10.0\CsCom.Build.Generator.dll</_CsComGeneratorPath>
+    <!-- The dotnet executable of the SDK: DOTNET_HOST_PATH is set by the .NET CLI, NetCoreRoot by the SDK in Visual Studio. -->
+    <_CsComDotNetHostPath>$(DOTNET_HOST_PATH)</_CsComDotNetHostPath>
+    <_CsComDotNetHostPath Condition="'$(_CsComDotNetHostPath)' == '' and '$(NetCoreRoot)' != ''">$(NetCoreRoot)dotnet.exe</_CsComDotNetHostPath>
+  </PropertyGroup>
+
+  <!--
+    Generates the code before the compilation, also in the design-time builds of Visual Studio, so that IntelliSense sees the
+    generated types. The generator only runs when the items, the properties or the files they read changed.
+  -->
+  <Target Name="CsComGenerate" BeforeTargets="CoreCompile" Condition="'@(CsComReference)' != ''">
+    <CsComGenerate References="@(CsComReference)"
+                   ProjectDirectory="$(MSBuildProjectDirectory)"
+                   OutputDirectory="$(CsComOutputPath)"
+                   GeneratorPath="$(_CsComGeneratorPath)"
+                   DotNetHostPath="$(_CsComDotNetHostPath)"
+                   TargetFramework="$(TargetFramework)"
+                   LanguageVersion="$(LangVersion)"
+                   SupportCode="$(CsComSupportCode)"
+                   SupportNamespace="$(CsComSupportNamespace)"
+                   DisableRuntimeMarshalling="$(CsComDisableRuntimeMarshalling)"
+                   EventStyle="$(CsComEventStyle)"
+                   StructProperties="$(CsComStructProperties)"
+                   OverloadsForDefaultValues="$(CsComOverloadsForDefaultValues)"
+                   DateMarshalling="$(CsComDateMarshalling)"
+                   CurrencyMarshalling="$(CsComCurrencyMarshalling)"
+                   BoolMarshalling="$(CsComBoolMarshalling)"
+                   BstrMarshalling="$(CsComBstrMarshalling)"
+                   SafeArrayMarshalling="$(CsComSafeArrayMarshalling)">
+      <Output TaskParameter="GeneratedFiles" ItemName="_CsComGeneratedFile" />
+    </CsComGenerate>
+
+    <ItemGroup>
+      <Compile Include="@(_CsComGeneratedFile)" />
+      <FileWrites Include="@(_CsComGeneratedFile);$(CsComOutputPath)cscom.request.json;$(CsComOutputPath)cscom.state" />
+    </ItemGroup>
+
+    <PropertyGroup>
+      <!-- The generated code uses pointers. -->
+      <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+      <!--
+        The code that the COM source generator adds for public interfaces reports CA2256 when they derive from IDispatch of
+        CsCom.Runtime, and CS1591 for the members of base interfaces that it declares without documentation. Analyzer
+        configurations do not apply to generated code, so these warnings are disabled for the project.
+      -->
+      <NoWarn Condition="'$(CsComSuppressGeneratorWarnings)' == 'true' and '$(CsComSupportCode)' != 'internal'">$(NoWarn);CA2256</NoWarn>
+      <NoWarn Condition="'$(CsComSuppressGeneratorWarnings)' == 'true' and '$(CsComSupportCode)' != 'internal' and '$(GenerateDocumentationFile)' == 'true'">$(NoWarn);CS1591</NoWarn>
+    </PropertyGroup>
+  </Target>
+
+</Project>

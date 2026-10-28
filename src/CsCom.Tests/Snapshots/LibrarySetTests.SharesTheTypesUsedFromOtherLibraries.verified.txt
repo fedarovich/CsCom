@@ -1,0 +1,57 @@
+﻿{
+  Libraries: [
+    {
+      Name: CsComTest,
+      Guid: Guid_1,
+      MajorVersion: 1,
+      MinorVersion: 2,
+      Namespace: Interop.CsComTest,
+      IsReferenced: true,
+      TypeCount: 20
+    },
+    {
+      Name: CsComDrawing,
+      Guid: Guid_2,
+      MajorVersion: 1,
+      Namespace: Interop.CsComDrawing,
+      IsReferenced: true,
+      TypeCount: 3
+    },
+    {
+      Name: stdole,
+      Guid: Guid_3,
+      MajorVersion: 2,
+      Namespace: Interop.stdole,
+      IsReferenced: false,
+      TypeCount: 3
+    }
+  ],
+  Files: [
+    Interop.CsComTest/Color.cs,
+    Interop.CsComTest/AnonymousEnum.cs,
+    Interop.CsComTest/Point.cs,
+    Interop.CsComTest/Record.cs,
+    Interop.CsComTest/Number.cs,
+    Interop.CsComTest/IShape.cs,
+    Interop.CsComTest/DShapeEvents.cs,
+    Interop.CsComTest/ICalculator.cs,
+    Interop.CsComTest/ICircle.cs,
+    Interop.CsComTest/IMarshalling.cs,
+    Interop.CsComTest/IArrays.cs,
+    Interop.CsComTest/IStrings.cs,
+    Interop.CsComTest/_ShapeEvents.cs,
+    Interop.CsComTest/IShapeEventsVt.cs,
+    Interop.CsComTest/IShapeEventsDual.cs,
+    Interop.CsComTest/Shape.cs,
+    Interop.CsComTest/Calculator.cs,
+    Interop.CsComTest/ShapeEvents.cs,
+    Interop.CsComTest/EventShape.cs,
+    Interop.CsComTest/Kernel.cs,
+    Interop.CsComDrawing/ICanvas.cs,
+    Interop.CsComDrawing/DCanvasEvents.cs,
+    Interop.CsComDrawing/Canvas.cs,
+    Interop.stdole/Font.cs,
+    Interop.stdole/FontEvents.cs,
+    Interop.stdole/Picture.cs
+  ]
+}

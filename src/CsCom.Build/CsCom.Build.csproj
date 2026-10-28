@@ -1,0 +1,48 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The MSBuild integration: the props, the targets and the task that generate the interop code of the CsComReference items of
+    a project during its build. The task runs the generator (CsCom.Build.Generator, .NET 10) as a separate process, so it targets
+    netstandard2.0 and loads into the MSBuild of both the .NET SDK and Visual Studio.
+  -->
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <RootNamespace>CsCom.Build</RootNamespace>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <IsPackable>true</IsPackable>
+    <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+    <PackageOutputPath>$(CsComLocalPackagesDir)</PackageOutputPath>
+    <Description>Generates source-generated COM interop code from type libraries and interop assemblies during the build: add the type libraries, ProgIDs, LIBIDs or interop assemblies as CsComReference items.</Description>
+    <PackageTags>COM;interop;tlbimp;ComWrappers;NativeAOT;MSBuild</PackageTags>
+    <!-- The layout (build, tasks and tools folders) and the dependency on CsCom.Runtime are described by the nuspec, because the
+         netstandard2.0 task cannot reference the net10.0 CsCom.Runtime project. -->
+    <NuspecFile>CsCom.Build.nuspec</NuspecFile>
+    <!-- The package has no lib folder: the task assembly is not a reference (NU5100), and the dependency is for net10.0 consumers (NU5128). -->
+    <NoWarn>$(NoWarn);NU5100;NU5128</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- MSBuild provides its assemblies at run time. -->
+    <PackageReference Include="Microsoft.Build.Framework" PrivateAssets="all" ExcludeAssets="runtime" />
+    <PackageReference Include="Microsoft.Build.Utilities.Core" PrivateAssets="all" ExcludeAssets="runtime" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="build\**" />
+    <InternalsVisibleTo Include="CsCom.Tests" />
+  </ItemGroup>
+
+  <!-- Publishes the generator and passes the paths and the metadata to the nuspec. -->
+  <Target Name="PrepareCsComPackage" BeforeTargets="GenerateNuspec">
+    <MSBuild Projects="..\CsCom.Build.Generator\CsCom.Build.Generator.csproj" Targets="Publish" />
+    <MSBuild Projects="..\CsCom.Build.Generator\CsCom.Build.Generator.csproj" Targets="GetCsComPublishDirectory">
+      <Output TaskParameter="TargetOutputs" PropertyName="_CsComGeneratorDirectory" />
+    </MSBuild>
+    <PropertyGroup>
+      <NuspecProperties>version=$(PackageVersion);authors=$(Authors);description=$(Description);tags=$(PackageTags.Replace(';', ' '));projectUrl=$(PackageProjectUrl);repositoryUrl=$(RepositoryUrl);taskAssembly=$(TargetPath);generatorDirectory=$(_CsComGeneratorDirectory)</NuspecProperties>
+    </PropertyGroup>
+  </Target>
+
+</Project>

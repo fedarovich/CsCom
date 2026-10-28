@@ -30,22 +30,28 @@ internal sealed partial class EventEmitter
     };
 
     private readonly EmitContext _context;
-    private readonly HashSet<InterfaceDefinition> _sources;
+    private readonly IReadOnlySet<InterfaceDefinition> _sources;
 
     public EventEmitter(EmitContext context)
     {
         _context = context;
         _sources = context.Options.EventStyle == EventStyle.None
-            ? []
-            : context.Library.Types.OfType<CoClassDefinition>()
-                .SelectMany(static c => c.Interfaces)
-                .Where(static i => i.IsSource)
-                .Select(static i => i.Interface)
-                .OfType<UserDefinedTypeReference>()
-                .Select(static r => r.Definition)
-                .OfType<InterfaceDefinition>()
-                .ToHashSet();
+            ? new HashSet<InterfaceDefinition>()
+            : context.Scope?.EventSources ?? GetEventSources(context.Library.Types);
     }
+
+    /// <summary>
+    /// Gets the event (source) interfaces of the coclasses among the types.
+    /// </summary>
+    public static HashSet<InterfaceDefinition> GetEventSources(IEnumerable<TypeDefinition> types) =>
+        types.OfType<CoClassDefinition>()
+            .SelectMany(static c => c.Interfaces)
+            .Where(static i => i.IsSource)
+            .Select(static i => i.Interface)
+            .OfType<UserDefinedTypeReference>()
+            .Select(static r => r.Definition)
+            .OfType<InterfaceDefinition>()
+            .ToHashSet();
 
     /// <summary>
     /// Emits the event code for the interface, if it is the event interface of a coclass.

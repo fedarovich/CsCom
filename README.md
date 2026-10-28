@@ -1,7 +1,7 @@
 # CsCom
 
 CsCom is a command line tool that produces COM interop code from type libraries or existing .NET interop assemblies, similar to
-TlbImp.
+TlbImp, and an MSBuild package (CsCom.Build) that generates it during the build of a project, see [MSBuild integration](#msbuild-integration).
 Unlike TlbImp, it does not rely on the built-in COM interop of .NET: it generates C# code that uses the
 [source-generated COM interop](https://learn.microsoft.com/dotnet/standard/native-interop/comwrappers-source-generation)
 added in .NET 8, so the interop assemblies can be trimmed and used with Native AOT.
@@ -155,6 +155,74 @@ What type libraries cannot describe is imported as the closest native type, with
 become `IUnknown*` (or `void*` for delegates marshalled as `FunctionPtr`), enums that are not 32-bit become their underlying type,
 other value types become `void*`, and explicit layouts other than unions become sequential layouts. `[Flags]` is not imported; the
 `AddFlagsAttribute` element of the [configuration file](#configuration-file) adds it.
+
+## MSBuild integration
+
+The **CsCom.Build** package generates the interop code during the build of a project, without a separate interop project or
+assembly. The type libraries and interop assemblies are listed as `CsComReference` items:
+
+```xml
+<ItemGroup>
+  <PackageReference Include="CsCom.Build" Version="0.1.0" />
+  <CsComReference Include="C:\Windows\System32\scrrun.dll" />
+  <CsComReference Include="Excel.Application" Namespace="Office.Excel" Config="excel.cscom.xml" />
+  <CsComReference Include="libs\Legacy.Interop.dll" ReferencePath="libs" />
+</ItemGroup>
+```
+
+- **Sources:** the item is a source as for the commands: a type library or interop assembly file, relative to the project, a
+  registered LIBID or a ProgID. In Visual Studio, a type library or an interop assembly of the project can be given the build
+  action `CsComReference`. MSBuild item names are case-insensitive, so `CSComReference` works as well.
+- **Namespaces:** each reference is generated into `Interop.<Library>`, after the name of the type library (e.g. `Interop.Scripting`
+  for `scrrun.dll`), unless its `Namespace` metadata sets another one.
+- **Referenced libraries:** the types that the references use from other type libraries are generated into the namespace of their
+  library, e.g. `Interop.stdole`, or `Interop.Office` and `Interop.VBIDE` for Excel. Only the used types are generated, once for
+  all the references that use them. When the other library is a reference too, all its types are generated and the other
+  references use them. Adding a library as a reference also sets its namespace, options and configuration file. Two libraries
+  with the same namespace are an error.
+
+The properties are the defaults of all the libraries, including those whose types are only used by the references; the metadata
+of the items override them for a reference:
+
+| Item metadata | Property | Values |
+| --- | --- | --- |
+| `Namespace` | | The namespace of the reference. |
+| `ReferencePath` | | For interop assemblies: assemblies or directories that they reference, separated by `;`. |
+| `Config` | | The [configuration file](#configuration-file) of the reference. |
+| `EventStyle` | `CsComEventStyle` | `events` (default), `observable`, `interface` or `none`, see [Events](#events). |
+| `StructProperties` | `CsComStructProperties` | `auto` (default) or `never`, see [Structures](#structures). |
+| `OverloadsForDefaultValues` | `CsComOverloadsForDefaultValues` | `false` (default) or `true`, see [Optional parameters](#optional-parameters). |
+| `DateMarshalling`, `CurrencyMarshalling`, `BoolMarshalling` | `CsComDateMarshalling`, `CsComCurrencyMarshalling`, `CsComBoolMarshalling` | `bcl` (default), `none` or `wrapper`, see [Marshalling options](#marshalling-options). |
+| `BstrMarshalling` | `CsComBstrMarshalling` | `string` (default), `wrapper` or `none`. |
+| `SafeArrayMarshalling` | `CsComSafeArrayMarshalling` | `array` (default), `sysarray`, `wrapper` or `none`. |
+| | `CsComSupportCode` | `package` (default), `public` or `internal`, see below. |
+| | `CsComSupportNamespace` | The namespace of the generated support code; `$(RootNamespace).ComSupport` by default. |
+| | `CsComDisableRuntimeMarshalling` | `true` (default) or `false`, see below. |
+| | `CsComSuppressGeneratorWarnings` | `true` (default) or `false`, see below. |
+| | `CsComOutputPath` | The folder of the generated files; `$(IntermediateOutputPath)CsCom\` by default. |
+
+- **Build:** the code is generated into `obj\<Configuration>\<TFM>\CsCom\<Namespace>\` before the compilation, also in the
+  design-time builds of Visual Studio, so that IntelliSense sees the generated types. The generator runs on .NET 10 as a separate
+  process, from the MSBuild of the .NET SDK as well as from that of Visual Studio, and only when the items, the properties, the
+  package or the files it read (type libraries, interop assemblies, configuration files) changed. A registered LIBID or ProgID
+  that resolves to another file after an update is regenerated by a rebuild.
+- **Requirements:** .NET 10 or later and C# 14 or later, taken from the target framework and `LangVersion`. `AllowUnsafeBlocks` is
+  enabled.
+- **Support code:** it is generated once for all the libraries. With `package`, it comes from the CsCom.Runtime package, which
+  CsCom.Build depends on, so the projects that reference the project get it too. With `public` or `internal`, it is generated
+  into `CsComSupportNamespace`; `internal` makes all the generated types internal.
+- **Runtime marshalling:** source-generated COM interop requires runtime marshalling to be disabled to marshal `VARIANT`s and
+  `DECIMAL`s, so CsCom.Build generates `[assembly: DisableRuntimeMarshalling]`. This applies to the whole assembly: the
+  `[DllImport]` declarations of the project lose the built-in marshalling of strings, `bool` and other non-blittable types. Use
+  `[LibraryImport]` instead, put the interop code into a separate class library, or set `CsComDisableRuntimeMarshalling` to
+  `false`, which breaks the members with `VARIANT` and `DECIMAL` values.
+- **Warnings:** the generated files disable CS1591, and SYSLIB1230 with CsCom.Runtime. The code that the COM source generator adds
+  for public interfaces reports CA2256 when they derive from `IDispatch` of CsCom.Runtime, and CS1591 for the members of base
+  interfaces that it declares without documentation. Analyzer configurations do not apply to generated code, so CsCom.Build
+  disables these warnings for the project (CS1591 only when it generates documentation), unless `CsComSuppressGeneratorWarnings`
+  is `false`. The `internal` support code has neither.
+- **Errors:** the errors and warnings are reported in the format of MSBuild, with the location of errors in configuration files,
+  e.g. `cscom.xml(3,6): error CSCOM1000: Unknown model transformer <Rename>.`
 
 ## Configuration file
 
@@ -636,7 +704,9 @@ The generated projects disable runtime marshalling, which source-generated COM i
   `VARIANT_BOOL` members are converted.
 - `SAFEARRAY`s are converted to zero-based .NET arrays of up to three dimensions, and `T[,]`/`T[,,]` require a
   [known rank](#known-ranks); only `ComSafeArray<T>` keeps their bounds and supports more dimensions.
-- Types imported from other type libraries are always generated into the project; referencing other interop assemblies is not supported yet.
+- The commands generate the types imported from other type libraries into the project, in nested namespaces; referencing other
+  interop assemblies is not supported yet. CsCom.Build generates them into the namespaces of their libraries, see
+  [MSBuild integration](#msbuild-integration).
 - Interop assemblies lack the documentation, the functions of modules and some type information of their type libraries, see
   [Interop assemblies](#interop-assemblies).
 - CsCom.Runtime only targets `net10.0` for now. Source-generated COM expects a base interface from another assembly (`IDispatch`)
@@ -657,9 +727,15 @@ The tool runs the type library through a pipeline (`CsCom.Core`):
    finds the nodes generated for an element.
 5. `ProjectGenerator` and `AssemblyGenerator` write the project, or build or pack the assembly.
 
+For CsCom.Build, `LibrarySetGenerator` generates several libraries into one project: it reads each reference, merges the types
+that they import from other libraries into a model per library, transforms each library with its options and configuration, and
+emits it with the namespaces of all the libraries. `LibrarySetBuild` runs the request of the MSBuild task in the generator process.
+
 | Project | Description |
 | --- | --- |
 | `src/CsCom` | The command line tool (`cscom`), packed as a .NET tool together with the CsCom.Runtime package. |
+| `src/CsCom.Build` | The CsCom.Build package: the MSBuild props, targets and task (netstandard2.0), which runs the generator. |
+| `src/CsCom.Build.Generator` | The generator that the task runs (.NET 10), packed into the `tools` folder of CsCom.Build. |
 | `src/CsCom.Core` | The pipeline. |
 | `src/CsCom.Runtime` | The support code used by the generated code. Its sources are also embedded into CsCom.Core for the `public` and `internal` modes. |
 | `src/CsCom.Tests` | MSTest and Verify tests. |
@@ -673,10 +749,11 @@ dotnet test src/CsCom.slnx --filter "TestCategory!=Integration"  # without the t
 ```
 
 - The projects use central package management: the package versions are in `src/Directory.Packages.props`.
-- Building CsCom.Runtime creates its package in `artifacts/packages`, which the tool bundles and the integration tests use.
-  The integration tests restore it into a temporary global packages folder. When running the tool from source, clear
-  `%USERPROFILE%\.nuget\packages\cscom.runtime` after changing CsCom.Runtime without changing the version.
-- `src/CsCom.Tests/TestAssets/CsComTest.tlb` is built from `CsComTest.idl` with `build-tlb.ps1`, which requires Visual Studio
-  with the C++ tools. The `.tlb` is committed.
+- Building CsCom.Runtime and CsCom.Build creates their packages in `artifacts/packages`, which the tool bundles (CsCom.Runtime)
+  and the integration tests use. The integration tests restore them into a temporary global packages folder; the tests of
+  CsCom.Build also build with the 32-bit and 64-bit MSBuild of Visual Studio when it is installed. When using the packages from
+  source, clear `%USERPROFILE%\.nuget\packages\cscom.runtime` and `cscom.build` after changing them without changing the version.
+- The test type libraries `src/CsCom.Tests/TestAssets/CsComTest.tlb` and `CsComDrawing.tlb` are built from their `.idl` files
+  with `build-tlb.ps1`, which requires Visual Studio with the C++ tools. The `.tlb` files are committed.
 - The snapshots of the generated code are in `src/CsCom.Tests/Snapshots`. Verify.MSTest is pinned to 32.0.0, the last version
   without the sponsorship check.

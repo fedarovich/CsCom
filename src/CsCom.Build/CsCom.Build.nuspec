@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<package xmlns="http://schemas.microsoft.com/packaging/2013/05/nuspec.xsd">
+  <metadata>
+    <id>CsCom.Build</id>
+    <version>$version$</version>
+    <authors>$authors$</authors>
+    <license type="expression">MIT</license>
+    <projectUrl>$projectUrl$</projectUrl>
+    <repository type="git" url="$repositoryUrl$" />
+    <description>$description$</description>
+    <tags>$tags$</tags>
+    <dependencies>
+      <!-- The support code of the generated code by default. -->
+      <group targetFramework="net10.0">
+        <dependency id="CsCom.Runtime" version="$version$" />
+      </group>
+    </dependencies>
+  </metadata>
+  <files>
+    <file src="build\CsCom.Build.props" target="build" />
+    <file src="build\CsCom.Build.targets" target="build" />
+    <file src="$taskAssembly$" target="tasks\netstandard2.0" />
+    <file src="$generatorDirectory$**\*" target="tools\net10.0" />
+  </files>
+</package>

@@ -32,12 +32,25 @@ public sealed class CSharpEmitter
     /// <param name="options">The options.</param>
     /// <param name="annotations">Receives the associations between the generated syntax nodes and the model elements.</param>
     /// <returns>The generated files.</returns>
-    public IReadOnlyList<GeneratedDocument> Emit(TypeLibrary library, CodeGenerationOptions options, ModelAnnotations? annotations = null)
+    public IReadOnlyList<GeneratedDocument> Emit(TypeLibrary library, CodeGenerationOptions options, ModelAnnotations? annotations = null) =>
+        Emit(library, options, annotations, scope: null);
+
+    /// <summary>
+    /// Generates the C# files for the types of one of the libraries that are generated together.
+    /// </summary>
+    /// <param name="library">The library, after the model transformers have been applied.</param>
+    /// <param name="options">The options.</param>
+    /// <param name="annotations">Receives the associations between the generated syntax nodes and the model elements.</param>
+    /// <param name="scope">
+    /// The libraries generated together, which give the namespaces of the types; <see langword="null"/> when the library is
+    /// generated on its own, with the imported types in nested namespaces.
+    /// </param>
+    internal IReadOnlyList<GeneratedDocument> Emit(TypeLibrary library, CodeGenerationOptions options, ModelAnnotations? annotations, EmitScope? scope)
     {
         ArgumentNullException.ThrowIfNull(library);
         ArgumentNullException.ThrowIfNull(options);
 
-        var context = new EmitContext(library, options, annotations ?? new ModelAnnotations(), _logger);
+        var context = new EmitContext(library, options, annotations ?? new ModelAnnotations(), _logger, scope);
         var interfaces = new InterfaceEmitter(context);
         var wrappers = new DispatchWrapperEmitter(context);
         var events = new EventEmitter(context);
@@ -64,7 +77,7 @@ public sealed class CSharpEmitter
                 continue;
             }
 
-            string folder = type.ImportedFrom is null ? string.Empty : NameSanitizer.ToIdentifier(type.ImportedFrom.Name) + "/";
+            string folder = scope is not null || type.ImportedFrom is null ? string.Empty : NameSanitizer.ToIdentifier(type.ImportedFrom.Name) + "/";
             units.Add(new Unit(UniquePath(folder + type.Name, paths), @namespace, members, default, null));
         }
 
@@ -73,7 +86,7 @@ public sealed class CSharpEmitter
             units.Add(new Unit(UniquePath(EmitContext.SafeArrayMarshallersClassName, paths), options.Namespace, [EmitSafeArrayMarshallers(context)], default, null));
         }
 
-        if (options.SupportCode != SupportCodeMode.Package)
+        if (options.SupportCode != SupportCodeMode.Package && (scope is null || scope.EmitSupportCode))
         {
             foreach (var (fileName, root) in SupportCodeProvider.GetFiles(options))
             {
@@ -165,7 +178,7 @@ public sealed class CSharpEmitter
         // </auto-generated>
 
         #nullable enable
-
+        {(options.SuppressedWarnings.Count > 0 ? $"#pragma warning disable {string.Join(", ", options.SuppressedWarnings)}{Environment.NewLine}" : string.Empty)}
 
         """;
 

@@ -1,0 +1,54 @@
+// The second type library used by the CsCom tests, which generate it together with CsComTest: both use types of stdole.
+// Rebuild CsComDrawing.tlb with build-tlb.ps1 after changing this file.
+
+import "oaidl.idl";
+import "ocidl.idl";
+
+[
+    uuid(6B1F2D2A-4C1E-4B71-9D0B-7B7C2E0A2000),
+    version(1.0),
+    helpstring("CsCom drawing test type library")
+]
+library CsComDrawing
+{
+    importlib("stdole2.tlb");
+
+    [
+        object,
+        uuid(6B1F2D2A-4C1E-4B71-9D0B-7B7C2E0A2010),
+        dual,
+        oleautomation,
+        helpstring("A canvas")
+    ]
+    interface ICanvas : IDispatch
+    {
+        [propget, id(1)] HRESULT Font([out, retval] IFontDisp** font);
+        [propputref, id(1)] HRESULT Font([in] IFontDisp* font);
+        [propget, id(2)] HRESULT Picture([out, retval] IPictureDisp** picture);
+        [propget, id(3)] HRESULT BackColor([out, retval] OLE_COLOR* color);
+        [propput, id(3)] HRESULT BackColor([in] OLE_COLOR color);
+        [id(4)] HRESULT Draw([in] long x, [in] long y);
+    };
+
+    [
+        uuid(6B1F2D2A-4C1E-4B71-9D0B-7B7C2E0A2011),
+        helpstring("The events of a canvas")
+    ]
+    dispinterface DCanvasEvents
+    {
+    properties:
+    methods:
+        [id(1)] void Painted([in] IPictureDisp* picture);
+    };
+
+    [
+        uuid(6B1F2D2A-4C1E-4B71-9D0B-7B7C2E0A2020),
+        helpstring("A canvas, which also raises the events of its font")
+    ]
+    coclass Canvas
+    {
+        [default] interface ICanvas;
+        [default, source] dispinterface DCanvasEvents;
+        [source] dispinterface FontEvents;
+    };
+};

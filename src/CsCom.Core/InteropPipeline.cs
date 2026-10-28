@@ -84,10 +84,22 @@ public sealed partial class InteropPipeline
         ArgumentNullException.ThrowIfNull(options);
         configuration ??= PipelineConfiguration.Empty;
 
-        var context = TransformModel(library, options, configuration);
+        TransformModel(library, options, configuration);
+        return EmitCode(library, options, configuration, scope: null);
+    }
+
+    /// <summary>
+    /// Generates the C# files of a transformed model and applies the syntax transformers.
+    /// </summary>
+    /// <param name="library">The model, after <see cref="TransformModel"/>.</param>
+    /// <param name="options">The code generation options.</param>
+    /// <param name="configuration">The configuration whose syntax transformers are applied after those of the pipeline.</param>
+    /// <param name="scope">The libraries generated together with this one, if any.</param>
+    internal IReadOnlyList<GeneratedDocument> EmitCode(TypeLibrary library, CodeGenerationOptions options, PipelineConfiguration configuration, EmitScope? scope)
+    {
         var annotations = new ModelAnnotations();
-        IReadOnlyList<GeneratedDocument> documents = new CSharpEmitter(_loggerFactory.CreateLogger<CSharpEmitter>()).Emit(library, options, annotations);
-        var syntaxContext = new TransformationContext { Options = context.Options, Logger = context.Logger, Library = library, Annotations = annotations };
+        IReadOnlyList<GeneratedDocument> documents = new CSharpEmitter(_loggerFactory.CreateLogger<CSharpEmitter>()).Emit(library, options, annotations, scope);
+        var syntaxContext = new TransformationContext { Options = options, Logger = _loggerFactory.CreateLogger<InteropPipeline>(), Library = library, Annotations = annotations };
         foreach (var transformer in SyntaxTransformers.Concat(configuration.SyntaxTransformers))
         {
             documents = transformer.Transform(documents, syntaxContext);

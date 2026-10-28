@@ -40,10 +40,19 @@ public static partial class TypeLibrarySource
                     : $"The type library {Format(libraryId)} version {version} is not registered.");
         }
 
-        if (ProgIdPattern().IsMatch(source) && FindClassLibrary(source) is var (classLibraryId, classVersion))
+        if (ProgIdPattern().IsMatch(source))
         {
-            return FindRegisteredPath(classLibraryId, classVersion) ?? FindRegisteredPath(classLibraryId, null)
-                ?? throw new CsComException($"The type library {Format(classLibraryId)} of the class '{source}' is not registered.");
+            if (FindClassLibrary(source) is var (classLibraryId, classVersion))
+            {
+                return FindRegisteredPath(classLibraryId, classVersion) ?? FindRegisteredPath(classLibraryId, null)
+                    ?? throw new CsComException($"The type library {Format(classLibraryId)} of the class '{source}' is not registered.");
+            }
+
+            // Some classes do not declare their type library, e.g. those of Click-to-Run Office, whose server contains it.
+            if (FindClassServer(source) is { } server)
+            {
+                return server;
+            }
         }
 
         throw new CsComException($"'{source}' is not a type library file, a registered LIBID or a ProgID.");
@@ -70,13 +79,16 @@ public static partial class TypeLibrarySource
     }
 
     /// <summary>Whether the source is a file rather than a registered type library.</summary>
-    public static bool IsFile(string source)
-    {
-        ArgumentNullException.ThrowIfNull(source);
+    public static bool IsFile(string source) => File.Exists(GetFilePath(source));
 
-        // A trailing \N selects a type library resource of a DLL or an executable.
-        string path = ResourceIndexPattern().Replace(source, string.Empty);
-        return File.Exists(path);
+    /// <summary>
+    /// Gets the path of the file of a type library path, without the trailing <c>\N</c> that selects a type library resource
+    /// of a DLL or an executable.
+    /// </summary>
+    public static string GetFilePath(string path)
+    {
+        ArgumentNullException.ThrowIfNull(path);
+        return ResourceIndexPattern().Replace(path, string.Empty);
     }
 
     /// <summary>
@@ -135,6 +147,45 @@ public static partial class TypeLibrarySource
         }
 
         return null;
+    }
+
+    // Finds the executable or the DLL of the class of a ProgID, which usually contains the type library of the class:
+    // LocalServer32 is a command line, e.g. "C:\...\EXCEL.EXE" /automation.
+    private static string? FindClassServer(string progId)
+    {
+        foreach (var view in RegistryViews)
+        {
+            using var classes = RegistryKey.OpenBaseKey(RegistryHive.ClassesRoot, view);
+            string name = classes.OpenSubKey($@"{progId}\CurVer")?.GetValue(null) as string ?? progId;
+            if (classes.OpenSubKey($@"{name}\CLSID")?.GetValue(null) is not string clsid)
+            {
+                continue;
+            }
+
+            foreach (string server in new[] { "LocalServer32", "InprocServer32" })
+            {
+                if (classes.OpenSubKey($@"CLSID\{clsid}\{server}")?.GetValue(null) is string command
+                    && GetServerPath(Environment.ExpandEnvironmentVariables(command).Trim()) is { } path
+                    && File.Exists(path))
+                {
+                    return Path.GetFullPath(path);
+                }
+            }
+        }
+
+        return null;
+    }
+
+    internal static string? GetServerPath(string command)
+    {
+        if (command.StartsWith('"'))
+        {
+            int end = command.IndexOf('"', 1);
+            return end > 1 ? command[1..end] : null;
+        }
+
+        int extension = command.IndexOf(".exe", StringComparison.OrdinalIgnoreCase) is var exe and >= 0 ? exe : command.IndexOf(".dll", StringComparison.OrdinalIgnoreCase);
+        return extension >= 0 ? command[..(extension + 4)] : command;
     }
 
     private static string? FindRegisteredPath(Guid libraryId, TypeLibraryVersion? version)

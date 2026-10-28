@@ -180,13 +180,9 @@ public sealed partial class ProjectGenerator
             : [TargetFrameworks.Default];
         foreach (string targetFramework in targetFrameworks)
         {
-            try
+            if (!TargetFrameworks.TryGetMajorVersion(targetFramework, out _, out string? error))
             {
-                TargetFrameworks.GetMajorVersion(targetFramework);
-            }
-            catch (ArgumentException e)
-            {
-                throw new CsComException(e.Message, e);
+                throw new CsComException(error);
             }
 
             if (!TargetFrameworks.IsWindowsSpecific(targetFramework))
@@ -268,7 +264,7 @@ public sealed partial class ProjectGenerator
         return languageVersion.Value;
     }
 
-    private static void ValidateNamespace(string @namespace)
+    internal static void ValidateNamespace(string @namespace)
     {
         if (string.IsNullOrWhiteSpace(@namespace) || !@namespace.Split('.').All(static part => SyntaxFacts.IsValidIdentifier(part) && SyntaxFacts.GetKeywordKind(part) == SyntaxKind.None))
         {

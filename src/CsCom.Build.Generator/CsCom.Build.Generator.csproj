@@ -1,0 +1,37 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The generator that the MSBuild task of CsCom.Build runs as a separate process: it generates the code of the CsComReference
+    items of a project from a request file. It is packed into the tools folder of the CsCom.Build package.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>CsCom</RootNamespace>
+    <!-- Runs with later .NET runtimes when only a later SDK is installed. -->
+    <RollForward>Major</RollForward>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Logging" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\CsCom.Core\CsCom.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <AssemblyAttribute Include="System.Runtime.Versioning.SupportedOSPlatformAttribute">
+      <_Parameter1>windows</_Parameter1>
+    </AssemblyAttribute>
+  </ItemGroup>
+
+  <!-- The full path of the published generator, which CsCom.Build packs. -->
+  <Target Name="GetCsComPublishDirectory" Returns="$(_CsComPublishDirectory)">
+    <PropertyGroup>
+      <_CsComPublishDirectory>$([MSBuild]::NormalizeDirectory('$(MSBuildProjectDirectory)', '$(PublishDir)'))</_CsComPublishDirectory>
+    </PropertyGroup>
+  </Target>
+
+</Project>

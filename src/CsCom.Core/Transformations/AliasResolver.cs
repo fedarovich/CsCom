@@ -15,12 +15,8 @@ public sealed partial class AliasResolver : IModelTransformer
     /// <inheritdoc/>
     public void Transform(TypeLibrary library, TransformationContext context)
     {
+        // The references to the aliases of other libraries are resolved too, when several libraries are generated together.
         var aliases = library.Types.OfType<AliasDefinition>().ToList();
-        if (aliases.Count == 0)
-        {
-            return;
-        }
-
         var takenNames = new HashSet<(TypeLibraryReference?, string)>(library.Types.Select(static t => (t.ImportedFrom, t.Name)));
         foreach (var alias in aliases)
         {

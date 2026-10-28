@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Text.RegularExpressions;
 
@@ -18,21 +19,30 @@ public static partial class TargetFrameworks
     /// Validates the target framework and returns its major .NET version.
     /// </summary>
     /// <exception cref="ArgumentException">The target framework is not a .NET 10 or later TFM.</exception>
-    public static int GetMajorVersion(string targetFramework)
+    public static int GetMajorVersion(string targetFramework) =>
+        TryGetMajorVersion(targetFramework, out int major, out string? error) ? major : throw new ArgumentException(error, nameof(targetFramework));
+
+    /// <summary>
+    /// Validates the target framework and gets its major .NET version.
+    /// </summary>
+    /// <param name="targetFramework">The target framework.</param>
+    /// <param name="major">The major .NET version.</param>
+    /// <param name="error">Why the target framework is not supported.</param>
+    /// <returns>Whether the target framework is a .NET 10 or later TFM.</returns>
+    public static bool TryGetMajorVersion(string targetFramework, out int major, [NotNullWhen(false)] out string? error)
     {
+        ArgumentNullException.ThrowIfNull(targetFramework);
         var match = Pattern().Match(targetFramework);
         if (!match.Success)
         {
-            throw new ArgumentException($"'{targetFramework}' is not a valid .NET target framework, e.g. '{Default}'.", nameof(targetFramework));
+            major = 0;
+            error = $"'{targetFramework}' is not a valid .NET target framework, e.g. '{Default}'.";
+            return false;
         }
 
-        int major = int.Parse(match.Groups["major"].ValueSpan, CultureInfo.InvariantCulture);
-        if (major < MinimumVersion)
-        {
-            throw new ArgumentException($"The target framework '{targetFramework}' is not supported: .NET {MinimumVersion} or later is required.", nameof(targetFramework));
-        }
-
-        return major;
+        major = int.Parse(match.Groups["major"].ValueSpan, CultureInfo.InvariantCulture);
+        error = major < MinimumVersion ? $"The target framework '{targetFramework}' is not supported: .NET {MinimumVersion} or later is required." : null;
+        return error is null;
     }
 
     /// <summary>

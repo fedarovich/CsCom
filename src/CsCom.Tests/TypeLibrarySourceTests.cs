@@ -21,6 +21,13 @@ public sealed class TypeLibrarySourceTests
     }
 
     [TestMethod]
+    [DataRow(@"C:\Program Files\Microsoft Office\Root\Office16\EXCEL.EXE /automation", @"C:\Program Files\Microsoft Office\Root\Office16\EXCEL.EXE")]
+    [DataRow(@"""C:\Program Files\App\app.exe"" -Embedding", @"C:\Program Files\App\app.exe")]
+    [DataRow(@"C:\Windows\System32\scrrun.dll", @"C:\Windows\System32\scrrun.dll")]
+    [DataRow(@"server", "server")]
+    public void GetsThePathsOfClassServers(string command, string path) => Assert.AreEqual(path, TypeLibrarySource.GetServerPath(command));
+
+    [TestMethod]
     public void ResolvesFiles()
     {
         string directory = Path.GetDirectoryName(TestEnvironment.TestTypeLibrary)!;

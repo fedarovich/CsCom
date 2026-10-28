@@ -1,4 +1,5 @@
 using CsCom.CodeGeneration;
+using CsCom.LibrarySets;
 using CsCom.Model;
 using CsCom.Output;
 using CsCom.Transformations;
@@ -1255,6 +1256,65 @@ public sealed class IntegrationTests
             }
         }
         """;
+
+    [TestMethod]
+    [DataRow(SupportCodeMode.Package)]
+    [DataRow(SupportCodeMode.Internal)]
+    public void LibrarySetBuildsWithoutWarnings(SupportCodeMode supportCode)
+    {
+        string directory = TestEnvironment.CreateDirectory($"set-{supportCode}");
+        bool package = supportCode == SupportCodeMode.Package;
+        var result = new LibrarySetGenerator(_pipeline).Generate(
+            [new LibrarySetReference { Source = TestEnvironment.TestTypeLibrary }, new LibrarySetReference { Source = TestEnvironment.DrawingTypeLibrary, Namespace = "Drawing.Interop" }],
+            new LibrarySetOptions
+            {
+                SupportCode = supportCode,
+                SupportNamespace = "Consumer.ComSupport",
+                DisableRuntimeMarshalling = true,
+                SuppressedWarnings = package ? ["CS1591", "SYSLIB1230"] : ["CS1591"],
+            });
+        foreach (var document in result.Documents)
+        {
+            string path = Path.Combine(directory, "CsCom", document.RelativePath);
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            File.WriteAllText(path, document.GetText());
+        }
+
+        // A project that generates documentation and uses implicit usings, like many projects that would reference the libraries.
+        // The COM generator's code for public interfaces reports CA2256 (IDispatch is in CsCom.Runtime) and CS1591 (it redeclares
+        // the members of base interfaces without documentation); analyzer configurations do not apply to generated code.
+        File.WriteAllText(Path.Combine(directory, "nuget.config"), ProjectFile.CreateNuGetConfig(TestEnvironment.LocalPackages, TestEnvironment.GlobalPackagesFolder));
+        string project = Path.Combine(directory, "Consumer.csproj");
+        File.WriteAllText(project, $"""
+            <Project Sdk="Microsoft.NET.Sdk">
+              <PropertyGroup>
+                <TargetFramework>net10.0-windows</TargetFramework>
+                <ImplicitUsings>enable</ImplicitUsings>
+                <Nullable>enable</Nullable>
+                <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+                <GenerateDocumentationFile>true</GenerateDocumentationFile>
+                <NoWarn Condition="{(package ? "true" : "false")}">$(NoWarn);CA2256;CS1591</NoWarn>
+              </PropertyGroup>
+              <ItemGroup Condition="{(package ? "true" : "false")}">
+                <PackageReference Include="CsCom.Runtime" Version="{ToolInfo.Version}" />
+              </ItemGroup>
+            </Project>
+            """);
+        File.WriteAllText(Path.Combine(directory, "Usage.cs"), """
+            using Drawing.Interop;
+            using Interop.CsComTest;
+
+            namespace Consumer;
+
+            internal static class Usage
+            {
+                public static global::Interop.stdole.Font? GetFont(global::Drawing.Interop.ICanvas canvas, global::Interop.CsComTest.IShape shape) =>
+                    canvas.Font ?? shape.Font();
+            }
+            """);
+
+        Build(project);
+    }
 
     [TestMethod]
     public void BuildAssemblyCopiesTheOutputsOfEachRuntime()

@@ -10,18 +10,23 @@
   <ItemGroup>
     <PackageReference Include="MSTest" />
     <PackageReference Include="Verify.MSTest" />
+    <!-- The MSBuild assemblies that the task of CsCom.Build needs at run time. -->
+    <PackageReference Include="Microsoft.Build.Framework" />
+    <PackageReference Include="Microsoft.Build.Utilities.Core" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\CsCom\CsCom.csproj" />
     <ProjectReference Include="..\CsCom.Core\CsCom.Core.csproj" />
 
-    <!-- Tested directly, and its package is restored from the local feed by the integration tests. -->
+    <!-- Tested directly, and their packages are restored from the local feed by the integration tests. -->
     <ProjectReference Include="..\CsCom.Runtime\CsCom.Runtime.csproj" />
+    <ProjectReference Include="..\CsCom.Build\CsCom.Build.csproj" />
   </ItemGroup>
 
   <ItemGroup>
     <None Include="TestAssets\CsComTest.tlb" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="TestAssets\CsComDrawing.tlb" CopyToOutputDirectory="PreserveNewest" />
     <None Include="TestAssets\Interop.CsComTest.dll" CopyToOutputDirectory="PreserveNewest" />
 
     <!-- The snapshots of the generated code are C# files that must not be compiled. -->

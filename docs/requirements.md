@@ -17,6 +17,10 @@ so they can be used with Native AOT as well.
 3. The tool must allow specifying target framework(s), runtime identifier(s), C# version to use.
 4. The tool must allow specifying the project/assembly name. If not specified, `Interop.<TlbName>` will be used by default.
 5. The tool must allow specifying the namespace. If not specified, `Interop.<TlbName>` will be used by default.
+6. A NuGet package with MSBuild tasks (CsCom.Build) generates the interop code during the build of a project.
+    + The sources are added to the project as `CsComReference` items; a project can have several of them.
+    + Each source is generated into its own namespace, `Interop.<SourceName>` by default, which the `Namespace` metadata of the item can override.
+    + The types coming from implicitly (transitively) referenced sources are generated into their own namespaces with the same naming convention, `Interop.<SourceName>`.
 
 ## Libraries to Use
 

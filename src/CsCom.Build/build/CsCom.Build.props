@@ -1,0 +1,40 @@
+<Project>
+
+  <!--
+    CsCom.Build generates the interop code of the CsComReference items during the build:
+
+      <CsComReference Include="C:\Windows\System32\scrrun.dll" />
+      <CsComReference Include="Excel.Application" Namespace="Office.Excel" Config="excel.cscom.xml" />
+
+    The properties below are the defaults of all the libraries, including those whose types the references only use; the
+    metadata of the items (Namespace, ReferencePath, Config, EventStyle, StructProperties, OverloadsForDefaultValues,
+    DateMarshalling, CurrencyMarshalling, BoolMarshalling, BstrMarshalling, SafeArrayMarshalling) override them.
+  -->
+  <PropertyGroup>
+    <!-- package (the CsCom.Runtime package), public or internal (the support code is generated into the project). -->
+    <CsComSupportCode Condition="'$(CsComSupportCode)' == ''">package</CsComSupportCode>
+    <!-- events, observable, interface or none. -->
+    <CsComEventStyle Condition="'$(CsComEventStyle)' == ''">events</CsComEventStyle>
+    <!-- auto or never. -->
+    <CsComStructProperties Condition="'$(CsComStructProperties)' == ''">auto</CsComStructProperties>
+    <CsComOverloadsForDefaultValues Condition="'$(CsComOverloadsForDefaultValues)' == ''">false</CsComOverloadsForDefaultValues>
+    <!-- bcl, none or wrapper. -->
+    <CsComDateMarshalling Condition="'$(CsComDateMarshalling)' == ''">bcl</CsComDateMarshalling>
+    <CsComCurrencyMarshalling Condition="'$(CsComCurrencyMarshalling)' == ''">bcl</CsComCurrencyMarshalling>
+    <CsComBoolMarshalling Condition="'$(CsComBoolMarshalling)' == ''">bcl</CsComBoolMarshalling>
+    <!-- string, wrapper or none. -->
+    <CsComBstrMarshalling Condition="'$(CsComBstrMarshalling)' == ''">string</CsComBstrMarshalling>
+    <!-- array, sysarray, wrapper or none. -->
+    <CsComSafeArrayMarshalling Condition="'$(CsComSafeArrayMarshalling)' == ''">array</CsComSafeArrayMarshalling>
+    <!-- Source-generated COM interop marshals VARIANT and DECIMAL values only when runtime marshalling is disabled for the assembly. -->
+    <CsComDisableRuntimeMarshalling Condition="'$(CsComDisableRuntimeMarshalling)' == ''">true</CsComDisableRuntimeMarshalling>
+    <!-- Disables CA2256 and, when the project generates documentation, CS1591 for the code of the COM source generator. -->
+    <CsComSuppressGeneratorWarnings Condition="'$(CsComSuppressGeneratorWarnings)' == ''">true</CsComSuppressGeneratorWarnings>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Type libraries and interop assemblies can be given the CsComReference build action in Visual Studio. -->
+    <AvailableItemName Include="CsComReference" />
+  </ItemGroup>
+
+</Project>

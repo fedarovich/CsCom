@@ -28,6 +28,8 @@ public sealed class CodeGenerationOptions
     /// <summary>The minimum supported C# version.</summary>
     public const int MinimumLanguageVersion = 14;
 
+    private readonly string? _supportNamespace;
+
     /// <summary>The namespace of the generated types.</summary>
     public required string Namespace { get; init; }
 
@@ -61,8 +63,21 @@ public sealed class CodeGenerationOptions
     /// <summary>The version of the tool written into the file headers.</summary>
     public string ToolVersion { get; init; } = ToolInfo.Version;
 
-    /// <summary>The namespace of the support code.</summary>
-    public string SupportNamespace => SupportCode == SupportCodeMode.Package ? "CsCom.Runtime" : $"{Namespace}.ComSupport";
+    /// <summary>
+    /// The namespace of the support code: <c>CsCom.Runtime</c> with <see cref="SupportCodeMode.Package"/>, otherwise the
+    /// specified namespace, or <c>&lt;Namespace&gt;.ComSupport</c> by default.
+    /// </summary>
+    public string SupportNamespace
+    {
+        get => SupportCode == SupportCodeMode.Package ? "CsCom.Runtime" : _supportNamespace ?? $"{Namespace}.ComSupport";
+        init => _supportNamespace = value;
+    }
+
+    /// <summary>
+    /// The warnings disabled in the generated files with <c>#pragma warning disable</c>, e.g. <c>CS1591</c> when the files
+    /// are compiled into a project that generates documentation.
+    /// </summary>
+    public IReadOnlyList<string> SuppressedWarnings { get; init; } = [];
 
     /// <summary>Whether extension indexers (C# 15) can be generated.</summary>
     public bool SupportsExtensionIndexers => LanguageVersion >= 15;
