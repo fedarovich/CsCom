@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- Not net10.0-windows: .NET tools cannot target a platform. The assembly is marked as Windows-only instead. -->
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>CsCom</RootNamespace>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The support code emitted into generated projects in the "public" and "internal" support code modes. -->
+    <EmbeddedResource Include="..\CsCom.Runtime\**\*.cs"
+                      Exclude="..\CsCom.Runtime\bin\**;..\CsCom.Runtime\obj\**"
+                      LogicalName="CsCom.Runtime/%(RecursiveDir)%(Filename)%(Extension)"
+                      Visible="false" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="CsCom.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <AssemblyAttribute Include="System.Runtime.Versioning.SupportedOSPlatformAttribute">
+      <_Parameter1>windows</_Parameter1>
+    </AssemblyAttribute>
+  </ItemGroup>
+
+</Project>

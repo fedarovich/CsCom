@@ -1,0 +1,212 @@
+// The type library used by the CsCom tests. Rebuild CsComTest.tlb with build-tlb.ps1 after changing this file.
+
+import "oaidl.idl";
+import "ocidl.idl";
+
+[
+    uuid(6B1F2D2A-4C1E-4B71-9D0B-7B7C2E0A1000),
+    version(1.2),
+    helpstring("CsCom test type library")
+]
+library CsComTest
+{
+    importlib("stdole2.tlb");
+
+    typedef [uuid(6B1F2D2A-4C1E-4B71-9D0B-7B7C2E0A1001), helpstring("The colors of a shape")]
+    enum Color
+    {
+        [helpstring("The red color")] Red = 0,
+        Green = 1,
+        Blue = 2,
+        Transparent = 0x80000000
+    } Color;
+
+    typedef enum
+    {
+        AnonymousFirst = 1,
+        AnonymousSecond = 2
+    } AnonymousEnum;
+
+    typedef [uuid(6B1F2D2A-4C1E-4B71-9D0B-7B7C2E0A1002), helpstring("A point")]
+    struct Point
+    {
+        long X;
+        long Y;
+    } Point;
+
+    typedef struct Record
+    {
+        BSTR Name;
+        VARIANT Value;
+        VARIANT_BOOL Flag;
+        IUnknown* Unknown;
+        double Values[4];
+        Point Corners[2];
+        BSTR Names[2];
+        GUID Id;
+        DATE Date;
+        CURRENCY Money;
+        DECIMAL Amount;
+        long checked;
+        Point* Next;
+    } Record;
+
+    typedef union Number
+    {
+        long AsLong;
+        double AsDouble;
+    } Number;
+
+    typedef [public] long Handle;
+
+    typedef [public] Handle HandleAlias;
+
+    interface IShape;
+    dispinterface DShapeEvents;
+
+    [
+        object,
+        uuid(6B1F2D2A-4C1E-4B71-9D0B-7B7C2E0A1010),
+        helpstring("A vtable interface")
+    ]
+    interface ICalculator : IUnknown
+    {
+        [helpstring("Adds two numbers")]
+        HRESULT Add([in] long a, [in] long b, [out, retval] long* result);
+        HRESULT Divide([in] double a, [in] double b, [out] double* quotient, [out] double* remainder);
+        HRESULT Swap([in, out] long* a, [in, out] long* b);
+        HRESULT GetPoint([out, retval] Point* point);
+        HRESULT SetPoint([in] Point point);
+        HRESULT MovePoint([in] Point* point);
+        long NoHResult([in] long value);
+        void NoReturn([in] long value);
+        HRESULT Strings([in] BSTR bstr, [in] LPWSTR wide, [in] LPSTR ansi, [out, retval] BSTR* result);
+        HRESULT Arrays([in] SAFEARRAY(BSTR) values, [out, retval] SAFEARRAY(long)* result);
+        HRESULT Buffer([in] long size, [in] byte* buffer);
+        HRESULT VoidPointer([in] void* pointer);
+        HRESULT GetHandle([out, retval] HandleAlias* handle);
+        HRESULT Locale([in, lcid] long lcid, [out, retval] long* result);
+        HRESULT Keywords([in] long params, [in] long lock, [in] long value, [out, retval] long* result);
+        HRESULT Numbers([in] Number number, [in] Record* record, [in] GUID* id, [out, retval] HRESULT* result);
+        HRESULT Integers([in] char c, [in] unsigned char b, [in] short s, [in] unsigned short us, [in] int i, [in] unsigned int ui, [in] hyper h, [in] unsigned hyper uh, [in] float f);
+        HRESULT Enumerator([out, retval] IEnumVARIANT** enumerator);
+    };
+
+    [
+        object,
+        uuid(6B1F2D2A-4C1E-4B71-9D0B-7B7C2E0A1011),
+        dual,
+        oleautomation,
+        helpstring("A dual interface")
+    ]
+    interface IShape : IDispatch
+    {
+        [propget, id(1), helpstring("The name of the shape")] HRESULT Name([out, retval] BSTR* name);
+        [propput, id(1)] HRESULT Name([in] BSTR name);
+        [propget, id(2)] HRESULT Color([out, retval] Color* color);
+        [propput, id(2)] HRESULT Color([in] Color color);
+        [propget, id(3)] HRESULT Area([out, retval] double* area);
+        [propputref, id(4)] HRESULT Parent([in] IShape* parent);
+        [propget, id(4)] HRESULT Parent([out, retval] IShape** parent);
+        [propget, id(5)] HRESULT Tag([out, retval] VARIANT* tag);
+        [propput, id(5)] HRESULT Tag([in] VARIANT tag);
+        [propputref, id(5)] HRESULT Tag([in] VARIANT tag);
+        [id(6)] HRESULT Move([in] long dx, [in, defaultvalue(0)] long dy, [in, optional] VARIANT scale, [in, defaultvalue("label")] BSTR label, [in, defaultvalue(2)] Color color, [in, defaultvalue(1.5)] double factor, [in, defaultvalue(-1)] VARIANT_BOOL flag);
+        [propput, id(8)] HRESULT WriteOnly([in] long value);
+        [propget, id(DISPID_VALUE)] HRESULT Item([in] VARIANT index, [out, retval] VARIANT* item);
+        [propput, id(DISPID_VALUE)] HRESULT Item([in] VARIANT index, [in] VARIANT item);
+        [propget, id(9)] HRESULT Coordinate([in] long index, [out, retval] long* value);
+        [propget, id(DISPID_NEWENUM), restricted] HRESULT _NewEnum([out, retval] IUnknown** enumerator);
+        [id(10)] HRESULT Clone([out, retval] IShape** clone);
+        [id(11)] HRESULT GetEvents([out, retval] DShapeEvents** events);
+        [id(12)] HRESULT Dispatch([in] IDispatch* dispatch, [out, retval] IDispatch** result);
+        [id(13)] HRESULT Dates([in] DATE date, [in] CURRENCY money, [in] DECIMAL amount, [out, retval] DATE* result);
+        [id(14)] HRESULT Font([out, retval] IFontDisp** font);
+    };
+
+    [
+        object,
+        uuid(6B1F2D2A-4C1E-4B71-9D0B-7B7C2E0A1012),
+        dual,
+        oleautomation
+    ]
+    interface ICircle : IShape
+    {
+        [propget, id(100)] HRESULT Radius([out, retval] double* radius);
+        [propput, id(100)] HRESULT Radius([in] double radius);
+    };
+
+    [
+        uuid(6B1F2D2A-4C1E-4B71-9D0B-7B7C2E0A1013),
+        helpstring("The events of a shape")
+    ]
+    dispinterface DShapeEvents
+    {
+    properties:
+        [id(1)] long Counter;
+        [id(2), readonly] BSTR Description;
+        [id(3)] Color Color;
+    methods:
+        [id(10)] void Changed([in] BSTR property);
+        [id(11)] long Compute([in] long a, [in, optional] VARIANT b);
+        [id(12)] void Resize([in, out] long* width, [out] long* height);
+        [id(13), propget] BSTR Title();
+        [id(13), propput] void Title([in] BSTR value);
+        [id(0), propget] VARIANT Item([in] long index);
+        [id(14), propget] long Cell([in] long row, [in] long column);
+        [id(14), propput] void Cell([in] long row, [in] long column, [in] long value);
+        [id(DISPID_NEWENUM), propget, restricted] IUnknown* _NewEnum();
+        [id(15)] IShape* GetShape();
+        [id(16)] SAFEARRAY(BSTR) Names();
+        [id(17)] DShapeEvents* Self();
+        [id(18)] void Create();
+    };
+
+    [
+        uuid(6B1F2D2A-4C1E-4B71-9D0B-7B7C2E0A1020),
+        helpstring("A shape")
+    ]
+    coclass Shape
+    {
+        [default] interface IShape;
+        interface ICircle;
+        [default, source] dispinterface DShapeEvents;
+    };
+
+    [
+        uuid(6B1F2D2A-4C1E-4B71-9D0B-7B7C2E0A1021),
+        noncreatable
+    ]
+    coclass Calculator
+    {
+        [default] interface ICalculator;
+    };
+
+    [
+        uuid(6B1F2D2A-4C1E-4B71-9D0B-7B7C2E0A1022)
+    ]
+    coclass ShapeEvents
+    {
+        [default] dispinterface DShapeEvents;
+    };
+
+    [
+        dllname("kernel32.dll"),
+        helpstring("Kernel functions")
+    ]
+    module Kernel
+    {
+        [entry("GetTickCount"), helpstring("Gets the number of milliseconds since the system was started")]
+        DWORD __stdcall GetTickCount();
+        [entry("Beep")]
+        long __stdcall Beep([in] DWORD frequency, [in] DWORD duration);
+        [entry("lstrlenW")]
+        int __stdcall StringLength([in] LPWSTR value);
+
+        const long MaxValue = 100;
+        const double Pi = 3.14159;
+        const LPSTR Greeting = "Hello";
+        const short Small = -5;
+        const unsigned char Byte = 255;
+    };
+};

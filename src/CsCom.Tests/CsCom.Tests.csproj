@@ -1,0 +1,36 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="MSTest" />
+    <PackageReference Include="Verify.MSTest" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\CsCom\CsCom.csproj" />
+    <ProjectReference Include="..\CsCom.Core\CsCom.Core.csproj" />
+
+    <!-- The integration tests restore the CsCom.Runtime package from the local feed. -->
+    <ProjectReference Include="..\CsCom.Runtime\CsCom.Runtime.csproj" ReferenceOutputAssembly="false" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="TestAssets\CsComTest.tlb" CopyToOutputDirectory="PreserveNewest" />
+
+    <!-- The snapshots of the generated code are C# files that must not be compiled. -->
+    <Compile Remove="Snapshots\**" />
+    <None Include="Snapshots\**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
+      <_Parameter1>CsComLocalPackagesDir</_Parameter1>
+      <_Parameter2>$(CsComLocalPackagesDir)</_Parameter2>
+    </AssemblyAttribute>
+  </ItemGroup>
+
+</Project>

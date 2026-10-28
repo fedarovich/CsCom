@@ -416,3 +416,10 @@ FodyWeavers.xsd
 *.msix
 *.msm
 *.msp
+
+# CsCom
+# The test type library is built from TestAssets/CsComTest.idl with build-tlb.ps1 and committed.
+!src/CsCom.Tests/TestAssets/*.tlb
+# Verify snapshot testing
+*.received.*
+

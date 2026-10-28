@@ -1,0 +1,11 @@
+<Solution>
+  <Folder Name="/Solution Items/">
+    <File Path="Directory.Build.props" />
+    <File Path="Directory.Packages.props" />
+    <File Path="../nuget.config" />
+  </Folder>
+  <Project Path="CsCom/CsCom.csproj" Id="672413f7-5be2-47b0-ae33-8498040d3890" />
+  <Project Path="CsCom.Core/CsCom.Core.csproj" />
+  <Project Path="CsCom.Runtime/CsCom.Runtime.csproj" />
+  <Project Path="CsCom.Tests/CsCom.Tests.csproj" />
+</Solution>

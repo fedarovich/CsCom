@@ -1,0 +1,6 @@
+# Snapshots of the Verify tests are compared with normalized line endings.
+*.verified.cs text eol=lf working-tree-encoding=UTF-8
+*.verified.txt text eol=lf working-tree-encoding=UTF-8
+
+# The test type library is a binary file.
+*.tlb binary
