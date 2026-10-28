@@ -15,7 +15,7 @@ namespace CsCom;
 internal static class CommandLine
 {
     private const string TypeLibraryDescription =
-        "The type library: a .tlb file, a .dll, .ocx or .exe file with an embedded type library, a registered LIBID ({GUID} or {GUID}:major.minor) or a ProgID.";
+        "The type library: a .tlb file, a .dll, .ocx or .exe file with an embedded type library, a registered LIBID ({GUID} or {GUID}:major.minor) or a ProgID; or a .NET interop assembly, such as a primary interop assembly or the output of TlbImp.";
 
     private static readonly Argument<string> TypeLibraryArgument = new("TlbPath")
     {
@@ -149,6 +149,21 @@ internal static class CommandLine
         HelpName = "PATH",
     };
 
+    private const string ReferencePathDescription =
+        "For interop assemblies: an assembly that the interop assembly references, or a directory of such assemblies; can be repeated. The directory of the interop assembly and the global assembly cache are searched as well.";
+
+    private static readonly Option<string[]> ReferencePathOption = new("--reference-path")
+    {
+        Description = ReferencePathDescription,
+        HelpName = "PATH",
+    };
+
+    private static readonly Option<string[]> UpdateReferencePathOption = new("--reference-path")
+    {
+        Description = ReferencePathDescription + " The paths recorded in cscom.json by default; an empty value removes them.",
+        HelpName = "PATH",
+    };
+
     private static readonly Option<string?> PackageSourceOption = new("--package-source")
     {
         Description = "An additional NuGet package source that provides the CsCom.Runtime package.",
@@ -174,7 +189,7 @@ internal static class CommandLine
 
     public static RootCommand Create()
     {
-        var newProject = new Command("project", "Generates a new C# project with the interop types of a type library.");
+        var newProject = new Command("project", "Generates a new C# project with the interop types of a type library or an interop assembly.");
         AddNewOptions(newProject);
         newProject.SetAction(static result => Run(result, (pipeline, loggerFactory) =>
             new ProjectGenerator(pipeline, loggerFactory).CreateProject(new NewProjectRequest
@@ -193,10 +208,11 @@ internal static class CommandLine
                 StructProperties = result.GetValue(StructPropertiesOption),
                 OverloadsForDefaultValues = result.GetValue(OverloadsOption),
                 ConfigurationPath = result.GetValue(ConfigOption),
+                ReferencePaths = result.GetValue(ReferencePathOption) ?? [],
                 PackageSource = result.GetValue(PackageSourceOption),
             })));
 
-        var newAssembly = new Command("assembly", "Builds a ready-to-use interop assembly from a type library.");
+        var newAssembly = new Command("assembly", "Builds a ready-to-use interop assembly from a type library or an interop assembly.");
         AddNewOptions(newAssembly);
         newAssembly.Options.Add(KeepTempOption);
         newAssembly.SetAction(static result => Run(result, (pipeline, loggerFactory) =>
@@ -216,6 +232,7 @@ internal static class CommandLine
                 StructProperties = result.GetValue(StructPropertiesOption),
                 OverloadsForDefaultValues = result.GetValue(OverloadsOption),
                 ConfigurationPath = result.GetValue(ConfigOption),
+                ReferencePaths = result.GetValue(ReferencePathOption) ?? [],
                 PackageSource = result.GetValue(PackageSourceOption) ?? GetBundledPackageSource(),
                 KeepTemporaryFiles = result.GetValue(KeepTempOption),
             })));
@@ -233,6 +250,7 @@ internal static class CommandLine
         updateProject.Options.Add(UpdateStructPropertiesOption);
         updateProject.Options.Add(UpdateOverloadsOption);
         updateProject.Options.Add(UpdateConfigOption);
+        updateProject.Options.Add(UpdateReferencePathOption);
         updateProject.SetAction(static result => Run(result, (pipeline, loggerFactory) =>
             new ProjectGenerator(pipeline, loggerFactory).UpdateProject(new UpdateProjectRequest
             {
@@ -246,6 +264,9 @@ internal static class CommandLine
                 StructProperties = result.GetValue(UpdateStructPropertiesOption),
                 OverloadsForDefaultValues = GetFlag(result, UpdateOverloadsOption),
                 ConfigurationPath = result.GetValue(UpdateConfigOption),
+                ReferencePaths = result.GetResult(UpdateReferencePathOption) is { Implicit: false }
+                    ? [.. (result.GetValue(UpdateReferencePathOption) ?? []).Where(static path => path.Length > 0)]
+                    : null,
             })));
 
         var newConfig = new Command("config", "Writes a starter cscom.xml configuration file, unless it exists, and the cscom.xsd schema that gives IntelliSense in XML editors.")
@@ -260,15 +281,16 @@ internal static class CommandLine
             return path;
         }));
 
-        var list = new Command("list", "Lists the types and members of a type library with the names that the transformers of configuration files match.")
+        var list = new Command("list", "Lists the types and members of a type library or an interop assembly with the names that the transformers of configuration files match.")
         {
             TypeLibraryArgument,
             TypeFilterOption,
         };
         list.Options.Add(ConfigOption);
+        list.Options.Add(ReferencePathOption);
         list.SetAction(static result => Run(result, (pipeline, _) => List(result, pipeline), quietByDefault: true));
 
-        return new RootCommand("Generates COM interop code from type libraries using source-generated COM interop.")
+        return new RootCommand("Generates COM interop code from type libraries and interop assemblies using source-generated COM interop.")
         {
             VerbosityOption,
             new Command("new", "Creates a new interop project or assembly, or a configuration file.") { newProject, newAssembly, newConfig },
@@ -294,7 +316,7 @@ internal static class CommandLine
             }
         }
 
-        var library = pipeline.ReadTypeLibrary(result.GetRequiredValue(TypeLibraryArgument));
+        var library = pipeline.ReadTypeLibrary(result.GetRequiredValue(TypeLibraryArgument), result.GetValue(ReferencePathOption) ?? []);
         var configuration = result.GetValue(ConfigOption) is { } path ? PipelineConfiguration.Load(Path.GetFullPath(path), pipeline.Registry) : null;
         pipeline.TransformModel(library, new CodeGenerationOptions { Namespace = "Interop" }, configuration, sanitizeNames: false);
         ModelPrinter.Write(library, result.InvocationConfiguration.Output, filter);
@@ -317,6 +339,7 @@ internal static class CommandLine
         command.Options.Add(StructPropertiesOption);
         command.Options.Add(OverloadsOption);
         command.Options.Add(ConfigOption);
+        command.Options.Add(ReferencePathOption);
         command.Options.Add(PackageSourceOption);
     }
 

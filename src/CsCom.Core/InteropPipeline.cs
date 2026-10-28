@@ -1,5 +1,6 @@
 using CsCom.CodeGeneration;
 using CsCom.Configuration;
+using CsCom.InteropAssemblies;
 using CsCom.Model;
 using CsCom.Transformations;
 using CsCom.TypeLibraries;
@@ -41,18 +42,34 @@ public sealed partial class InteropPipeline
     public TransformerRegistry Registry { get; } = TransformerRegistry.CreateDefault();
 
     /// <summary>
-    /// Reads the type library into the model.
+    /// Reads the type library or the interop assembly into the model.
     /// </summary>
-    /// <param name="source">The type library: a file, a registered LIBID or a ProgID, see <see cref="TypeLibrarySource"/>.</param>
-    public TypeLibrary ReadTypeLibrary(string source)
+    /// <param name="source">
+    /// The type library: a file, a registered LIBID or a ProgID, see <see cref="TypeLibrarySource"/>; or a .NET interop
+    /// assembly, see <see cref="InteropAssemblyReader"/>.
+    /// </param>
+    /// <param name="referencePaths">For interop assemblies, the assemblies or directories that contain the assemblies they reference.</param>
+    public TypeLibrary ReadTypeLibrary(string source, IReadOnlyList<string>? referencePaths = null)
     {
+        var logger = _loggerFactory.CreateLogger<InteropPipeline>();
         string path = TypeLibrarySource.Resolve(source);
         if (!TypeLibrarySource.IsFile(source))
         {
-            LogResolved(_loggerFactory.CreateLogger<InteropPipeline>(), source, path);
+            LogResolved(logger, source, path);
         }
 
-        return new TypeLibraryReader(_loggerFactory.CreateLogger<TypeLibraryReader>()).Read(path);
+        if (!InteropAssembly.IsAssembly(path))
+        {
+            return new TypeLibraryReader(_loggerFactory.CreateLogger<TypeLibraryReader>()).Read(path);
+        }
+
+        var library = new InteropAssemblyReader(_loggerFactory.CreateLogger<InteropAssemblyReader>(), referencePaths).Read(path);
+        if (library.Guid != Guid.Empty && TypeLibrarySource.FindRegistered(library.Guid, library.MajorVersion, library.MinorVersion) is { } registered)
+        {
+            LogRegisteredTypeLibrary(logger, library.Name, registered);
+        }
+
+        return library;
     }
 
     /// <summary>
@@ -113,4 +130,7 @@ public sealed partial class InteropPipeline
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Resolved the type library '{Source}' to '{Path}'")]
     private static partial void LogResolved(ILogger logger, string source, string path);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "The type library '{Name}' of the interop assembly is registered: generating from it ('{Source}') keeps the documentation and the functions of modules")]
+    private static partial void LogRegisteredTypeLibrary(ILogger logger, string name, string source);
 }

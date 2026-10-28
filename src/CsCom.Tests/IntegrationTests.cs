@@ -51,6 +51,78 @@ public sealed class IntegrationTests
     }
 
     [TestMethod]
+    public void ProjectGeneratedFromInteropAssemblyBuildsWithoutWarnings()
+    {
+        string directory = TestEnvironment.CreateDirectory("build-interop-assembly");
+        string project = CreateProject(TestEnvironment.TestInteropAssembly, directory, SupportCodeMode.Package, singleFile: false);
+
+        Build(project);
+    }
+
+    [TestMethod]
+    public void ProjectGeneratedFromComImportDeclarationsBuildsWithoutWarnings()
+    {
+        // The constructs of the fixture that type libraries cannot describe are imported as types that compile.
+        string directory = TestEnvironment.CreateDirectory("build-hand-written");
+        string assembly = Path.Combine(directory, "HandWritten.dll");
+        TestCompiler.Compile("HandWritten", InteropAssemblyTests.HandWrittenSource, assembly);
+        string project = CreateProject(assembly, Path.Combine(directory, "Interop"), SupportCodeMode.Package, singleFile: false);
+
+        Build(project);
+    }
+
+    [TestMethod]
+    public void HandWrittenDeclarationsWorkThroughGeneratedCode()
+    {
+        // Declarations of the built-in COM interop for the first members of the IDictionary interface of the Scripting
+        // Runtime, in the order of its vtable, and of its Dictionary coclass. The generated code calls the real object.
+        string root = TestEnvironment.CreateDirectory("consumer-hand-written");
+        string assembly = Path.Combine(root, "HandScripting.dll");
+        TestCompiler.Compile(
+            "HandScripting",
+            """
+            using System.Runtime.InteropServices;
+
+            namespace HandScripting
+            {
+                [ComImport, Guid("42C642C1-97E1-11CF-978F-00A02463E06F")]
+                public interface IDictionary
+                {
+                    [DispId(0)] void PutRefItem([In] ref object Key, [In] ref object pRetItem);
+                    [DispId(0)] void PutItem([In] ref object Key, [In] ref object pRetItem);
+                    [DispId(0)] object GetItem([In] ref object Key);
+                    [DispId(1)] void Add([In] ref object Key, [In] ref object Item);
+                    int Count { [DispId(2)] get; }
+                }
+
+                [ComImport, Guid("EE09B103-97E0-11CF-978F-00A02463E06F")]
+                public class DictionaryClass
+                {
+                }
+
+                [ComImport, Guid("42C642C1-97E1-11CF-978F-00A02463E06F"), CoClass(typeof(DictionaryClass))]
+                public interface Dictionary : IDictionary
+                {
+                }
+            }
+            """,
+            assembly);
+        string interop = CreateProject(assembly, Path.Combine(root, "Interop"), SupportCodeMode.Package, singleFile: false);
+
+        var output = RunConsumer(root, interop, """
+            using Interop.HandScripting;
+
+            IDictionary dictionary = Dictionary.Create();
+            dictionary.Add("a", 1);
+            dictionary.Add("b", "two");
+            Console.WriteLine($"Count={dictionary.Count}");
+            Console.WriteLine($"Item={dictionary.GetItem("b")}");
+            """);
+
+        CollectionAssert.IsSubsetOf(new[] { "Count=2", "Item=two" }, output.ToArray(), string.Join(Environment.NewLine, output));
+    }
+
+    [TestMethod]
     public void GeneratedScriptingRuntimeProjectBuildsWithoutWarnings()
     {
         string directory = TestEnvironment.CreateDirectory("build-scrrun");

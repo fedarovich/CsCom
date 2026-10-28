@@ -231,6 +231,9 @@ internal sealed class TypeMapper
 
             case PointerTypeReference pointer when IsInterfaceLike(pointer.ElementType):
                 return MapLateBoundInterface(pointer.ElementType);
+            case PointerTypeReference { ElementType: PrimitiveTypeReference { VarType: VarEnum.VT_VOID } }:
+                // An untyped pointer, e.g. the void* prcWBounds of stdole's Picture.Render, is a pointer-sized value.
+                return MapLateBoundPrimitive(VT_INT_PTR);
             case SafeArrayTypeReference when _marshalling.SafeArrays != SafeArrayMarshalling.Array:
                 // The values of late-bound calls are copies in VARIANTs, which can hold SAFEARRAYs of any rank.
                 return new LateBoundType("global::System.Array?", static x => $"(global::System.Array?){x}");

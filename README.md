@@ -1,13 +1,14 @@
 # CsCom
 
-CsCom is a command line tool that produces COM interop code from type libraries, similar to TlbImp.
+CsCom is a command line tool that produces COM interop code from type libraries or existing .NET interop assemblies, similar to
+TlbImp.
 Unlike TlbImp, it does not rely on the built-in COM interop of .NET: it generates C# code that uses the
 [source-generated COM interop](https://learn.microsoft.com/dotnet/standard/native-interop/comwrappers-source-generation)
 added in .NET 8, so the interop assemblies can be trimmed and used with Native AOT.
 
 ## Requirements
 
-- Windows: type libraries are read with the OLE Automation APIs.
+- Windows: type libraries are read with the OLE Automation APIs. Interop assemblies are read from their metadata.
 - .NET 10 SDK or later. The generated projects target .NET 10 or later.
 
 ## Usage
@@ -32,6 +33,8 @@ The type library (`TlbPath`) can be:
 - **A registered LIBID:** `{00020813-0000-0000-C000-000000000046}`, optionally with the version as in the registry
   (`{00020813-0000-0000-C000-000000000046}:1.9`). The highest registered version is used by default.
 - **The ProgID of a registered class,** e.g. `Excel.Application` or `Scripting.Dictionary`, whose type library is used.
+- **A .NET interop assembly,** such as a primary interop assembly or the output of TlbImp, see
+  [Interop assemblies](#interop-assemblies).
 
 Registered type libraries are found in the registry, so Office type libraries don't have to be looked up inside the Office
 installation. `cscom.json` records the LIBID or the ProgID rather than the path, and `update project` looks it up again, e.g.
@@ -54,14 +57,15 @@ after an Office update.
 | `--event-style <events\|observable\|interface\|none>` | The code generated for the events of coclasses: `events` (default), `observable`, `interface` or `none`, see [Events](#events). |
 | `--overloads-for-default-values` | Generates overloads for the methods whose optional parameters have default values that C# cannot express, see [Optional parameters](#optional-parameters). |
 | `--config <PATH>` | An XML file that adds and configures model and syntax transformers, see [Configuration file](#configuration-file). |
+| `--reference-path <PATH>` | For interop assemblies: an assembly they reference, or a directory of such assemblies; can be specified multiple times, see [Interop assemblies](#interop-assemblies). |
 | `--package-source <PATH>` | An additional NuGet source with the CsCom.Runtime package. |
 | `--keep-temp` | `new assembly` only: keeps the temporary project used to build the assembly. |
 | `-v`, `--verbosity <LEVEL>` | `quiet`, `minimal`, `normal` (default), `detailed` or `diagnostic`. |
 
 `new project` writes `<Name>.csproj`, a `cscom.json` file with the options it was generated with, and the C# files into the
 `Generated` folder. `update project` replaces the C# files of the `Generated` folder using the type library and the options recorded
-in `cscom.json`; a `TlbPath` replaces the recorded type library. It accepts `--namespace`, `--csharp-version`, `--single-file [true|false]`, the marshalling options, `--event-style`, `--struct-properties`, `--overloads-for-default-values [true|false]` and `--config`
-(an empty value removes the file) to change them. Code outside of the `Generated` folder, e.g. partial classes, is not touched.
+in `cscom.json`; a `TlbPath` replaces the recorded type library. It accepts `--namespace`, `--csharp-version`, `--single-file [true|false]`, the marshalling options, `--event-style`, `--struct-properties`, `--overloads-for-default-values [true|false]`, `--config`
+(an empty value removes the file) and `--reference-path` (an empty value removes the paths) to change them. Code outside of the `Generated` folder, e.g. partial classes, is not touched.
 
 `new assembly` generates the project in a temporary directory, builds it with `dotnet build` once per runtime identifier and copies
 the assemblies, PDBs and XML documentation (and `CsCom.Runtime.dll`) to the output directory. With a single target framework and at
@@ -83,6 +87,56 @@ interface IDictionary : IDispatch (dual)
     propget Count([out, retval] long* pCount)
     ...
 ```
+
+### Interop assemblies
+
+The source can also be a .NET interop assembly: a primary interop assembly (PIA), such as an Office PIA from NuGet or from the
+global assembly cache, or an assembly that TlbImp imported from a type library. The type library does not have to be installed,
+so projects can be generated on build machines:
+
+```powershell
+cscom new project Microsoft.Office.Interop.Excel.dll --reference-path C:\packages\office -o Interop.Excel
+```
+
+The model is rebuilt from the metadata of the assembly, which is not loaded for execution, following the conventions of TlbImp:
+`[retval]` parameters from the return values of methods, `[lcid]` parameters from `LCIDConversion`, coclasses from the `XClass`
+classes and their `ComSourceInterfaces`, `propputref` accessors from `let_X`/`set_X` pairs, the properties of dispinterfaces from
+their accessors, and the native types from the marshalling information. The default interfaces that TlbImp replaced with coclass
+interfaces are restored. The generated code is then the same as from the type library, except for what interop assemblies do not
+keep:
+
+- **Documentation:** help strings are not stored, so the generated code has no documentation comments from the library.
+- **Modules and aliases:** TlbImp imports only the constants of modules, not their functions, and resolves typedefs.
+- **Structure fields:** TlbImp imports `VARIANT_BOOL` fields as `short` and pointers to structures as `IntPtr` (`void*`).
+- **Setters:** a property with only a setter is assumed to be a `propput`, or a `propputref` for interfaces, as TlbImp does not
+  record which one it was; this matters only for late-bound wrappers.
+- **Types:** minor distinctions are lost, e.g. `int` and `long`, or `SCODE` and `HRESULT`. Types are named and ordered as in the
+  interop assemblies, e.g. `IFontDisp` of stdole for its `Font` alias, and the coclasses of referenced libraries that are only
+  used as parameter types are not generated.
+
+The assemblies that the interop assembly references, e.g. `office.dll` and `stdole.dll` for Excel, are searched next to it, in the
+`--reference-path` paths, among the assemblies of the .NET runtime and in the global assembly caches of .NET Framework; `cscom.json`
+records the reference paths. When the type library that the assembly was imported from is registered with the same version, CsCom
+logs that generating from it keeps the documentation and the functions of modules. Assemblies with embedded interop types
+("Embed Interop Types"), which contain only the members their code uses, are rejected: generate from the primary interop assembly
+or the type library instead.
+
+**Hand-written declarations.** Assemblies with `[ComImport]` interfaces and classes written for the built-in COM interop are read
+too, which migrates them to source-generated COM interop. They can be internal and nested, e.g. in a `NativeMethods` class; only
+they and the types they use are imported. The defaults of the built-in COM interop apply where there is no `MarshalAs`:
+
+- **Interfaces** are dual unless `[InterfaceType]` says otherwise, and a `[ComImport]` class gets its default interface from the
+  interface that names it in `[CoClass]`.
+- **Parameters:** `string`, `object` and `bool` are `BSTR`, `VARIANT` and `VARIANT_BOOL`, arrays are `SAFEARRAY`s, and
+  `[MarshalAs(UnmanagedType.LPStruct)] Guid` is a `GUID*`.
+- **Structure fields:** `bool` is a 4-byte `BOOL`, and `string` and `char` follow the `CharSet` of the structure, ANSI by default
+  (`LPSTR` and a 1-byte character).
+
+What type libraries cannot describe is imported as the closest native type, with a warning: C-style arrays (`LPArray`) and
+`StringBuilder` buffers become pointers to their first elements, delegates, managed classes, generic types and custom marshalers
+become `IUnknown*` (or `void*` for delegates marshalled as `FunctionPtr`), enums that are not 32-bit become their underlying type,
+other value types become `void*`, and explicit layouts other than unions become sequential layouts. `[Flags]` is not imported; the
+`AddFlagsAttribute` element of the [configuration file](#configuration-file) adds it.
 
 ## Configuration file
 
@@ -547,6 +601,8 @@ The generated projects disable runtime marshalling, which source-generated COM i
 - `SAFEARRAY`s are converted to zero-based .NET arrays of up to three dimensions, and `T[,]`/`T[,,]` require a
   [known rank](#known-ranks); only `ComSafeArray<T>` keeps their bounds and supports more dimensions.
 - Types imported from other type libraries are always generated into the project; referencing other interop assemblies is not supported yet.
+- Interop assemblies lack the documentation, the functions of modules and some type information of their type libraries, see
+  [Interop assemblies](#interop-assemblies).
 - CsCom.Runtime only targets `net10.0` for now. Source-generated COM expects a base interface from another assembly (`IDispatch`)
   to be compiled for the same target framework, so a `net11.0` build of CsCom.Runtime should be added together with .NET 11 support.
 
@@ -554,7 +610,8 @@ The generated projects disable runtime marshalling, which source-generated COM i
 
 The tool runs the type library through a pipeline (`CsCom.Core`):
 
-1. `TypeLibraryReader` reads the type library with source-generated `ITypeLib`/`ITypeInfo` bindings into the model (`CsCom.Model`).
+1. `TypeLibraryReader` reads the type library with source-generated `ITypeLib`/`ITypeInfo` bindings into the model (`CsCom.Model`),
+   or `InteropAssemblyReader` reads an interop assembly with `MetadataLoadContext` into the same model.
 2. The model transformers (`IModelTransformer`) change the model. The built-in ones resolve aliases first and sanitize names last;
    those of `InteropPipeline.ModelTransformers` and of the [configuration file](#configuration-file) run in between.
 3. `CSharpEmitter` generates the Roslyn syntax trees.

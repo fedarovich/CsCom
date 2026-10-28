@@ -22,6 +22,7 @@
 
   <ItemGroup>
     <None Include="TestAssets\CsComTest.tlb" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="TestAssets\Interop.CsComTest.dll" CopyToOutputDirectory="PreserveNewest" />
 
     <!-- The snapshots of the generated code are C# files that must not be compiled. -->
     <Compile Remove="Snapshots\**" />

@@ -11,6 +11,7 @@
     <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.13" />
     <PackageVersion Include="Microsoft.Extensions.Logging.Console" Version="10.0.13" />
     <PackageVersion Include="System.CommandLine" Version="2.0.13" />
+    <PackageVersion Include="System.Reflection.MetadataLoadContext" Version="10.0.14" />
   </ItemGroup>
 
   <ItemGroup Label="Tests">

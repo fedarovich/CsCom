@@ -66,6 +66,13 @@ public sealed record CsComManifest
     public string? Configuration { get; init; }
 
     /// <summary>
+    /// For interop assemblies, the assemblies or directories that contain the assemblies they reference, relative to the
+    /// project directory; omitted when there are none.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public IReadOnlyList<string>? ReferencePaths { get; init; }
+
+    /// <summary>
     /// Reads the manifest from the project directory.
     /// </summary>
     public static CsComManifest Read(string projectDirectory)

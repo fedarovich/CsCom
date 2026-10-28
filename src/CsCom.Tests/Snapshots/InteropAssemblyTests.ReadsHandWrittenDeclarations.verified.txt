@@ -1,0 +1,53 @@
+﻿interface IStorage : IUnknown
+    method Open([in] LPWSTR name, [in] GUID* riid, [out] IUnknown** result)
+    method long Read([in] void* buffer, [in] unsigned long size, [out] unsigned long* read)
+    method Fill([in] unsigned char* data, [in] long size)
+    method GetName([in] unsigned short* buffer, [in] long size)
+    method Notify([in] IUnknown* callback, [in] void* function)
+    method Store([in] IUnknown* values, [in] IUnknown* custom)
+    method Configure([in, out] Settings* settings, [in, out] WideSettings* wide, [in, out] Offsets* offsets, [in] Mode mode, [in] unsigned char size)
+interface IStorage2 : IStorage
+    method Flush([in] unsigned long force)
+interface IShape : IDispatch (dual)
+    propget Name([out, retval] BSTR* pRetVal)
+    propput Name([in] BSTR value)
+    propget Area([out, retval] double* pRetVal)
+    propget Visible([out, retval] VARIANT_BOOL* pRetVal)
+    propput Visible([in] VARIANT_BOOL value)
+    method Move([in] long dx, [in, optional] VARIANT scale, [in, optional, defaultvalue(0)] long dy)
+    method Names([out, retval] SAFEARRAY(BSTR)* pRetVal)
+    method Matrix([in] SAFEARRAY(long) values, [out, retval] SAFEARRAY(double, 2)* pRetVal)
+    method Unknown([out, retval] IUnknown** pRetVal)
+    propget Storage([out, retval] IStorage2** pRetVal)
+dispinterface DShapeEvents
+    property readonly long Count
+    method void Changed([in] BSTR property)
+coclass Shape
+    [default] IShape
+struct Settings
+    LPSTR Name
+    unsigned char Letter
+    unsigned char[8] Code
+    long[4] Values
+    long Enabled
+struct WideSettings
+    LPWSTR Name
+    unsigned short Letter
+    unsigned short[8] Code
+struct Offsets
+    long First
+    long Second
+enum Mode
+    None = 0
+    Read = 1
+    Write = 2
+
+Warnings:
+'IStorage.Fill(data)' is a C-style array, which is imported as a pointer to its first element
+'IStorage.GetName(buffer)' uses System.Text.StringBuilder, which is not supported; it is imported as a character buffer (ushort*)
+'IStorage.Notify(callback)' uses System.Action, which is not supported; it is imported as IUnknown*
+'IStorage.Notify(function)' uses System.Action, which is not supported; it is imported as a function pointer (void*)
+'IStorage.Store(values)' uses System.Collections.Generic.List<System.Int32>, which is not supported; it is imported as IUnknown*
+'IStorage.Store(custom)' uses System.Object with the custom marshaler HandWritten.Marshaler, which is not supported; it is imported as IUnknown*
+The structure 'Offsets' has an explicit layout, which is imported as a sequential layout
+The enum 'Size' is based on Byte rather than Int32, so it is imported as Byte

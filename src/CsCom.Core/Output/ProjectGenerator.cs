@@ -33,7 +33,7 @@ public sealed partial class ProjectGenerator
     {
         ArgumentNullException.ThrowIfNull(request);
 
-        var library = _pipeline.ReadTypeLibrary(request.TypeLibraryPath);
+        var library = _pipeline.ReadTypeLibrary(request.TypeLibraryPath, request.ReferencePaths);
         var manifest = ResolveSettings(request, library);
         string directory = Path.GetFullPath(request.OutputDirectory ?? manifest.Name);
         if (Directory.Exists(directory)
@@ -43,7 +43,11 @@ public sealed partial class ProjectGenerator
         }
 
         var configuration = LoadConfiguration(manifest.Configuration);
-        manifest = manifest with { Configuration = manifest.Configuration is null ? null : Path.GetRelativePath(directory, manifest.Configuration) };
+        manifest = manifest with
+        {
+            Configuration = manifest.Configuration is null ? null : Path.GetRelativePath(directory, manifest.Configuration),
+            ReferencePaths = ToRelativePaths(directory, manifest.ReferencePaths),
+        };
         string projectPath = WriteProject(directory, manifest, library, configuration, request.PackageSource, request.GlobalPackagesFolder);
         LogProjectCreated(projectPath);
         return projectPath;
@@ -66,7 +70,14 @@ public sealed partial class ProjectGenerator
 
         int languageVersion = ValidateLanguageVersion(request.LanguageVersion ?? manifest.LanguageVersion, manifest.TargetFrameworks);
         string source = request.TypeLibraryPath ?? manifest.TypeLibrary;
-        var library = _pipeline.ReadTypeLibrary(source);
+        IReadOnlyList<string>? referencePaths = request.ReferencePaths switch
+        {
+            null => manifest.ReferencePaths?.Select(path => Path.GetFullPath(Path.Combine(directory, path))).ToList(),
+            [] => null,
+            var paths => paths.Select(Path.GetFullPath).ToList(),
+        };
+
+        var library = _pipeline.ReadTypeLibrary(source, referencePaths);
         var updated = manifest with
         {
             ToolVersion = ToolInfo.Version,
@@ -84,6 +95,7 @@ public sealed partial class ProjectGenerator
                 "" => null,
                 string path => Path.GetRelativePath(directory, Path.GetFullPath(path)),
             },
+            ReferencePaths = ToRelativePaths(directory, referencePaths),
         };
 
         var configuration = LoadConfiguration(updated.Configuration is null ? null : Path.GetFullPath(Path.Combine(directory, updated.Configuration)));
@@ -218,8 +230,13 @@ public sealed partial class ProjectGenerator
             StructProperties = request.StructProperties,
             OverloadsForDefaultValues = request.OverloadsForDefaultValues,
             Configuration = string.IsNullOrEmpty(request.ConfigurationPath) ? null : Path.GetFullPath(request.ConfigurationPath),
+            ReferencePaths = request.ReferencePaths.Count > 0 ? [.. request.ReferencePaths.Select(Path.GetFullPath)] : null,
         };
     }
+
+    // The paths recorded in cscom.json are relative to the project directory, like the configuration file.
+    private static List<string>? ToRelativePaths(string directory, IReadOnlyList<string>? paths) =>
+        paths?.Select(path => Path.GetRelativePath(directory, path)).ToList();
 
     internal static CodeGenerationOptions CreateCodeGenerationOptions(CsComManifest manifest) => new()
     {

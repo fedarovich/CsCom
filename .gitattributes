@@ -4,3 +4,6 @@
 
 # The test type library is a binary file.
 *.tlb binary
+
+# The test interop assembly, imported from the test type library by TlbImp.
+*.dll binary

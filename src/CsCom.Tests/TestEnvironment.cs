@@ -16,6 +16,9 @@ public static class TestEnvironment
     /// <summary>The type library built from TestAssets/CsComTest.idl.</summary>
     public static string TestTypeLibrary { get; } = Path.Combine(AppContext.BaseDirectory, "TestAssets", "CsComTest.tlb");
 
+    /// <summary>The interop assembly that TlbImp imported from TestAssets/CsComTest.tlb.</summary>
+    public static string TestInteropAssembly { get; } = Path.Combine(AppContext.BaseDirectory, "TestAssets", "Interop.CsComTest.dll");
+
     /// <summary>The Microsoft Scripting Runtime, available on all Windows versions.</summary>
     public static string ScriptingRuntime { get; } = Path.Combine(Environment.SystemDirectory, "scrrun.dll");
 

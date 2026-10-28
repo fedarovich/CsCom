@@ -79,6 +79,17 @@ public static partial class TypeLibrarySource
         return File.Exists(path);
     }
 
+    /// <summary>
+    /// Gets the source of a registered type library, a LIBID with its version as <see cref="Resolve"/> accepts it, if the type
+    /// library is registered.
+    /// </summary>
+    /// <returns>The source, e.g. <c>{00020813-0000-0000-C000-000000000046}:1.9</c>, or <see langword="null"/>.</returns>
+    public static string? FindRegistered(Guid libraryId, ushort majorVersion, ushort minorVersion)
+    {
+        var version = new TypeLibraryVersion(majorVersion, minorVersion);
+        return FindRegisteredPath(libraryId, version) is null ? null : $"{Format(libraryId)}:{version}";
+    }
+
     private static string Format(Guid libraryId) => libraryId.ToString("B").ToUpperInvariant();
 
     private static bool TryParseLibraryId(string source, out Guid libraryId, out TypeLibraryVersion? version)

@@ -280,6 +280,61 @@ public sealed class CodeGenerationTests : VerifyBase
     }
 
     [TestMethod]
+    public void NamesIndexersOfDispinterfacesWithItemMembers()
+    {
+        // Like Excel's collections, whose _Default indexer conflicts with the Item method, and Excel's Range, whose _Default
+        // getter has optional indexes, so that only its setter is an indexer, next to an Item property.
+        var variant = new PrimitiveTypeReference(System.Runtime.InteropServices.VarEnum.VT_VARIANT);
+        var library = new TypeLibrary { Name = "Synthetic" };
+        var collection = Dispinterface("Collection");
+        collection.Methods.Add(DispatchMethod("_Default", 0, InvokeKind.PropertyGet, variant, Parameter("Index", variant)));
+        collection.Methods.Add(DispatchMethod("Item", 170, InvokeKind.Method, variant, Parameter("Index", variant)));
+        collection.Methods.Add(DispatchMethod(
+            "Render",
+            6,
+            InvokeKind.Method,
+            new PrimitiveTypeReference(System.Runtime.InteropServices.VarEnum.VT_VOID),
+            Parameter("hdc", new PrimitiveTypeReference(System.Runtime.InteropServices.VarEnum.VT_I4)),
+            Parameter("bounds", new PointerTypeReference(new PrimitiveTypeReference(System.Runtime.InteropServices.VarEnum.VT_VOID)))));
+        var range = Dispinterface("Range");
+        range.Methods.Add(DispatchMethod("_Default", 0, InvokeKind.PropertyGet, variant, Parameter("Row", variant, optional: true), Parameter("Column", variant, optional: true)));
+        range.Methods.Add(DispatchMethod("_Default", 0, InvokeKind.PropertyPut, new PrimitiveTypeReference(System.Runtime.InteropServices.VarEnum.VT_VOID), Parameter("Row", variant, optional: true), Parameter("Column", variant, optional: true), Parameter("value", variant)));
+        range.Methods.Add(DispatchMethod("Item", 170, InvokeKind.PropertyGet, variant, Parameter("Row", variant)));
+        library.Types.Add(collection);
+        library.Types.Add(range);
+
+        var documents = new InteropPipeline().GenerateCode(library, new CodeGenerationOptions { Namespace = "Test" });
+        string collectionText = documents.Single(static d => d.RelativePath == "Collection.cs").GetText();
+        string rangeText = documents.Single(static d => d.RelativePath == "Range.cs").GetText();
+
+        StringAssert.Contains(collectionText, "[global::System.Runtime.CompilerServices.IndexerName(\"_Default\")]\r\n    public object? this[object? Index]");
+        StringAssert.Contains(collectionText, "public object? Item(object? Index)");
+        StringAssert.Contains(collectionText, "public void Render(int hdc, nint bounds)");
+        StringAssert.Contains(rangeText, "[global::System.Runtime.CompilerServices.IndexerName(\"_DefaultIndexer\")]\r\n    public object? this[object? Row, object? Column] { set");
+        StringAssert.Contains(rangeText, "public object? get__Default(object? Row = null, object? Column = null)");
+
+        static InterfaceDefinition Dispinterface(string name) => new()
+        {
+            Name = name,
+            OriginalName = name,
+            Guid = Guid.NewGuid(),
+            InterfaceKind = InterfaceKind.Dispatch,
+            BaseInterface = new PrimitiveTypeReference(System.Runtime.InteropServices.VarEnum.VT_DISPATCH),
+            BaseVtableSlots = 7,
+        };
+
+        static MethodDefinition DispatchMethod(string name, int dispId, InvokeKind kind, TypeReference returnType, params ParameterDefinition[] parameters)
+        {
+            var method = new MethodDefinition { Name = name, OriginalName = name, MemberId = dispId, InvokeKind = kind, ReturnType = returnType };
+            method.Parameters.AddRange(parameters);
+            return method;
+        }
+
+        static ParameterDefinition Parameter(string name, TypeReference type, bool optional = false) =>
+            new() { Name = name, Type = type, Flags = ParameterFlags.In | (optional ? ParameterFlags.Optional : ParameterFlags.None) };
+    }
+
+    [TestMethod]
     public void LimitsTheDefaultOverloads()
     {
         var library = new TypeLibrary { Name = "Synthetic" };

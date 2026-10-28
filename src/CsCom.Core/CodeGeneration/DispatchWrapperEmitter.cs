@@ -1,5 +1,6 @@
 using System.Globalization;
 using CsCom.Model;
+using CsCom.Transformations;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
@@ -70,6 +71,8 @@ internal sealed class DispatchWrapperEmitter
         {
             EmitProperty(group, signatures, members, ref hasIndexer);
         }
+
+        NameIndexer(definition, members);
 
         object? newEnum = (object?)definition.Methods.FirstOrDefault(static m => m.MemberId == DispIdNewEnum)
             ?? definition.Properties.FirstOrDefault(static p => p.DispId == DispIdNewEnum);
@@ -201,6 +204,35 @@ internal sealed class DispatchWrapperEmitter
                 members.Add(Method(accessor, signatures));
             }
         }
+    }
+
+    // An indexer is compiled into a property named Item, which conflicts with the members named Item, get_Item or set_Item,
+    // e.g. the Item method next to the _Default indexer of Excel's collections. The indexer is then named after the default
+    // member, unless its accessors are methods too, as for Excel's Range.
+    private static void NameIndexer(InterfaceDefinition definition, List<MemberDeclarationSyntax> members)
+    {
+        int index = members.FindIndex(static m => m is IndexerDeclarationSyntax);
+        if (index < 0)
+        {
+            return;
+        }
+
+        var names = members.Select(static m => m switch
+        {
+            MethodDeclarationSyntax method => method.Identifier.ValueText,
+            PropertyDeclarationSyntax property => property.Identifier.ValueText,
+            _ => null,
+        }).OfType<string>().ToHashSet(StringComparer.Ordinal);
+        bool Conflicts(string name) => names.Contains(name) || names.Contains("get_" + name) || names.Contains("set_" + name);
+        if (!Conflicts("Item"))
+        {
+            return;
+        }
+
+        string defaultMember = definition.Methods.First(static m => m.IsProperty && m.MemberId == DispIdValue).Name;
+        string name = new[] { defaultMember, defaultMember + "Indexer", "DefaultIndexer" }.First(n => n != "Item" && !Conflicts(n));
+        var attribute = Syntax.AttributeList(Syntax.Attribute("global::System.Runtime.CompilerServices.IndexerName", Syntax.Literal(name)));
+        members[index] = SyntaxEditing.AddAttributeList((IndexerDeclarationSyntax)members[index], attribute);
     }
 
     private static PropertySignature? AnalyzeGetter(MethodDefinition getter, SignatureBuilder signatures)

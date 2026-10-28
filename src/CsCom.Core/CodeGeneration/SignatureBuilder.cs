@@ -232,7 +232,7 @@ internal sealed partial class SignatureBuilder
         {
             SyntaxKind? modifier = null;
             TypeReference valueType = parameter.Type;
-            if (TypeMapper.TryGetByRefElement(parameter.Type, out var element))
+            if (TypeMapper.TryGetByRefElement(parameter.Type, out var element) && element is not PrimitiveTypeReference { VarType: VarEnum.VT_VOID })
             {
                 valueType = element;
                 if (parameter.Flags.HasFlag(ParameterFlags.Out))

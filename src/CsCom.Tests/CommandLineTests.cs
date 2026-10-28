@@ -141,6 +141,32 @@ public sealed class CommandLineTests
     }
 
     [TestMethod]
+    public void GeneratesFromInteropAssembliesWithReferencePaths()
+    {
+        string root = TestEnvironment.CreateDirectory("cli-interop");
+        string directory = Path.Combine(root, "Project");
+        string references = Directory.CreateDirectory(Path.Combine(root, "References")).FullName;
+
+        Assert.AreEqual(0, Run("new", "project", TestEnvironment.TestInteropAssembly, "-o", directory, "--reference-path", references, "-v", "quiet"));
+        var manifest = CsComManifest.Read(directory);
+        Assert.AreEqual(Path.GetFullPath(TestEnvironment.TestInteropAssembly), manifest.TypeLibrary);
+        Assert.AreEqual("Interop.CsComTest", manifest.Name);
+        CollectionAssert.AreEqual(new[] { @"..\References" }, manifest.ReferencePaths!.ToList());
+        Assert.IsTrue(File.Exists(Path.Combine(directory, "Generated", "IShape.cs")));
+
+        Assert.AreEqual(0, Run("update", "project", "-o", directory, "-v", "quiet"));
+        CollectionAssert.AreEqual(new[] { @"..\References" }, CsComManifest.Read(directory).ReferencePaths!.ToList());
+
+        Assert.AreEqual(0, Run("update", "project", "-o", directory, "--reference-path", "", "-v", "quiet"));
+        Assert.IsNull(CsComManifest.Read(directory).ReferencePaths);
+        Assert.IsFalse(File.ReadAllText(Path.Combine(directory, CsComManifest.FileName)).Contains("referencePaths", StringComparison.Ordinal));
+
+        var (exitCode, output) = RunWithOutput("list", TestEnvironment.TestInteropAssembly, "--type", "^IShape$");
+        Assert.AreEqual(0, exitCode);
+        StringAssert.StartsWith(output, "interface IShape : IDispatch (dual)");
+    }
+
+    [TestMethod]
     public void UpdatesWithoutTheTypeLibrary()
     {
         string directory = TestEnvironment.CreateDirectory("cli-update-recorded");

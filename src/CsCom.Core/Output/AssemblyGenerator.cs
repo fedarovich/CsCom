@@ -51,7 +51,7 @@ public sealed partial class AssemblyGenerator
     {
         ArgumentNullException.ThrowIfNull(request);
 
-        var library = _pipeline.ReadTypeLibrary(request.TypeLibraryPath);
+        var library = _pipeline.ReadTypeLibrary(request.TypeLibraryPath, request.ReferencePaths);
         var manifest = _projectGenerator.ResolveSettings(request, library);
         var configuration = _projectGenerator.LoadConfiguration(manifest.Configuration);
         string output = Path.GetFullPath(request.OutputDirectory ?? Environment.CurrentDirectory);

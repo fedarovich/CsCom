@@ -1,0 +1,57 @@
+﻿Font
+- dispinterface Font (stdole)
+- property BSTR Name
+- property CURRENCY Size
+- property VARIANT_BOOL Bold
+- property VARIANT_BOOL Italic
+- property VARIANT_BOOL Underline
+- property VARIANT_BOOL Strikethrough
+- property short Weight
+- property short Charset
+- ~ guid bef6e003-a874-101a-8bba-00aa00300cab, flags Dispatchable
+- ~ base slots 7
+- ~ property Name: id 0, None
+- ~ property Size: id 2, None
+- ~ property Bold: id 3, None
+- ~ property Italic: id 4, None
+- ~ property Underline: id 5, None
+- ~ property Strikethrough: id 6, None
+- ~ property Weight: id 7, None
+- ~ property Charset: id 8, None
+ICalculator
+- method Numbers([in] Number Number, [in] Record* Record, [in] GUID* Id, [out, retval] HRESULT* retval)
+- method Integers([in] char c, [in] unsigned char b, [in] short s, [in] unsigned short us, [in] int i, [in] unsigned int ui, [in] hyper h, [in] unsigned hyper uh, [in] float f)
++ method Numbers([in] Number Number, [in] Record* Record, [in] GUID* Id, [out, retval] SCODE* retval)
++ method Integers([in] char c, [in] unsigned char b, [in] short s, [in] unsigned short us, [in] long i, [in] unsigned long ui, [in] hyper h, [in] unsigned hyper uh, [in] float f)
+IFontDisp
++ dispinterface IFontDisp (stdole)
++ property BSTR Name
++ property DECIMAL Size
++ property VARIANT_BOOL Bold
++ property VARIANT_BOOL Italic
++ property VARIANT_BOOL Underline
++ property VARIANT_BOOL Strikethrough
++ property short Weight
++ property short Charset
++ ~ guid bef6e003-a874-101a-8bba-00aa00300cab, flags Dispatchable
++ ~ base slots 7
++ ~ property Name: id 0, None
++ ~ property Size: id 2, None
++ ~ property Bold: id 3, None
++ ~ property Italic: id 4, None
++ ~ property Underline: id 5, None
++ ~ property Strikethrough: id 6, None
++ ~ property Weight: id 7, None
++ ~ property Charset: id 8, None
+IShape
+- method Font([out, retval] Font** retval)
++ method Font([out, retval] IFontDisp** retval)
+Kernel
+- function unsigned long GetTickCount()
+- function long Beep([in] unsigned long frequency, [in] unsigned long duration)
+- function int StringLength([in] LPWSTR Value)
+Record
+- VARIANT_BOOL Flag
+- Point* Next
++ short Flag
++ void* Next

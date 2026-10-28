@@ -49,6 +49,12 @@ public abstract class NewOutputRequest
     /// <summary>The configuration file with the transformers, relative to the current directory; none when <see langword="null"/>.</summary>
     public string? ConfigurationPath { get; init; }
 
+    /// <summary>
+    /// For interop assemblies, the assemblies or directories that contain the assemblies they reference, relative to the
+    /// current directory.
+    /// </summary>
+    public IReadOnlyList<string> ReferencePaths { get; init; } = [];
+
     /// <summary>An additional NuGet package source that provides the CsCom.Runtime package.</summary>
     public string? PackageSource { get; init; }
 
@@ -115,4 +121,10 @@ public sealed class UpdateProjectRequest
     /// <see langword="null"/> and removed when empty.
     /// </summary>
     public string? ConfigurationPath { get; init; }
+
+    /// <summary>
+    /// The new paths of the assemblies referenced by an interop assembly, relative to the current directory. The recorded
+    /// paths are kept when <see langword="null"/> and removed when empty.
+    /// </summary>
+    public IReadOnlyList<string>? ReferencePaths { get; init; }
 }
