@@ -831,3 +831,16 @@ dotnet test src/CsCom.slnx --filter "TestCategory!=Integration"  # without the t
   with `build-tlb.ps1`, which requires Visual Studio with the C++ tools. The `.tlb` files are committed.
 - The snapshots of the generated code are in `src/CsCom.Tests/Snapshots`. Verify.MSTest is pinned to 32.0.0, the last version
   without the sponsorship check.
+
+### CI and releases
+
+The [CI workflow](.github/workflows/ci.yml) builds the solution in Release on Windows, runs the unit tests (without the
+`Integration` category) and packs the three packages for every push and pull request; the packages are kept as the `packages`
+artifact of the run.
+
+- **Releasing:** push a tag with a semantic version, e.g. `1.2.3` or `1.2.3-beta.1`. The tag sets the version of CsCom,
+  CsCom.Runtime and CsCom.Build (instead of the `VersionPrefix` of `src/Directory.Build.props`), and the `publish` job pushes
+  them to nuget.org. A tag that is not a semantic version fails the build.
+- **Trusted publishing:** the job gets a short-lived API key from nuget.org instead of using a stored one. This requires a
+  Trusted Publishing policy on nuget.org (repository owner `fedarovich`, repository `CsCom`, workflow file `ci.yml`) and the
+  repository secret `NUGET_USER` with the nuget.org profile name (not the email address).

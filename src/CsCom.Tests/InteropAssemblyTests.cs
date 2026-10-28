@@ -30,7 +30,7 @@ public sealed partial class InteropAssemblyTests : VerifyBase
     public Task GeneratesTheCodeOfTheTypeLibrary()
     {
         var pipeline = new InteropPipeline();
-        var options = new CodeGenerationOptions { Namespace = "Interop.CsComTest" };
+        var options = new CodeGenerationOptions { Namespace = "Interop.CsComTest", ToolVersion = TestEnvironment.ToolVersion };
         var fromTypeLibrary = Generate(pipeline, TestEnvironment.TestTypeLibrary, options);
         var fromAssembly = Generate(pipeline, TestEnvironment.TestInteropAssembly, options);
 
