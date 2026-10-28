@@ -23,8 +23,6 @@ public sealed partial class LibrarySetBuild
     /// <summary>The name of the state file in the output directory.</summary>
     public const string StateFileName = "cscom.state";
 
-    private static readonly UTF8Encoding Utf8WithBom = new(encoderShouldEmitUTF8Identifier: true);
-
     private readonly InteropPipeline _pipeline;
     private readonly ILoggerFactory _loggerFactory;
     private readonly ILogger _logger;
@@ -62,7 +60,7 @@ public sealed partial class LibrarySetBuild
         var options = CreateOptions(request);
         var references = request.References.Select(r => CreateReference(r, request.ProjectDirectory)).ToList();
         var result = new LibrarySetGenerator(_pipeline, _loggerFactory).Generate(references, options);
-        var files = WriteDocuments(output, result.Documents);
+        var files = GeneratedFiles.WriteFolder(output, result.Documents);
         WriteState(statePath, requestHash, result.InputFiles, files);
         LogGenerated(files.Count, output);
         return files;
@@ -71,8 +69,11 @@ public sealed partial class LibrarySetBuild
     private LibrarySetOptions CreateOptions(BuildRequest request)
     {
         var supportCode = ParseEnum<SupportCodeMode>(request.SupportCode, "CsComSupportCode") ?? SupportCodeMode.Package;
+        var (namespaces, configurations) = GetLibraryOptions(request);
         return new LibrarySetOptions
         {
+            Namespaces = namespaces,
+            ConfigurationPaths = configurations,
             LanguageVersion = GetLanguageVersion(request.LanguageVersion, request.TargetFramework),
             SupportCode = supportCode,
             SupportNamespace = string.IsNullOrWhiteSpace(request.SupportNamespace) ? null : request.SupportNamespace.Trim(),
@@ -95,40 +96,44 @@ public sealed partial class LibrarySetBuild
         };
     }
 
+    // The project's own C# version decides, which can be C# 14 for .NET 11 too.
     private int GetLanguageVersion(string languageVersion, string targetFramework)
     {
-        int defaultVersion = CodeGenerationOptions.MinimumLanguageVersion;
-        if (!string.IsNullOrWhiteSpace(targetFramework))
+        IReadOnlyList<string> targetFrameworks = string.IsNullOrWhiteSpace(targetFramework) ? [] : [targetFramework.Trim()];
+        int version = TargetFrameworks.ResolveLanguageVersion(languageVersion, targetFrameworks, atLeastFrameworkDefault: false);
+        foreach (string notWindows in targetFrameworks.Where(static f => !TargetFrameworks.IsWindowsSpecific(f)))
         {
-            if (!TargetFrameworks.TryGetMajorVersion(targetFramework.Trim(), out _, out string? error))
+            LogNotWindowsSpecific(notWindows);
+        }
+
+        return version;
+    }
+
+    // The namespaces and the configuration files of the CsComLibrary items, by library name.
+    private static (Dictionary<string, string> Namespaces, Dictionary<string, string> Configurations) GetLibraryOptions(BuildRequest request)
+    {
+        var namespaces = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var configurations = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var library in request.Libraries)
+        {
+            if (string.IsNullOrWhiteSpace(library.Name))
             {
-                throw new CsComException(error);
+                throw new CsComException("A CsComLibrary item has an empty Include.");
             }
 
-            defaultVersion = TargetFrameworks.GetDefaultLanguageVersion(targetFramework.Trim());
-
-            if (!TargetFrameworks.IsWindowsSpecific(targetFramework.Trim()))
+            string name = library.Name.Trim();
+            if (!string.IsNullOrWhiteSpace(library.Namespace))
             {
-                LogNotWindowsSpecific(targetFramework);
+                namespaces[name] = library.Namespace.Trim();
+            }
+
+            if (!string.IsNullOrWhiteSpace(library.Config))
+            {
+                configurations[name] = Path.GetFullPath(Path.Combine(request.ProjectDirectory, library.Config.Trim()));
             }
         }
 
-        string value = languageVersion.Trim();
-        if (value.Length == 0 || value.Equals("default", StringComparison.OrdinalIgnoreCase) || value.Equals("latest", StringComparison.OrdinalIgnoreCase)
-            || value.Equals("latestMajor", StringComparison.OrdinalIgnoreCase) || value.Equals("preview", StringComparison.OrdinalIgnoreCase))
-        {
-            return defaultVersion;
-        }
-
-        if (!decimal.TryParse(value, NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out decimal number))
-        {
-            throw new CsComException($"'{languageVersion}' is not a valid C# version (LangVersion).");
-        }
-
-        int version = (int)number;
-        return version >= CodeGenerationOptions.MinimumLanguageVersion
-            ? version
-            : throw new CsComException($"The generated code requires C# {CodeGenerationOptions.MinimumLanguageVersion} or later, but the project uses C# {value} (LangVersion).");
+        return (namespaces, configurations);
     }
 
     private static LibrarySetReference CreateReference(BuildReference reference, string projectDirectory)
@@ -192,40 +197,6 @@ public sealed partial class LibrarySetBuild
             : throw new CsComException($"'{value}' is not a valid value of {Describe(name, item)}: true or false is expected.");
 
     private static string Describe(string name, string? item) => item is null ? name : $"the {name} metadata of the CsComReference '{item}'";
-
-    // Only the files whose content changed are written, so that their timestamps stay the same for incremental builds.
-    private static List<string> WriteDocuments(string output, IReadOnlyList<GeneratedDocument> documents)
-    {
-        var files = new List<string>(documents.Count);
-        foreach (var document in documents)
-        {
-            string path = Path.GetFullPath(Path.Combine(output, document.RelativePath));
-            string text = document.GetText();
-            if (!File.Exists(path) || File.ReadAllText(path) != text)
-            {
-                Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-                File.WriteAllText(path, text, Utf8WithBom);
-            }
-
-            files.Add(path);
-        }
-
-        var generated = files.ToHashSet(StringComparer.OrdinalIgnoreCase);
-        foreach (string file in Directory.EnumerateFiles(output, "*.cs", SearchOption.AllDirectories).Where(f => !generated.Contains(f)).ToList())
-        {
-            File.Delete(file);
-        }
-
-        foreach (string directory in Directory.EnumerateDirectories(output, "*", SearchOption.AllDirectories).OrderByDescending(static d => d.Length))
-        {
-            if (!Directory.EnumerateFileSystemEntries(directory).Any())
-            {
-                Directory.Delete(directory);
-            }
-        }
-
-        return files;
-    }
 
     private static void WriteState(string path, string requestHash, IReadOnlyList<string> inputs, IReadOnlyList<string> outputs)
     {

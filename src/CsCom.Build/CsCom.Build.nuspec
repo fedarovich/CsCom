@@ -20,6 +20,7 @@
     <file src="build\CsCom.Build.props" target="build" />
     <file src="build\CsCom.Build.targets" target="build" />
     <file src="$taskAssembly$" target="tasks\netstandard2.0" />
-    <file src="$generatorDirectory$**\*" target="tools\net10.0" />
+    <!-- The cscom tool, without the CsCom.Runtime package that it bundles: the package depends on it. -->
+    <file src="$generatorDirectory$**\*" target="tools\net10.0" exclude="$generatorDirectory$packages\**" />
   </files>
 </package>

@@ -2,8 +2,8 @@
 
   <!--
     The MSBuild integration: the props, the targets and the task that generate the interop code of the CsComReference items of
-    a project during its build. The task runs the generator (CsCom.Build.Generator, .NET 10) as a separate process, so it targets
-    netstandard2.0 and loads into the MSBuild of both the .NET SDK and Visual Studio.
+    a project during its build. The task runs the bundled cscom tool (.NET 10) as a separate process, so it targets netstandard2.0
+    and loads into the MSBuild of both the .NET SDK and Visual Studio.
   -->
   <PropertyGroup>
     <TargetFramework>netstandard2.0</TargetFramework>
@@ -34,10 +34,10 @@
     <InternalsVisibleTo Include="CsCom.Tests" />
   </ItemGroup>
 
-  <!-- Publishes the generator and passes the paths and the metadata to the nuspec. -->
+  <!-- Publishes the cscom tool, the generator of the task, and passes the paths and the metadata to the nuspec. -->
   <Target Name="PrepareCsComPackage" BeforeTargets="GenerateNuspec">
-    <MSBuild Projects="..\CsCom.Build.Generator\CsCom.Build.Generator.csproj" Targets="Publish" />
-    <MSBuild Projects="..\CsCom.Build.Generator\CsCom.Build.Generator.csproj" Targets="GetCsComPublishDirectory">
+    <MSBuild Projects="..\CsCom\CsCom.csproj" Targets="Publish" />
+    <MSBuild Projects="..\CsCom\CsCom.csproj" Targets="GetCsComPublishDirectory">
       <Output TaskParameter="TargetOutputs" PropertyName="_CsComGeneratorDirectory" />
     </MSBuild>
     <PropertyGroup>

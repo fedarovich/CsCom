@@ -1,3 +1,5 @@
+using CsCom.Build;
+using CsCom.LibrarySets;
 using CsCom.Output;
 
 namespace CsCom.Tests;
@@ -332,6 +334,31 @@ public sealed class CommandLineTests
     }
 
     [TestMethod]
+    public void GeneratesTheCodeOfBuildRequests()
+    {
+        string project = TestEnvironment.CreateDirectory("cli-build-generate");
+        string output = Path.Combine(project, "obj", "CsCom");
+
+        var (exitCode, text) = RunWithOutput(CommandLine.BuildGenerateCommandName, WriteBuildRequest(project, config: string.Empty), "hash1");
+
+        Assert.AreEqual(0, exitCode, text);
+        Assert.IsTrue(File.Exists(Path.Combine(output, "Interop.CsComTest", "IShape.cs")));
+        StringAssert.Contains(File.ReadAllText(Path.Combine(output, LibrarySetBuild.StateFileName)), "hash=hash1");
+        StringAssert.Contains(text, "Generating 'CsComTest' into 'Interop.CsComTest'");
+
+        // The errors are written in the canonical format of MSBuild, with their location in configuration files.
+        string configuration = Path.Combine(project, "cscom.xml");
+        File.WriteAllText(configuration, "<CsCom>\n  <ModelTransformers>\n    <Rename />\n  </ModelTransformers>\n</CsCom>");
+        (exitCode, text) = RunWithOutput(CommandLine.BuildGenerateCommandName, WriteBuildRequest(project, config: "cscom.xml"), "hash2");
+        Assert.AreEqual(1, exitCode);
+        StringAssert.Contains(text, $"{configuration}(3,6): error CSCOM1000: Unknown model transformer <Rename>.");
+
+        // The command is only used by the MSBuild task.
+        (_, text) = RunWithOutput("--help");
+        Assert.IsFalse(text.Contains(CommandLine.BuildGenerateCommandName, StringComparison.Ordinal));
+    }
+
+    [TestMethod]
     public void ReportsErrorsWithExitCode()
     {
         string directory = TestEnvironment.CreateDirectory("cli-error");
@@ -363,6 +390,24 @@ public sealed class CommandLineTests
         Assert.AreNotEqual(0, Run("update", "project"));
         Assert.AreNotEqual(0, Run("new", "assembly", TestEnvironment.TestTypeLibrary));
         Assert.AreNotEqual(0, Run("new", "config"));
+    }
+
+    // Writes a request as the MSBuild task of CsCom.Build does.
+    private static string WriteBuildRequest(string project, string config)
+    {
+        var json = new JsonWriter();
+        json.Property("projectDirectory", project);
+        json.Property("outputDirectory", Path.Combine(project, "obj", "CsCom"));
+        json.Property("targetFramework", "net10.0-windows");
+        json.StartArray("references");
+        json.StartObject();
+        json.Property("source", TestEnvironment.TestTypeLibrary);
+        json.Property("config", config);
+        json.EndObject();
+        json.EndArray();
+        string path = Path.Combine(project, "cscom.request.json");
+        File.WriteAllText(path, json.ToString());
+        return path;
     }
 
     private static int Run(params string[] args) => CommandLine.Create().Parse(args).Invoke(new System.CommandLine.InvocationConfiguration

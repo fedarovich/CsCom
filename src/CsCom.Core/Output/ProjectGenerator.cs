@@ -1,3 +1,4 @@
+using System.Globalization;
 using CsCom.CodeGeneration;
 using CsCom.LibrarySets;
 using CsCom.TypeLibraries;
@@ -209,17 +210,10 @@ public sealed partial class ProjectGenerator
         var targetFrameworks = request.TargetFrameworks.Count > 0
             ? request.TargetFrameworks.Distinct(StringComparer.OrdinalIgnoreCase).ToList()
             : [TargetFrameworks.Default];
-        foreach (string targetFramework in targetFrameworks)
+        int languageVersion = ValidateLanguageVersion(request.LanguageVersion, targetFrameworks);
+        foreach (string targetFramework in targetFrameworks.Where(static f => !TargetFrameworks.IsWindowsSpecific(f)))
         {
-            if (!TargetFrameworks.TryGetMajorVersion(targetFramework, out _, out string? error))
-            {
-                throw new CsComException(error);
-            }
-
-            if (!TargetFrameworks.IsWindowsSpecific(targetFramework))
-            {
-                LogNotWindowsSpecific(targetFramework);
-            }
+            LogNotWindowsSpecific(targetFramework);
         }
 
         var runtimeIdentifiers = request.RuntimeIdentifiers
@@ -237,7 +231,7 @@ public sealed partial class ProjectGenerator
             Name = request.Name ?? string.Empty,
             TargetFrameworks = targetFrameworks,
             RuntimeIdentifiers = runtimeIdentifiers,
-            LanguageVersion = ValidateLanguageVersion(request.LanguageVersion, targetFrameworks),
+            LanguageVersion = languageVersion,
             SingleFile = request.SingleFile,
             SupportCode = request.SupportCode,
             Marshalling = request.Marshalling,
@@ -376,22 +370,8 @@ public sealed partial class ProjectGenerator
     private static Dictionary<string, string>? ToRelativePaths(string directory, IReadOnlyDictionary<string, string>? paths) =>
         paths?.ToDictionary(static p => p.Key, p => Path.GetRelativePath(directory, p.Value), StringComparer.OrdinalIgnoreCase);
 
-    private static int ValidateLanguageVersion(int? languageVersion, IReadOnlyList<string> targetFrameworks)
-    {
-        int minimum = TargetFrameworks.GetDefaultLanguageVersion(targetFrameworks);
-        if (languageVersion is null)
-        {
-            return minimum;
-        }
-
-        if (languageVersion < minimum)
-        {
-            throw new CsComException(
-                $"C# {languageVersion} is not supported for {string.Join(", ", targetFrameworks)}: C# {minimum} or later is required.");
-        }
-
-        return languageVersion.Value;
-    }
+    private static int ValidateLanguageVersion(int? languageVersion, IReadOnlyList<string> targetFrameworks) =>
+        TargetFrameworks.ResolveLanguageVersion(languageVersion?.ToString(CultureInfo.InvariantCulture), targetFrameworks, atLeastFrameworkDefault: true);
 
     internal static void ValidateNamespace(string @namespace)
     {

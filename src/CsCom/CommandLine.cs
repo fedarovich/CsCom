@@ -15,6 +15,9 @@ namespace CsCom;
 /// </summary>
 internal static class CommandLine
 {
+    /// <summary>The name of the hidden command that the MSBuild task of CsCom.Build runs.</summary>
+    public const string BuildGenerateCommandName = "build-generate";
+
     private const string SourceDescription =
         "The source of the interop types: a type library (a .tlb file, or a .dll, .ocx or .exe file with an embedded type library), a registered LIBID ({GUID} or {GUID}:major.minor) or ProgID, or a .NET interop assembly, such as a primary interop assembly or the output of TlbImp.";
 
@@ -31,6 +34,16 @@ internal static class CommandLine
     {
         Description = SourceDescription + SourcesDescription + " The sources recorded in cscom.json by default.",
         Arity = ArgumentArity.ZeroOrMore,
+    };
+
+    private static readonly Argument<string> RequestArgument = new("Request")
+    {
+        Description = "The request that the MSBuild task of CsCom.Build writes.",
+    };
+
+    private static readonly Argument<string> HashArgument = new("Hash")
+    {
+        Description = "The hash of the request, which is recorded in the state file.",
     };
 
     private static readonly Option<string?> TypeFilterOption = new("--type", "-t")
@@ -356,6 +369,15 @@ internal static class CommandLine
         list.Options.Add(ReferencePathOption);
         list.SetAction(static result => Run(result, (pipeline, loggerFactory) => List(result, pipeline, loggerFactory), quietByDefault: true));
 
+        // The generator of the MSBuild task of CsCom.Build, which bundles the tool.
+        var buildGenerate = new Command(BuildGenerateCommandName, "Generates the code of the CsComReference items of a project for the MSBuild task of CsCom.Build.")
+        {
+            RequestArgument,
+            HashArgument,
+        };
+        buildGenerate.Hidden = true;
+        buildGenerate.SetAction(static result => BuildGenerate(result));
+
         return new RootCommand("Generates COM interop code from type libraries and interop assemblies using source-generated COM interop.")
         {
             VerbosityOption,
@@ -363,7 +385,29 @@ internal static class CommandLine
             new Command("assembly", "Builds or packs an interop assembly.") { buildAssembly, packAssembly },
             new Command("config", "Creates configuration files.") { createConfig },
             list,
+            buildGenerate,
         };
+    }
+
+    // Generates the code of a request of the MSBuild task. The messages are written to the output in the canonical format of
+    // MSBuild, e.g. "cscom.xml(3,6): error CSCOM1000: ...", so that the task reports the warnings and errors.
+    private static int BuildGenerate(ParseResult result)
+    {
+        var output = result.InvocationConfiguration.Output;
+        using var loggerFactory = LoggerFactory.Create(builder => builder
+            .SetMinimumLevel(LogLevel.Information)
+            .AddProvider(new MSBuildOutput.LoggerProvider(output, LogLevel.Information)));
+        try
+        {
+            var request = BuildRequest.Load(result.GetRequiredValue(RequestArgument));
+            new LibrarySetBuild(new InteropPipeline(loggerFactory), loggerFactory).Run(request, result.GetRequiredValue(HashArgument));
+            return 0;
+        }
+        catch (Exception e)
+        {
+            output.WriteLine(MSBuildOutput.FormatError(e));
+            return 1;
+        }
     }
 
     // Writes the models of the libraries after the aliases are resolved and the model transformers of the configurations are

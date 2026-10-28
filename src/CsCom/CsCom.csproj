@@ -6,6 +6,9 @@
     <TargetFramework>net10.0</TargetFramework>
     <AssemblyName>cscom</AssemblyName>
     <RootNamespace>CsCom</RootNamespace>
+    <!-- Runs on later .NET runtimes too, e.g. from the MSBuild task of CsCom.Build when only a later SDK is installed. -->
+    <RollForward>Major</RollForward>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
   </PropertyGroup>
 
   <PropertyGroup>
@@ -49,5 +52,12 @@
       <_Parameter1>windows</_Parameter1>
     </AssemblyAttribute>
   </ItemGroup>
+
+  <!-- The full path of the published tool, which CsCom.Build bundles as the generator of its MSBuild task. -->
+  <Target Name="GetCsComPublishDirectory" Returns="$(_CsComPublishDirectory)">
+    <PropertyGroup>
+      <_CsComPublishDirectory>$([MSBuild]::NormalizeDirectory('$(MSBuildProjectDirectory)', '$(PublishDir)'))</_CsComPublishDirectory>
+    </PropertyGroup>
+  </Target>
 
 </Project>

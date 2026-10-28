@@ -125,6 +125,15 @@ public sealed class ProjectGeneratorTests
         File.WriteAllText(userFile, "// user code");
         File.WriteAllText(Path.Combine(directory, "Generated", "Stale.cs"), "// stale");
 
+        // The files that do not change are not written again, so that they keep their timestamps.
+        string shape = Path.Combine(directory, "Generated", "Interop.CsComTest", "IShape.cs");
+        var written = new DateTime(2000, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+        File.SetLastWriteTimeUtc(shape, written);
+        _generator.UpdateProject(new UpdateProjectRequest { ProjectDirectory = directory });
+        Assert.AreEqual(written, File.GetLastWriteTimeUtc(shape));
+        Assert.IsFalse(File.Exists(Path.Combine(directory, "Generated", "Stale.cs")));
+        File.WriteAllText(Path.Combine(directory, "Generated", "Stale.cs"), "// stale");
+
         _generator.UpdateProject(new UpdateProjectRequest
         {
             Sources = [TestEnvironment.TestTypeLibrary],

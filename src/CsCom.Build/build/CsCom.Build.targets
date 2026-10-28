@@ -6,7 +6,8 @@
     <!-- The generated files are written into the intermediate output, per target framework. -->
     <CsComOutputPath Condition="'$(CsComOutputPath)' == ''">$(IntermediateOutputPath)CsCom\</CsComOutputPath>
     <CsComSupportNamespace Condition="'$(CsComSupportNamespace)' == ''">$(RootNamespace).ComSupport</CsComSupportNamespace>
-    <_CsComGeneratorPath>$(MSBuildThisFileDirectory)..\tools\net10.0\CsCom.Build.Generator.dll</_CsComGeneratorPath>
+    <!-- The cscom tool generates the code. -->
+    <_CsComToolPath>$(MSBuildThisFileDirectory)..\tools\net10.0\cscom.dll</_CsComToolPath>
     <!-- The dotnet executable of the SDK: DOTNET_HOST_PATH is set by the .NET CLI, NetCoreRoot by the SDK in Visual Studio. -->
     <_CsComDotNetHostPath>$(DOTNET_HOST_PATH)</_CsComDotNetHostPath>
     <_CsComDotNetHostPath Condition="'$(_CsComDotNetHostPath)' == '' and '$(NetCoreRoot)' != ''">$(NetCoreRoot)dotnet.exe</_CsComDotNetHostPath>
@@ -18,9 +19,10 @@
   -->
   <Target Name="CsComGenerate" BeforeTargets="CoreCompile" Condition="'@(CsComReference)' != ''">
     <CsComGenerate References="@(CsComReference)"
+                   Libraries="@(CsComLibrary)"
                    ProjectDirectory="$(MSBuildProjectDirectory)"
                    OutputDirectory="$(CsComOutputPath)"
-                   GeneratorPath="$(_CsComGeneratorPath)"
+                   CsComPath="$(_CsComToolPath)"
                    DotNetHostPath="$(_CsComDotNetHostPath)"
                    TargetFramework="$(TargetFramework)"
                    LanguageVersion="$(LangVersion)"

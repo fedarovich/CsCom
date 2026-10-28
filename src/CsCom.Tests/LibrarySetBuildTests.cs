@@ -45,7 +45,7 @@ public sealed class LibrarySetBuildTests
     [DataRow("SupportCode", "nuget", "'nuget' is not a valid value of CsComSupportCode: one of package, public, internal is expected.")]
     [DataRow("SafeArrayMarshalling", "1", "'1' is not a valid value of CsComSafeArrayMarshalling: one of array, sysarray, wrapper, none is expected.")]
     [DataRow("OverloadsForDefaultValues", "yes", "'yes' is not a valid value of CsComOverloadsForDefaultValues: true or false is expected.")]
-    [DataRow("LanguageVersion", "13", "The generated code requires C# 14 or later, but the project uses C# 13 (LangVersion).")]
+    [DataRow("LanguageVersion", "13", "The generated code requires C# 14 or later, but C# 13 is specified.")]
     [DataRow("TargetFramework", "net8.0-windows", "The target framework 'net8.0-windows' is not supported: .NET 10 or later is required.")]
     public void RejectsInvalidProperties(string property, string value, string message)
     {
@@ -66,6 +66,41 @@ public sealed class LibrarySetBuildTests
         var exception = Assert.ThrowsExactly<CsComException>(() => new LibrarySetBuild(new InteropPipeline()).Run(request, "hash"));
 
         Assert.AreEqual(message, exception.Message);
+    }
+
+    [TestMethod]
+    public void UsesTheNamespacesAndConfigurationsOfLibraries()
+    {
+        string project = TestEnvironment.CreateDirectory("build-libraries");
+        File.WriteAllText(Path.Combine(project, "stdole.xml"), """<CsCom><ModelTransformers><RenameType TypeName="Font" NewName="StdFont" /></ModelTransformers></CsCom>""");
+
+        var files = new LibrarySetBuild(new InteropPipeline()).Run(
+            new BuildRequest
+            {
+                ProjectDirectory = project,
+                OutputDirectory = Path.Combine(project, "obj", "CsCom"),
+                References = [new BuildReference { Source = TestEnvironment.TestTypeLibrary }],
+                Libraries = [new BuildLibrary { Name = "stdole", Namespace = "Ole.Interop", Config = "stdole.xml" }],
+            },
+            "hash");
+
+        string font = Path.Combine(project, "obj", "CsCom", "Ole.Interop", "StdFont.cs");
+        CollectionAssert.Contains(files.ToArray(), font);
+        StringAssert.Contains(File.ReadAllText(font), "namespace Ole.Interop;");
+
+        // The configuration file of a library is an input of the state.
+        StringAssert.Contains(File.ReadAllText(Path.Combine(project, "obj", "CsCom", LibrarySetBuild.StateFileName)), $"|{Path.Combine(project, "stdole.xml")}");
+
+        var exception = Assert.ThrowsExactly<CsComException>(() => new LibrarySetBuild(new InteropPipeline()).Run(
+            new BuildRequest
+            {
+                ProjectDirectory = project,
+                OutputDirectory = Path.Combine(project, "obj", "CsCom"),
+                References = [new BuildReference { Source = TestEnvironment.TestTypeLibrary }],
+                Libraries = [new BuildLibrary { Name = " ", Namespace = "Ole.Interop" }],
+            },
+            "hash"));
+        Assert.AreEqual("A CsComLibrary item has an empty Include.", exception.Message);
     }
 
     [TestMethod]

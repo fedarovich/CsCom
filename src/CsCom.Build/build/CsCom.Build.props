@@ -9,6 +9,11 @@
     The properties below are the defaults of all the libraries, including those whose types the references only use; the
     metadata of the items (Namespace, ReferencePath, Config, EventStyle, StructProperties, OverloadsForDefaultValues,
     DateMarshalling, CurrencyMarshalling, BoolMarshalling, BstrMarshalling, SafeArrayMarshalling) override them.
+
+    CsComLibrary items set the namespace and the configuration file of a library by its name, whether it is a reference or its
+    types are only used by them; the Namespace metadata of a CsComReference wins:
+
+      <CsComLibrary Include="stdole" Namespace="Ole.Interop" Config="stdole.cscom.xml" />
   -->
   <PropertyGroup>
     <!-- package (the CsCom.Runtime package), public or internal (the support code is generated into the project). -->

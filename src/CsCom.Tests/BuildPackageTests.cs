@@ -27,20 +27,25 @@ public sealed class BuildPackageTests
     [TestMethod]
     public void GeneratesTheReferencesDuringTheBuild()
     {
-        string project = CreateConsumer("build-package", $"""
+        // The namespace of stdole, whose types are only used, is set by a CsComLibrary item.
+        string project = CreateConsumer(
+            "build-package",
+            $"""
             <CsComReference Include="{TestEnvironment.TestTypeLibrary}" />
             <CsComReference Include="{TestEnvironment.DrawingTypeLibrary}" Namespace="Drawing.Interop" />
             <CsComReference Include="Scripting.Dictionary" />
-            """);
+            <CsComLibrary Include="stdole" Namespace="Ole.Interop" />
+            """,
+            program: Program.Replace("Interop.stdole.Font", "Ole.Interop.Font", StringComparison.Ordinal));
 
         var output = Run(project);
 
         CollectionAssert.AreEqual(
-            new[] { "Count=2", "Drawing.Interop.ICanvas", "Interop.stdole.Font", "Interop.CsComTest.IShape" },
+            new[] { "Count=2", "Drawing.Interop.ICanvas", "Ole.Interop.Font", "Interop.CsComTest.IShape" },
             output.TakeLast(4).ToArray());
         string generated = Path.Combine(Path.GetDirectoryName(project)!, "obj", "Debug", "net10.0-windows", "CsCom");
         CollectionAssert.AreEquivalent(
-            new[] { "Drawing.Interop", "Interop.CsComTest", "Interop.Scripting", "Interop.stdole" },
+            new[] { "Drawing.Interop", "Interop.CsComTest", "Interop.Scripting", "Ole.Interop" },
             Directory.GetDirectories(generated).Select(Path.GetFileName).ToArray());
 
         // The second build does not run the generator.

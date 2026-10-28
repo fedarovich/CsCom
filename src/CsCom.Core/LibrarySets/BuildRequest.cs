@@ -65,6 +65,9 @@ public sealed class BuildRequest
     /// <summary>The <c>CsComReference</c> items.</summary>
     public IReadOnlyList<BuildReference> References { get; init; } = [];
 
+    /// <summary>The <c>CsComLibrary</c> items: the namespaces and the configuration files of libraries by name.</summary>
+    public IReadOnlyList<BuildLibrary> Libraries { get; init; } = [];
+
     /// <summary>
     /// Reads a request from a JSON file.
     /// </summary>
@@ -82,6 +85,22 @@ public sealed class BuildRequest
             throw new CsComException($"'{path}' is not a valid build request: {e.Message}", e);
         }
     }
+}
+
+/// <summary>
+/// A <c>CsComLibrary</c> item of a <see cref="BuildRequest"/>: the namespace and the configuration file of a library, whether it
+/// is a reference or its types are only used by them.
+/// </summary>
+public sealed class BuildLibrary
+{
+    /// <summary>The item spec: the name of the library, e.g. <c>stdole</c>.</summary>
+    public required string Name { get; init; }
+
+    /// <summary>The <c>Namespace</c> metadata.</summary>
+    public string Namespace { get; init; } = string.Empty;
+
+    /// <summary>The <c>Config</c> metadata: the configuration file.</summary>
+    public string Config { get; init; } = string.Empty;
 }
 
 /// <summary>
