@@ -36,6 +36,14 @@ internal sealed record LateBoundType(string Name, Func<string, string> FromObjec
 }
 
 /// <summary>
+/// A conversion between the COM type stored in a field of a structure and the .NET type of the property that exposes it.
+/// </summary>
+/// <param name="TypeName">The .NET type of the property.</param>
+/// <param name="Get">Converts an expression of the COM type to the .NET type.</param>
+/// <param name="Set">Converts an expression of the .NET type to the COM type.</param>
+internal sealed record FieldConversion(string TypeName, Func<string, string> Get, Func<string, string> Set);
+
+/// <summary>
 /// Maps type library types to C# types.
 /// </summary>
 internal sealed class TypeMapper
@@ -110,7 +118,8 @@ internal sealed class TypeMapper
     }
 
     /// <summary>
-    /// Maps the type of a field of a structure, which must be blittable.
+    /// Maps the type of a field of a structure, which must be blittable. Values converted to .NET types are stored as the COM
+    /// type, see <see cref="GetFieldConversion"/>.
     /// </summary>
     public ManagedType MapField(TypeReference type)
     {
@@ -119,11 +128,11 @@ internal sealed class TypeMapper
             case PrimitiveTypeReference { VarType: var vt }:
                 return vt switch
                 {
-                    VarEnum.VT_BOOL => MapField(_context.Options.Marshalling.BoolFields, "short", "ComBool"),
+                    VarEnum.VT_BOOL => MapField(_context.Options.Marshalling.Booleans, "short", "ComBool"),
                     VarEnum.VT_BSTR or VarEnum.VT_LPSTR or VarEnum.VT_LPWSTR or VarEnum.VT_UNKNOWN or VarEnum.VT_DISPATCH => ManagedType.IntPtr,
                     VarEnum.VT_VARIANT => new ManagedType($"{Syntax.MarshallingNamespace}.ComVariant"),
-                    VarEnum.VT_CY => MapField(_context.Options.Marshalling.CurrencyFields, "long", "ComCurrency"),
-                    VarEnum.VT_DATE => MapField(_context.Options.Marshalling.DateFields, "double", "ComDate"),
+                    VarEnum.VT_CY => MapField(_context.Options.Marshalling.Currencies, "long", "ComCurrency"),
+                    VarEnum.VT_DATE => MapField(_context.Options.Marshalling.Dates, "double", "ComDate"),
                     _ => MapPrimitive(vt) is { Marshalling: null, IsReference: false } mapped ? mapped : ManagedType.IntPtr,
                 };
             case WellKnownTypeReference { Type: WellKnownType.Guid }:
@@ -136,6 +145,32 @@ internal sealed class TypeMapper
                 return MapPointer(pointer);
             default:
                 return ManagedType.IntPtr;
+        }
+    }
+
+    /// <summary>
+    /// Gets the conversion between the field of a structure, which has the COM type returned by <see cref="MapField"/>, and the
+    /// .NET type of the property that exposes it, or <see langword="null"/> if the field is exposed as is.
+    /// </summary>
+    public FieldConversion? GetFieldConversion(TypeReference type)
+    {
+        var marshalling = _context.Options.Marshalling;
+        return type switch
+        {
+            PrimitiveTypeReference { VarType: VarEnum.VT_BOOL } when marshalling.Booleans == ValueMarshalling.Bcl =>
+                new FieldConversion("bool", static x => $"{x} != 0", static x => $"{x} ? (short)-1 : (short)0"),
+            PrimitiveTypeReference { VarType: VarEnum.VT_CY } when marshalling.Currencies == ValueMarshalling.Bcl =>
+                Marshaller("decimal", "CurrencyMarshaller"),
+            PrimitiveTypeReference { VarType: VarEnum.VT_DATE } when marshalling.Dates == ValueMarshalling.Bcl =>
+                Marshaller("global::System.DateTime", "DateMarshaller"),
+            UserDefinedTypeReference { Definition: AliasDefinition alias } => GetFieldConversion(alias.Target),
+            _ => null,
+        };
+
+        FieldConversion Marshaller(string typeName, string marshaller)
+        {
+            string name = $"{_context.Support}.{marshaller}";
+            return new FieldConversion(typeName, x => $"{name}.ConvertToManaged({x})", x => $"{name}.ConvertToUnmanaged({x})");
         }
     }
 
@@ -215,12 +250,12 @@ internal sealed class TypeMapper
         VarEnum.VT_R4 => new("float"),
         VarEnum.VT_R8 => new("double"),
         VarEnum.VT_CY => MapParameter(
-            _context.Options.Marshalling.CurrencyParameters,
+            _context.Options.Marshalling.Currencies,
             new("decimal", $"{Syntax.MarshallingNamespace}.MarshalUsing(typeof({_context.Support}.CurrencyMarshaller))"),
             "long",
             "ComCurrency"),
         VarEnum.VT_DATE => MapParameter(
-            _context.Options.Marshalling.DateParameters,
+            _context.Options.Marshalling.Dates,
             new("global::System.DateTime", $"{Syntax.MarshallingNamespace}.MarshalUsing(typeof({_context.Support}.DateMarshaller))"),
             "double",
             "ComDate"),
@@ -231,7 +266,7 @@ internal sealed class TypeMapper
         VarEnum.VT_LPSTR => new("string?", $"{Syntax.InteropNamespace}.MarshalAs({Syntax.InteropNamespace}.UnmanagedType.LPStr)"),
         VarEnum.VT_LPWSTR => new("string?", $"{Syntax.InteropNamespace}.MarshalAs({Syntax.InteropNamespace}.UnmanagedType.LPWStr)"),
         VarEnum.VT_BOOL => MapParameter(
-            _context.Options.Marshalling.BoolParameters,
+            _context.Options.Marshalling.Booleans,
             new("bool", $"{Syntax.InteropNamespace}.MarshalAs({Syntax.InteropNamespace}.UnmanagedType.VariantBool)"),
             "short",
             "ComBool"),
@@ -244,15 +279,15 @@ internal sealed class TypeMapper
         _ => ManagedType.IntPtr,
     };
 
-    private ManagedType MapParameter(ParameterMarshalling marshalling, ManagedType managed, string comType, string wrapper) => marshalling switch
+    private ManagedType MapParameter(ValueMarshalling marshalling, ManagedType managed, string comType, string wrapper) => marshalling switch
     {
-        ParameterMarshalling.Com => new ManagedType(comType),
-        ParameterMarshalling.Wrapper => new ManagedType($"{_context.Support}.{wrapper}"),
+        ValueMarshalling.None => new ManagedType(comType),
+        ValueMarshalling.Wrapper => new ManagedType($"{_context.Support}.{wrapper}"),
         _ => managed,
     };
 
-    private ManagedType MapField(FieldMarshalling marshalling, string comType, string wrapper) =>
-        new(marshalling == FieldMarshalling.Wrapper ? $"{_context.Support}.{wrapper}" : comType);
+    private ManagedType MapField(ValueMarshalling marshalling, string comType, string wrapper) =>
+        new(marshalling == ValueMarshalling.Wrapper ? $"{_context.Support}.{wrapper}" : comType);
 
     public string VariantMarshalling(bool optional) =>
         $"{Syntax.MarshallingNamespace}.MarshalUsing(typeof({_context.Support}.{(optional ? "OptionalVariantMarshaller" : "VariantMarshaller")}))";

@@ -171,22 +171,22 @@ public sealed class ProjectGeneratorTests
         {
             TypeLibraryPath = TestEnvironment.TestTypeLibrary,
             OutputDirectory = directory,
-            Marshalling = new MarshallingOptions { DateParameters = ParameterMarshalling.Wrapper, BoolFields = FieldMarshalling.Wrapper },
+            Marshalling = new MarshallingOptions { Dates = ValueMarshalling.Wrapper, Booleans = ValueMarshalling.Wrapper },
         });
 
-        StringAssert.Contains(File.ReadAllText(Path.Combine(directory, CsComManifest.FileName)), "\"dateParameters\": \"wrapper\"");
+        StringAssert.Contains(File.ReadAllText(Path.Combine(directory, CsComManifest.FileName)), "\"dates\": \"wrapper\"");
         StringAssert.Contains(File.ReadAllText(Path.Combine(directory, "Generated", "Record.cs")), "global::CsCom.Runtime.ComBool Flag;");
 
         _generator.UpdateProject(new UpdateProjectRequest
         {
             TypeLibraryPath = TestEnvironment.TestTypeLibrary,
             ProjectDirectory = directory,
-            Marshalling = new MarshallingOverrides { DateParameters = ParameterMarshalling.Com, CurrencyFields = FieldMarshalling.Wrapper },
+            Marshalling = new MarshallingOverrides { Dates = ValueMarshalling.None, Currencies = ValueMarshalling.Wrapper },
         });
 
         var marshalling = CsComManifest.Read(directory).Marshalling;
         Assert.AreEqual(
-            new MarshallingOptions { DateParameters = ParameterMarshalling.Com, CurrencyFields = FieldMarshalling.Wrapper, BoolFields = FieldMarshalling.Wrapper },
+            new MarshallingOptions { Dates = ValueMarshalling.None, Currencies = ValueMarshalling.Wrapper, Booleans = ValueMarshalling.Wrapper },
             marshalling);
         StringAssert.Contains(File.ReadAllText(Path.Combine(directory, "Generated", "IMarshalling.cs")), "double Dates(double Date, out double Next);");
     }
@@ -211,6 +211,7 @@ public sealed class ProjectGeneratorTests
         Assert.AreEqual(new MarshallingOptions(), manifest.Marshalling);
         Assert.AreEqual(SafeArrayMarshalling.Array, manifest.Marshalling.SafeArrays);
         Assert.AreEqual(EventStyle.Events, manifest.EventStyle);
+        Assert.AreEqual(StructProperties.NonBlittable, manifest.StructProperties);
     }
 
     [TestMethod]

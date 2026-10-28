@@ -41,36 +41,32 @@ public sealed class CommandLineTests
 
         Assert.AreEqual(0, Run(
             "new", "project", TestEnvironment.TestTypeLibrary, "-o", directory,
-            "--date-parameter-marshalling", "wrapper",
-            "--currency-parameter-marshalling", "Com",
-            "--bool-field-marshalling", "wrapper",
+            "--date-marshalling", "wrapper",
+            "--currency-marshalling", "None",
             "--safearray-marshalling", "wrapper",
             "-v", "quiet"));
         Assert.AreEqual(
             new CodeGeneration.MarshallingOptions
             {
-                DateParameters = CodeGeneration.ParameterMarshalling.Wrapper,
-                CurrencyParameters = CodeGeneration.ParameterMarshalling.Com,
-                BoolFields = CodeGeneration.FieldMarshalling.Wrapper,
+                Dates = CodeGeneration.ValueMarshalling.Wrapper,
+                Currencies = CodeGeneration.ValueMarshalling.None,
                 SafeArrays = CodeGeneration.SafeArrayMarshalling.Wrapper,
             },
             CsComManifest.Read(directory).Marshalling);
+        StringAssert.Contains(File.ReadAllText(Path.Combine(directory, CsComManifest.FileName)), "\"dates\": \"wrapper\"");
         StringAssert.Contains(File.ReadAllText(Path.Combine(directory, CsComManifest.FileName)), "\"safeArrays\": \"wrapper\"");
 
         Assert.AreEqual(0, Run(
             "update", "project", TestEnvironment.TestTypeLibrary, "-o", directory,
-            "--date-parameter-marshalling", "managed",
-            "--date-field-marshalling", "wrapper",
-            "--bool-parameter-marshalling", "com",
+            "--date-marshalling", "bcl",
+            "--bool-marshalling", "none",
             "--safearray-marshalling", "sysarray",
             "-v", "quiet"));
         Assert.AreEqual(
             new CodeGeneration.MarshallingOptions
             {
-                DateFields = CodeGeneration.FieldMarshalling.Wrapper,
-                CurrencyParameters = CodeGeneration.ParameterMarshalling.Com,
-                BoolParameters = CodeGeneration.ParameterMarshalling.Com,
-                BoolFields = CodeGeneration.FieldMarshalling.Wrapper,
+                Currencies = CodeGeneration.ValueMarshalling.None,
+                Booleans = CodeGeneration.ValueMarshalling.None,
                 SafeArrays = CodeGeneration.SafeArrayMarshalling.SysArray,
             },
             CsComManifest.Read(directory).Marshalling);
@@ -96,10 +92,30 @@ public sealed class CommandLineTests
     }
 
     [TestMethod]
+    public void StructPropertiesHaveADefaultAndCanBeOverridden()
+    {
+        string directory = TestEnvironment.CreateDirectory("cli-struct-properties");
+
+        Assert.AreEqual(0, Run("new", "project", TestEnvironment.TestTypeLibrary, "-o", directory, "-v", "quiet"));
+        Assert.AreEqual(CodeGeneration.StructProperties.NonBlittable, CsComManifest.Read(directory).StructProperties);
+        StringAssert.Contains(File.ReadAllText(Path.Combine(directory, CsComManifest.FileName)), "\"structProperties\": \"nonblittable\"");
+
+        Assert.AreEqual(0, Run("update", "project", TestEnvironment.TestTypeLibrary, "-o", directory, "--struct-properties", "always", "-v", "quiet"));
+        Assert.AreEqual(CodeGeneration.StructProperties.Always, CsComManifest.Read(directory).StructProperties);
+        StringAssert.Contains(File.ReadAllText(Path.Combine(directory, "Generated", "Record.cs")), "private nint _name;");
+
+        Assert.AreEqual(0, Run("update", "project", TestEnvironment.TestTypeLibrary, "-o", directory, "-v", "quiet"));
+        Assert.AreEqual(CodeGeneration.StructProperties.Always, CsComManifest.Read(directory).StructProperties);
+
+        Assert.AreNotEqual(0, Run("new", "project", TestEnvironment.TestTypeLibrary, "--struct-properties", "sometimes"));
+    }
+
+    [TestMethod]
     public void RejectsInvalidMarshallingOptions()
     {
-        Assert.AreNotEqual(0, Run("new", "project", TestEnvironment.TestTypeLibrary, "--date-field-marshalling", "managed"));
-        Assert.AreNotEqual(0, Run("new", "project", TestEnvironment.TestTypeLibrary, "--bool-parameter-marshalling", "raw"));
+        Assert.AreNotEqual(0, Run("new", "project", TestEnvironment.TestTypeLibrary, "--date-field-marshalling", "wrapper"));
+        Assert.AreNotEqual(0, Run("new", "project", TestEnvironment.TestTypeLibrary, "--bool-marshalling", "managed"));
+        Assert.AreNotEqual(0, Run("new", "project", TestEnvironment.TestTypeLibrary, "--currency-marshalling", "com"));
         Assert.AreNotEqual(0, Run("new", "project", TestEnvironment.TestTypeLibrary, "--safearray-marshalling", "vector"));
     }
 

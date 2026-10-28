@@ -40,32 +40,58 @@ internal sealed partial class TypeEmitters
         var members = new List<MemberDeclarationSyntax>();
         bool isUnsafe = false;
         var fieldOffset = Syntax.AttributeList(Syntax.Attribute($"{Syntax.InteropNamespace}.FieldOffset", "0"));
+        var mode = _context.Options.StructProperties;
+        var names = new HashSet<string>(StringComparer.Ordinal) { definition.Name };
+        foreach (var field in definition.Fields)
+        {
+            names.Add(field.Name);
+            names.Add(GetBufferName(field.Name));
+        }
 
         foreach (var field in definition.Fields)
         {
-            FieldDeclarationSyntax declaration;
+            string type;
+            FieldConversion? conversion = null;
             if (field.Type is FixedArrayTypeReference array)
             {
                 // Inline arrays rather than fixed buffers, so that the elements can be accessed without an unsafe context.
+                // Their elements have the COM types, because they cannot be converted one by one.
                 var element = mapper.MapField(array.ElementType);
-                string bufferName = $"__{field.Name}_Buffer";
-                members.Add(InlineArray(bufferName, element.Name, array.Length));
-                declaration = Field(bufferName, field.Name);
+                type = GetBufferName(field.Name);
+                members.Add(InlineArray(type, element.Name, array.Length));
                 isUnsafe |= element.IsPointer;
             }
             else
             {
-                var type = mapper.MapField(field.Type);
-                declaration = Field(type.Name, field.Name);
-                isUnsafe |= type.IsPointer;
+                var mapped = mapper.MapField(field.Type);
+                type = mapped.Name;
+                isUnsafe |= mapped.IsPointer;
+                if (mode != StructProperties.Never)
+                {
+                    conversion = mapper.GetFieldConversion(field.Type);
+                }
             }
 
+            // The fields keep the layout of the COM structure; properties expose them and convert them to .NET types if needed.
+            bool isProperty = conversion is not null || mode == StructProperties.Always;
+            string fieldName = isProperty ? GetBackingFieldName(field.Name, names) : field.Name;
+            var declaration = Field(type, fieldName, isProperty ? SyntaxKind.PrivateKeyword : SyntaxKind.PublicKeyword);
             if (definition.IsUnion)
             {
                 declaration = declaration.WithAttributeLists(SingletonList(fieldOffset));
             }
 
-            members.Add(declaration.WithDocumentation(field.Documentation));
+            if (!isProperty)
+            {
+                members.Add(declaration.WithDocumentation(field.Documentation));
+                continue;
+            }
+
+            string getter = conversion?.Get(fieldName) ?? fieldName;
+            string setter = conversion?.Set("value") ?? "value";
+            members.Add(declaration);
+            members.Add(ParseMember($"public {conversion?.TypeName ?? type} {Syntax.Escape(field.Name)} {{ readonly get => {getter}; set => {fieldName} = {setter}; }}")
+                .WithDocumentation(field.Documentation));
         }
 
         string layout = $"{Syntax.InteropNamespace}.LayoutKind.{(definition.IsUnion ? "Explicit" : "Sequential")}";
@@ -261,17 +287,30 @@ internal sealed partial class TypeEmitters
             .WithDocumentation(function.Documentation);
     }
 
-    private static FieldDeclarationSyntax Field(string type, string name) =>
+    private static FieldDeclarationSyntax Field(string type, string name, SyntaxKind accessibility) =>
         FieldDeclaration(VariableDeclaration(Syntax.Type(type)).WithVariables(SingletonSeparatedList(VariableDeclarator(Syntax.Identifier(name)))))
-            .WithModifiers(Syntax.Modifiers(SyntaxKind.PublicKeyword));
+            .WithModifiers(Syntax.Modifiers(accessibility));
+
+    private static string GetBufferName(string fieldName) => $"__{fieldName}_Buffer";
+
+    // "_" and the name starting with a lower-case letter, e.g. _flag for Flag, made unique among the members of the structure.
+    private static string GetBackingFieldName(string name, HashSet<string> names)
+    {
+        string candidate = "_" + char.ToLowerInvariant(name[0]) + name[1..];
+        while (!names.Add(candidate))
+        {
+            candidate += "_";
+        }
+
+        return candidate;
+    }
 
     private static StructDeclarationSyntax InlineArray(string name, string elementType, int length) =>
         StructDeclaration(Syntax.Identifier(name))
             .WithModifiers(Syntax.Modifiers(SyntaxKind.PublicKeyword))
             .WithAttributeLists(SingletonList(Syntax.AttributeList(Syntax.Attribute(
                 "global::System.Runtime.CompilerServices.InlineArray", length.ToString(CultureInfo.InvariantCulture)))))
-            .WithMembers(SingletonList<MemberDeclarationSyntax>(
-                Field(elementType, "_element0").WithModifiers(Syntax.Modifiers(SyntaxKind.PrivateKeyword))))
+            .WithMembers(SingletonList<MemberDeclarationSyntax>(Field(elementType, "_element0", SyntaxKind.PrivateKeyword)))
             .WithDocumentation($"A fixed-size buffer of {length} elements.");
 
     private static MemberDeclarationSyntax ParseMember(string text)

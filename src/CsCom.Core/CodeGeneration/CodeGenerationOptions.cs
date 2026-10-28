@@ -49,6 +49,9 @@ public sealed class CodeGenerationOptions
     /// <summary>The code generated for the event (source) interfaces.</summary>
     public EventStyle EventStyle { get; init; }
 
+    /// <summary>Whether the members of the generated structures are public fields or properties.</summary>
+    public StructProperties StructProperties { get; init; }
+
     /// <summary>The version of the tool written into the file headers.</summary>
     public string ToolVersion { get; init; } = ToolInfo.Version;
 

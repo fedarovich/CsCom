@@ -35,8 +35,8 @@ The type library can be a `.tlb` file or a `.dll`, `.ocx` or `.exe` file with an
 | `-c`, `--csharp-version <VERSION>` | The C# version. C# 14 for .NET 10 and C# 15 for .NET 11 by default; only later versions can be specified. |
 | `--single-file` | Generates all types into a single C# file instead of a file per type. |
 | `--support-code <package\|public\|internal>` | Where the support code comes from, see below. `package` by default. |
-| `--date-parameter-marshalling`, `--currency-parameter-marshalling`, `--bool-parameter-marshalling` | How `DATE`, `CURRENCY` and `VARIANT_BOOL` parameters and return values are represented: `managed` (default), `com` or `wrapper`, see [Marshalling options](#marshalling-options). |
-| `--date-field-marshalling`, `--currency-field-marshalling`, `--bool-field-marshalling` | How `DATE`, `CURRENCY` and `VARIANT_BOOL` structure fields are represented: `com` (default) or `wrapper`. |
+| `--date-marshalling`, `--currency-marshalling`, `--bool-marshalling` `<bcl\|none\|wrapper>` | How `DATE`, `CURRENCY` and `VARIANT_BOOL` parameters, return values and structure members are represented: `bcl` (default), `none` or `wrapper`, see [Marshalling options](#marshalling-options). |
+| `--struct-properties <always\|nonblittable\|never>` | Whether structure members are public fields or properties: `nonblittable` (default), `always` or `never`, see [Structures](#structures). |
 | `--safearray-marshalling <array\|sysarray\|wrapper\|none>` | How typed `SAFEARRAY(T)` parameters and return values are represented: `array` (default, `T[]`), `sysarray`, `wrapper` or `none`, see [SAFEARRAYs](#safearrays). |
 | `--event-style <events\|observable\|interface\|none>` | The code generated for the events of coclasses: `events` (default), `observable`, `interface` or `none`, see [Events](#events). |
 | `--package-source <PATH>` | An additional NuGet source with the CsCom.Runtime package. |
@@ -45,7 +45,7 @@ The type library can be a `.tlb` file or a `.dll`, `.ocx` or `.exe` file with an
 
 `new project` writes `<Name>.csproj`, a `cscom.json` file with the options it was generated with, and the C# files into the
 `Generated` folder. `update project` replaces the C# files of the `Generated` folder using the options recorded in `cscom.json`.
-It accepts `--namespace`, `--csharp-version`, `--single-file [true|false]`, the marshalling options and `--event-style` to change them. Code outside of the `Generated`
+It accepts `--namespace`, `--csharp-version`, `--single-file [true|false]`, the marshalling options, `--event-style` and `--struct-properties` to change them. Code outside of the `Generated`
 folder, e.g. partial classes, is not touched.
 
 `new assembly` generates the project in a temporary directory, builds it with `dotnet build` once per runtime identifier and copies
@@ -76,10 +76,8 @@ foreach (object? key in dictionary)                 // _NewEnum via IEnumVARIANT
 - **Coclasses** become static classes with the `Clsid` and a `Create()` method that returns the default interface.
   Coclasses whose default interface supports `IDispatch` also get `CreateDynamic()`, see [Late binding with `dynamic`](#late-binding-with-dynamic).
   Their event (`[source]`) interfaces get a handler interface and a sink class, see [Events](#events).
-- **Enums** become enums and **structs and unions** become blittable structs (`BSTR` and interface pointer fields are `nint`,
-  `VARIANT` fields are `ComVariant`, `DATE`, `CURRENCY` and `VARIANT_BOOL` fields are `double`, `long` and `short` or
-  [wrappers](#marshalling-options), `SAFEARRAY` fields are `nint` and
-  fixed-size arrays are inline arrays).
+- **Enums** become enums and **structs and unions** become structs with the layout of the COM structures, whose `DATE`,
+  `CURRENCY` and `VARIANT_BOOL` members are converted by properties, see [Structures](#structures).
 - **Modules** become static classes with `[LibraryImport]` functions and constants.
 - **Aliases** are replaced by the aliased types.
 - **Types imported from other type libraries** are generated into `<Namespace>.<LibraryName>`. The well-known OLE Automation types
@@ -151,21 +149,24 @@ field or a parameter in the `none` mode, and `Detach` gives the pointer up.
 
 ### Marshalling options
 
-How `DATE`, `CURRENCY` and `VARIANT_BOOL` values are represented can be chosen separately for parameters (and return values)
-and for structure fields, which must stay blittable:
+`--date-marshalling`, `--currency-marshalling` and `--bool-marshalling` select how `DATE`, `CURRENCY` and `VARIANT_BOOL` values are
+represented in parameters, return values and structure members:
 
-| Option value | `DATE` | `CURRENCY` | `VARIANT_BOOL` | Parameters | Fields |
-| --- | --- | --- | --- | --- | --- |
-| `managed` | `DateTime` | `decimal` | `bool` | default | n/a |
-| `com` | `double` | `long` | `short` | ✓ | default |
-| `wrapper` | `ComDate` | `ComCurrency` | `ComBool` | ✓ | ✓ |
+| Option value | `DATE` | `CURRENCY` | `VARIANT_BOOL` |
+| --- | --- | --- | --- |
+| `bcl` (default) | `DateTime` | `decimal` | `bool` |
+| `none` | `double` | `long` | `short` |
+| `wrapper` | `ComDate` | `ComCurrency` | `ComBool` |
+
+The .NET types have another layout than the COM types, so structures store `bcl` members as the COM types in private fields and
+convert them in properties; with `--struct-properties never` they are public fields of the COM types instead.
 
 `ComDate`, `ComCurrency` and `ComBool` are `readonly record struct`s from CsCom.Runtime that store the COM value in `Value`
 (an OLE Automation date, a currency value scaled by 10,000, and `VARIANT_TRUE` = -1 / `VARIANT_FALSE` = 0), so they have the
 layout of the COM types, and convert implicitly to and from `DateTime`, `decimal` and `bool`:
 
 ```csharp
-var record = new Record { Date = DateTime.Today, Money = 12.5m, Flag = true }; // with --*-field-marshalling wrapper
+var record = new Record { Date = DateTime.Today, Money = 12.5m, Flag = true }; // with the wrapper options: ComDate, ComCurrency and ComBool fields
 DateTime date = record.Date;
 ```
 
@@ -175,6 +176,30 @@ with `&&` and `||` (`if (record.Flag && !other.Flag)`). Passed to `VARIANT` para
 the wrappers become `VT_DATE`, `VT_CY` and `VT_BOOL` values. A wrapper parameter can only have its default value as a C# default
 value, so optional parameters whose default is `true` or non-zero become required. The options do not affect late-bound
 dispinterface wrappers, constants and the elements of `SAFEARRAY`s, which use the .NET types.
+
+### Structures
+
+Structures keep the layout of the COM structures, so they can be passed by pointer and by reference without marshalling. Their
+fields have the COM types: `BSTR` and interface pointers are `nint`, `VARIANT`s are `ComVariant`, `SAFEARRAY`s are `nint`,
+fixed-size arrays are inline arrays of the COM element types, and `DATE`, `CURRENCY` and `VARIANT_BOOL` members are stored as
+`double`, `long` and `short` or as the wrappers. `--struct-properties` selects how the members are exposed:
+
+| Value | Members with the COM type or a wrapper | `bcl` members (`DateTime`, `decimal`, `bool`) |
+| --- | --- | --- |
+| `nonblittable` (default) | public fields | properties that convert private fields |
+| `always` | properties over private fields | properties that convert private fields |
+| `never` | public fields | public fields of the COM types |
+
+```csharp
+// --struct-properties nonblittable (default)
+public nint Name;                       // BSTR
+private short _flag;
+public bool Flag { readonly get => _flag != 0; set => _flag = value ? (short)-1 : (short)0; }
+```
+
+With `always`, the properties return copies of nested structures and inline arrays, so `rect.TopLeft.X = 5` does not compile;
+assign a modified copy (`var topLeft = rect.TopLeft; topLeft.X = 5; rect.TopLeft = topLeft;`) or use `nonblittable` or `never`,
+which keep them as fields.
 
 ### Late binding with `dynamic`
 
@@ -266,7 +291,8 @@ The generated projects disable runtime marshalling, which source-generated COM i
 
 - Events cannot be handled through `dynamic`, and they are connected through the sink classes rather than through events of the
   COM interfaces as with TlbImp (`app.WorkbookOpen += ...`), because C# has no extension events.
-- Structure fields stay blittable, so `BSTR`, `SAFEARRAY` and interface pointer fields are raw values.
+- Structures keep the layout of the COM structures, so `BSTR`, `VARIANT`, `SAFEARRAY` and interface pointer members are raw values;
+  only `DATE`, `CURRENCY` and `VARIANT_BOOL` members are converted.
 - `SAFEARRAY`s are converted to zero-based .NET arrays of up to three dimensions; only `ComSafeArray<T>` keeps their bounds and
   supports more dimensions.
 - Types imported from other type libraries are always generated into the project; referencing other interop assemblies is not supported yet.

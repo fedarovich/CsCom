@@ -80,42 +80,32 @@ public sealed class CodeGenerationTests : VerifyBase
     }
 
     [TestMethod]
-    public Task GeneratesComParametersAndWrapperFields()
+    [DataRow(ValueMarshalling.None)]
+    [DataRow(ValueMarshalling.Wrapper)]
+    public Task GeneratesValueMarshalling(ValueMarshalling mode)
     {
+        // The default Bcl marshalling is covered by GeneratesFilePerType.
         var documents = Generate(new CodeGenerationOptions
         {
             Namespace = "Interop.CsComTest",
             ToolVersion = TestEnvironment.ToolVersion,
-            Marshalling = new MarshallingOptions
-            {
-                DateParameters = ParameterMarshalling.Com,
-                CurrencyParameters = ParameterMarshalling.Com,
-                BoolParameters = ParameterMarshalling.Com,
-                DateFields = FieldMarshalling.Wrapper,
-                CurrencyFields = FieldMarshalling.Wrapper,
-                BoolFields = FieldMarshalling.Wrapper,
-            },
+            Marshalling = new MarshallingOptions { Dates = mode, Currencies = mode, Booleans = mode },
         });
 
-        return Verify(ToTargets(documents.Where(static d => d.RelativePath is "IMarshalling.cs" or "IShape.cs" or "Record.cs")));
+        return Verify(ToTargets(documents.Where(static d => d.RelativePath is "IMarshalling.cs" or "IShape.cs" or "Record.cs")))
+            .UseParameters(mode);
     }
 
     [TestMethod]
-    public Task GeneratesWrapperParameters()
+    [DataRow(StructProperties.Always)]
+    [DataRow(StructProperties.Never)]
+    public Task GeneratesStructProperties(StructProperties mode)
     {
-        var documents = Generate(new CodeGenerationOptions
-        {
-            Namespace = "Interop.CsComTest",
-            ToolVersion = TestEnvironment.ToolVersion,
-            Marshalling = new MarshallingOptions
-            {
-                DateParameters = ParameterMarshalling.Wrapper,
-                CurrencyParameters = ParameterMarshalling.Wrapper,
-                BoolParameters = ParameterMarshalling.Wrapper,
-            },
-        });
+        // The default NonBlittable mode is covered by GeneratesFilePerType.
+        var documents = Generate(new CodeGenerationOptions { Namespace = "Interop.CsComTest", ToolVersion = TestEnvironment.ToolVersion, StructProperties = mode });
 
-        return Verify(ToTargets(documents.Where(static d => d.RelativePath is "IMarshalling.cs" or "IShape.cs" or "Record.cs")));
+        return Verify(ToTargets(documents.Where(static d => d.RelativePath is "Record.cs" or "Number.cs" or "Point.cs")))
+            .UseParameters(mode);
     }
 
     [TestMethod]

@@ -71,6 +71,7 @@ public sealed partial class ProjectGenerator
             SingleFile = request.SingleFile ?? manifest.SingleFile,
             Marshalling = request.Marshalling.Apply(manifest.Marshalling),
             EventStyle = request.EventStyle ?? manifest.EventStyle,
+            StructProperties = request.StructProperties ?? manifest.StructProperties,
         };
 
         var documents = _pipeline.GenerateCode(library, CreateCodeGenerationOptions(updated));
@@ -184,6 +185,7 @@ public sealed partial class ProjectGenerator
             SupportCode = request.SupportCode,
             Marshalling = request.Marshalling,
             EventStyle = request.EventStyle,
+            StructProperties = request.StructProperties,
         };
     }
 
@@ -196,6 +198,7 @@ public sealed partial class ProjectGenerator
         SupportCode = manifest.SupportCode,
         Marshalling = manifest.Marshalling,
         EventStyle = manifest.EventStyle,
+        StructProperties = manifest.StructProperties,
     };
 
     private static int ValidateLanguageVersion(int? languageVersion, IReadOnlyList<string> targetFrameworks)

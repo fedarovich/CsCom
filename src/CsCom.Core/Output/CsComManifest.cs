@@ -52,6 +52,10 @@ public sealed record CsComManifest
     [JsonConverter(typeof(CamelCaseEnumConverter<EventStyle>))]
     public EventStyle EventStyle { get; init; }
 
+    /// <summary>Whether the members of the generated structures are public fields or properties; <see cref="StructProperties.NonBlittable"/> when missing.</summary>
+    [JsonConverter(typeof(CamelCaseEnumConverter<StructProperties>))]
+    public StructProperties StructProperties { get; init; }
+
     /// <summary>
     /// Reads the manifest from the project directory.
     /// </summary>
@@ -88,7 +92,7 @@ public sealed record CsComManifest
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     WriteIndented = true,
     DefaultIgnoreCondition = JsonIgnoreCondition.Never,
-    Converters = [typeof(CamelCaseEnumConverter<ParameterMarshalling>), typeof(CamelCaseEnumConverter<FieldMarshalling>), typeof(CamelCaseEnumConverter<SafeArrayMarshalling>)])]
+    Converters = [typeof(CamelCaseEnumConverter<ValueMarshalling>), typeof(CamelCaseEnumConverter<SafeArrayMarshalling>)])]
 [JsonSerializable(typeof(CsComManifest))]
 internal sealed partial class CsComJsonContext : JsonSerializerContext
 {

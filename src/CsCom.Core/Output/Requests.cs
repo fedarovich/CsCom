@@ -40,6 +40,9 @@ public abstract class NewOutputRequest
     /// <summary>The code generated for the event (source) interfaces.</summary>
     public EventStyle EventStyle { get; init; }
 
+    /// <summary>Whether the members of the generated structures are public fields or properties.</summary>
+    public StructProperties StructProperties { get; init; }
+
     /// <summary>An additional NuGet package source that provides the CsCom.Runtime package.</summary>
     public string? PackageSource { get; init; }
 
@@ -91,6 +94,9 @@ public sealed class UpdateProjectRequest
 
     /// <summary>The new code generated for the event (source) interfaces.</summary>
     public EventStyle? EventStyle { get; init; }
+
+    /// <summary>Whether the members of the generated structures are public fields or properties.</summary>
+    public StructProperties? StructProperties { get; init; }
 }
 
 /// <summary>
@@ -98,23 +104,14 @@ public sealed class UpdateProjectRequest
 /// </summary>
 public sealed record MarshallingOverrides
 {
-    /// <summary>The new representation of <c>DATE</c> parameters and return values.</summary>
-    public ParameterMarshalling? DateParameters { get; init; }
+    /// <summary>The new representation of <c>DATE</c> parameters, return values and structure members.</summary>
+    public ValueMarshalling? Dates { get; init; }
 
-    /// <summary>The new representation of <c>DATE</c> structure fields.</summary>
-    public FieldMarshalling? DateFields { get; init; }
+    /// <summary>The new representation of <c>CURRENCY</c> parameters, return values and structure members.</summary>
+    public ValueMarshalling? Currencies { get; init; }
 
-    /// <summary>The new representation of <c>CURRENCY</c> parameters and return values.</summary>
-    public ParameterMarshalling? CurrencyParameters { get; init; }
-
-    /// <summary>The new representation of <c>CURRENCY</c> structure fields.</summary>
-    public FieldMarshalling? CurrencyFields { get; init; }
-
-    /// <summary>The new representation of <c>VARIANT_BOOL</c> parameters and return values.</summary>
-    public ParameterMarshalling? BoolParameters { get; init; }
-
-    /// <summary>The new representation of <c>VARIANT_BOOL</c> structure fields.</summary>
-    public FieldMarshalling? BoolFields { get; init; }
+    /// <summary>The new representation of <c>VARIANT_BOOL</c> parameters, return values and structure members.</summary>
+    public ValueMarshalling? Booleans { get; init; }
 
     /// <summary>The new representation of typed <c>SAFEARRAY(T)</c> parameters and return values.</summary>
     public SafeArrayMarshalling? SafeArrays { get; init; }
@@ -122,12 +119,9 @@ public sealed record MarshallingOverrides
     /// <summary>Applies the changes to the options.</summary>
     public MarshallingOptions Apply(MarshallingOptions options) => options with
     {
-        DateParameters = DateParameters ?? options.DateParameters,
-        DateFields = DateFields ?? options.DateFields,
-        CurrencyParameters = CurrencyParameters ?? options.CurrencyParameters,
-        CurrencyFields = CurrencyFields ?? options.CurrencyFields,
-        BoolParameters = BoolParameters ?? options.BoolParameters,
-        BoolFields = BoolFields ?? options.BoolFields,
+        Dates = Dates ?? options.Dates,
+        Currencies = Currencies ?? options.Currencies,
+        Booleans = Booleans ?? options.Booleans,
         SafeArrays = SafeArrays ?? options.SafeArrays,
     };
 }

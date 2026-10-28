@@ -4,27 +4,19 @@ namespace CsCom.CodeGeneration;
 
 /// <summary>
 /// How values of an OLE Automation type are represented in the parameters and return values of the generated COM interfaces
-/// and module functions.
+/// and module functions, and in the members of the generated structures.
 /// </summary>
-public enum ParameterMarshalling
+public enum ValueMarshalling
 {
-    /// <summary>The corresponding .NET type (<see cref="System.DateTime"/>, <see cref="decimal"/>, <see cref="bool"/>), converted by a marshaller.</summary>
-    Managed,
+    /// <summary>
+    /// The corresponding .NET type (<see cref="System.DateTime"/>, <see cref="decimal"/>, <see cref="bool"/>), converted by a marshaller.
+    /// Structures store the COM type in a private field and convert it in a property, or with <see cref="StructProperties.Never"/>
+    /// expose the COM type as a public field.
+    /// </summary>
+    Bcl,
 
-    /// <summary>The COM type as is (<see cref="double"/>, <see cref="long"/>, <see cref="short"/>), without marshalling.</summary>
-    Com,
-
-    /// <summary>The CsCom.Runtime wrapper (<c>ComDate</c>, <c>ComCurrency</c>, <c>ComBool</c>), which converts implicitly to and from the .NET type.</summary>
-    Wrapper,
-}
-
-/// <summary>
-/// How values of an OLE Automation type are represented in the fields of the generated structures, which must be blittable.
-/// </summary>
-public enum FieldMarshalling
-{
-    /// <summary>The COM type as is (<see cref="double"/>, <see cref="long"/>, <see cref="short"/>).</summary>
-    Com,
+    /// <summary>The COM type as is (<see cref="double"/>, <see cref="long"/>, <see cref="short"/>), without conversions.</summary>
+    None,
 
     /// <summary>The CsCom.Runtime wrapper (<c>ComDate</c>, <c>ComCurrency</c>, <c>ComBool</c>), which converts implicitly to and from the .NET type.</summary>
     Wrapper,
@@ -56,23 +48,14 @@ public enum SafeArrayMarshalling
 /// </summary>
 public sealed record MarshallingOptions
 {
-    /// <summary>The representation of <c>DATE</c> parameters and return values.</summary>
-    public ParameterMarshalling DateParameters { get; init; }
+    /// <summary>The representation of <c>DATE</c> parameters, return values and structure members.</summary>
+    public ValueMarshalling Dates { get; init; }
 
-    /// <summary>The representation of <c>DATE</c> structure fields.</summary>
-    public FieldMarshalling DateFields { get; init; }
+    /// <summary>The representation of <c>CURRENCY</c> parameters, return values and structure members.</summary>
+    public ValueMarshalling Currencies { get; init; }
 
-    /// <summary>The representation of <c>CURRENCY</c> parameters and return values.</summary>
-    public ParameterMarshalling CurrencyParameters { get; init; }
-
-    /// <summary>The representation of <c>CURRENCY</c> structure fields.</summary>
-    public FieldMarshalling CurrencyFields { get; init; }
-
-    /// <summary>The representation of <c>VARIANT_BOOL</c> parameters and return values.</summary>
-    public ParameterMarshalling BoolParameters { get; init; }
-
-    /// <summary>The representation of <c>VARIANT_BOOL</c> structure fields.</summary>
-    public FieldMarshalling BoolFields { get; init; }
+    /// <summary>The representation of <c>VARIANT_BOOL</c> parameters, return values and structure members.</summary>
+    public ValueMarshalling Booleans { get; init; }
 
     /// <summary>
     /// The representation of typed <c>SAFEARRAY(T)</c> parameters and return values. Late-bound dispinterface wrappers use

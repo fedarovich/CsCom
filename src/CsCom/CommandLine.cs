@@ -87,6 +87,23 @@ internal static class CommandLine
         HelpName = "events|observable|interface|none",
     };
 
+    private const string StructPropertiesDescription =
+        "Whether structure members are generated as public fields, or as properties over private fields: properties only for the members " +
+        "converted to .NET types (nonblittable), for all members (always), or none (never).";
+
+    private static readonly Option<StructProperties> StructPropertiesOption = new("--struct-properties")
+    {
+        Description = StructPropertiesDescription,
+        DefaultValueFactory = static _ => StructProperties.NonBlittable,
+        HelpName = "always|nonblittable|never",
+    };
+
+    private static readonly Option<StructProperties?> UpdateStructPropertiesOption = new("--struct-properties")
+    {
+        Description = StructPropertiesDescription + " The value recorded in cscom.json by default.",
+        HelpName = "always|nonblittable|never",
+    };
+
     private static readonly Option<string?> PackageSourceOption = new("--package-source")
     {
         Description = "An additional NuGet package source that provides the CsCom.Runtime package.",
@@ -128,6 +145,7 @@ internal static class CommandLine
                 SupportCode = result.GetValue(SupportCodeOption),
                 Marshalling = NewMarshallingOptions.GetOverrides(result).Apply(new MarshallingOptions()),
                 EventStyle = result.GetValue(EventStyleOption),
+                StructProperties = result.GetValue(StructPropertiesOption),
                 PackageSource = result.GetValue(PackageSourceOption),
             })));
 
@@ -148,6 +166,7 @@ internal static class CommandLine
                 SupportCode = result.GetValue(SupportCodeOption),
                 Marshalling = NewMarshallingOptions.GetOverrides(result).Apply(new MarshallingOptions()),
                 EventStyle = result.GetValue(EventStyleOption),
+                StructProperties = result.GetValue(StructPropertiesOption),
                 PackageSource = result.GetValue(PackageSourceOption) ?? GetBundledPackageSource(),
                 KeepTemporaryFiles = result.GetValue(KeepTempOption),
             })));
@@ -162,6 +181,7 @@ internal static class CommandLine
         };
         UpdateMarshallingOptions.AddTo(updateProject);
         updateProject.Options.Add(UpdateEventStyleOption);
+        updateProject.Options.Add(UpdateStructPropertiesOption);
         updateProject.SetAction(static result => Run(result, (pipeline, loggerFactory) =>
             new ProjectGenerator(pipeline, loggerFactory).UpdateProject(new UpdateProjectRequest
             {
@@ -172,6 +192,7 @@ internal static class CommandLine
                 SingleFile = GetSingleFile(result),
                 Marshalling = UpdateMarshallingOptions.GetOverrides(result),
                 EventStyle = result.GetValue(UpdateEventStyleOption),
+                StructProperties = result.GetValue(UpdateStructPropertiesOption),
             })));
 
         return new RootCommand("Generates COM interop code from type libraries using source-generated COM interop.")
@@ -195,6 +216,7 @@ internal static class CommandLine
         command.Options.Add(SupportCodeOption);
         NewMarshallingOptions.AddTo(command);
         command.Options.Add(EventStyleOption);
+        command.Options.Add(StructPropertiesOption);
         command.Options.Add(PackageSourceOption);
     }
 
@@ -264,42 +286,30 @@ internal static class CommandLine
     /// of the 'new' commands have default values; the options of 'update project' only override the values recorded in cscom.json.
     /// </summary>
     private sealed record MarshallingCommandOptions(
-        Option<ParameterMarshalling?> DateParameters,
-        Option<FieldMarshalling?> DateFields,
-        Option<ParameterMarshalling?> CurrencyParameters,
-        Option<FieldMarshalling?> CurrencyFields,
-        Option<ParameterMarshalling?> BoolParameters,
-        Option<FieldMarshalling?> BoolFields,
+        Option<ValueMarshalling?> Dates,
+        Option<ValueMarshalling?> Currencies,
+        Option<ValueMarshalling?> Booleans,
         Option<SafeArrayMarshalling?> SafeArrays)
     {
         public static MarshallingCommandOptions Create(bool withDefaults) => new(
-            Parameter("date", "DATE", "DateTime", "double", "ComDate", withDefaults),
-            Field("date", "DATE", "double", "ComDate", withDefaults),
-            Parameter("currency", "CURRENCY", "decimal", "long", "ComCurrency", withDefaults),
-            Field("currency", "CURRENCY", "long", "ComCurrency", withDefaults),
-            Parameter("bool", "VARIANT_BOOL", "bool", "short", "ComBool", withDefaults),
-            Field("bool", "VARIANT_BOOL", "short", "ComBool", withDefaults),
+            Value("date", "DATE", "DateTime", "double", "ComDate", withDefaults),
+            Value("currency", "CURRENCY", "decimal", "long", "ComCurrency", withDefaults),
+            Value("bool", "VARIANT_BOOL", "bool", "short", "ComBool", withDefaults),
             SafeArray(withDefaults));
 
         public void AddTo(Command command)
         {
-            command.Options.Add(DateParameters);
-            command.Options.Add(DateFields);
-            command.Options.Add(CurrencyParameters);
-            command.Options.Add(CurrencyFields);
-            command.Options.Add(BoolParameters);
-            command.Options.Add(BoolFields);
+            command.Options.Add(Dates);
+            command.Options.Add(Currencies);
+            command.Options.Add(Booleans);
             command.Options.Add(SafeArrays);
         }
 
         public MarshallingOverrides GetOverrides(ParseResult result) => new()
         {
-            DateParameters = result.GetValue(DateParameters),
-            DateFields = result.GetValue(DateFields),
-            CurrencyParameters = result.GetValue(CurrencyParameters),
-            CurrencyFields = result.GetValue(CurrencyFields),
-            BoolParameters = result.GetValue(BoolParameters),
-            BoolFields = result.GetValue(BoolFields),
+            Dates = result.GetValue(Dates),
+            Currencies = result.GetValue(Currencies),
+            Booleans = result.GetValue(Booleans),
             SafeArrays = result.GetValue(SafeArrays),
         };
 
@@ -320,33 +330,18 @@ internal static class CommandLine
             return option;
         }
 
-        private static Option<ParameterMarshalling?> Parameter(string name, string type, string managed, string com, string wrapper, bool withDefaults)
+        private static Option<ValueMarshalling?> Value(string name, string type, string bcl, string none, string wrapper, bool withDefaults)
         {
-            var option = new Option<ParameterMarshalling?>($"--{name}-parameter-marshalling")
+            var option = new Option<ValueMarshalling?>($"--{name}-marshalling")
             {
-                Description = $"How {type} parameters and return values are represented: managed ({managed}), com ({com}) or wrapper ({wrapper}).",
-                HelpName = "managed|com|wrapper",
+                Description = $"How {type} parameters, return values and structure members are represented: bcl ({bcl}), none ({none}) or wrapper ({wrapper}). " +
+                    $"With '--struct-properties never', bcl structure members are {none}.",
+                HelpName = "bcl|none|wrapper",
             };
 
             if (withDefaults)
             {
-                option.DefaultValueFactory = static _ => ParameterMarshalling.Managed;
-            }
-
-            return option;
-        }
-
-        private static Option<FieldMarshalling?> Field(string name, string type, string com, string wrapper, bool withDefaults)
-        {
-            var option = new Option<FieldMarshalling?>($"--{name}-field-marshalling")
-            {
-                Description = $"How {type} structure fields are represented: com ({com}) or wrapper ({wrapper}).",
-                HelpName = "com|wrapper",
-            };
-
-            if (withDefaults)
-            {
-                option.DefaultValueFactory = static _ => FieldMarshalling.Com;
+                option.DefaultValueFactory = static _ => ValueMarshalling.Bcl;
             }
 
             return option;

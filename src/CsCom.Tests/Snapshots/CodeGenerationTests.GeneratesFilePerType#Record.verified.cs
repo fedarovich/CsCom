@@ -14,7 +14,9 @@ public unsafe partial struct Record
 
     public global::System.Runtime.InteropServices.Marshalling.ComVariant Value;
 
-    public short Flag;
+    private short _flag;
+
+    public bool Flag { readonly get => _flag != 0; set => _flag = value ? (short)-1 : (short)0; }
 
     public nint Unknown;
 
@@ -53,9 +55,13 @@ public unsafe partial struct Record
 
     public global::System.Guid Id;
 
-    public double Date;
+    private double _date;
 
-    public long Money;
+    public global::System.DateTime Date { readonly get => global::CsCom.Runtime.DateMarshaller.ConvertToManaged(_date); set => _date = global::CsCom.Runtime.DateMarshaller.ConvertToUnmanaged(value); }
+
+    private long _money;
+
+    public decimal Money { readonly get => global::CsCom.Runtime.CurrencyMarshaller.ConvertToManaged(_money); set => _money = global::CsCom.Runtime.CurrencyMarshaller.ConvertToUnmanaged(value); }
 
     public decimal Amount;
 

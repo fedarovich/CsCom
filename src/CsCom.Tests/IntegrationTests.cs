@@ -16,30 +16,32 @@ public sealed class IntegrationTests
     private readonly InteropPipeline _pipeline = new();
 
     [TestMethod]
-    [DataRow(SupportCodeMode.Package, false, "default", EventStyle.Events)]
-    [DataRow(SupportCodeMode.Public, false, "default", EventStyle.Events)]
-    [DataRow(SupportCodeMode.Internal, true, "default", EventStyle.Events)]
-    [DataRow(SupportCodeMode.Package, false, "com", EventStyle.Events)]
-    [DataRow(SupportCodeMode.Internal, false, "wrapper", EventStyle.Events)]
-    [DataRow(SupportCodeMode.Public, true, "default", EventStyle.Observable)]
-    [DataRow(SupportCodeMode.Internal, false, "wrapper", EventStyle.Interface)]
-    [DataRow(SupportCodeMode.Package, false, "default", EventStyle.None)]
-    [DataRow(SupportCodeMode.Package, false, "safearray-sysarray", EventStyle.Events)]
-    [DataRow(SupportCodeMode.Internal, true, "safearray-wrapper", EventStyle.Events)]
-    [DataRow(SupportCodeMode.Public, false, "safearray-none", EventStyle.Events)]
-    public void GeneratedTestProjectBuildsWithoutWarnings(SupportCodeMode supportCode, bool singleFile, string marshalling, EventStyle eventStyle)
+    [DataRow(SupportCodeMode.Package, false, "default", EventStyle.Events, StructProperties.NonBlittable)]
+    [DataRow(SupportCodeMode.Public, false, "default", EventStyle.Events, StructProperties.NonBlittable)]
+    [DataRow(SupportCodeMode.Internal, true, "default", EventStyle.Events, StructProperties.NonBlittable)]
+    [DataRow(SupportCodeMode.Package, false, "none", EventStyle.Events, StructProperties.NonBlittable)]
+    [DataRow(SupportCodeMode.Internal, false, "wrapper", EventStyle.Events, StructProperties.NonBlittable)]
+    [DataRow(SupportCodeMode.Public, true, "default", EventStyle.Observable, StructProperties.NonBlittable)]
+    [DataRow(SupportCodeMode.Internal, false, "wrapper", EventStyle.Interface, StructProperties.NonBlittable)]
+    [DataRow(SupportCodeMode.Package, false, "default", EventStyle.None, StructProperties.NonBlittable)]
+    [DataRow(SupportCodeMode.Package, false, "safearray-sysarray", EventStyle.Events, StructProperties.NonBlittable)]
+    [DataRow(SupportCodeMode.Internal, true, "safearray-wrapper", EventStyle.Events, StructProperties.NonBlittable)]
+    [DataRow(SupportCodeMode.Public, false, "safearray-none", EventStyle.Events, StructProperties.NonBlittable)]
+    [DataRow(SupportCodeMode.Public, false, "default", EventStyle.Events, StructProperties.Always)]
+    [DataRow(SupportCodeMode.Internal, true, "wrapper", EventStyle.Events, StructProperties.Never)]
+    public void GeneratedTestProjectBuildsWithoutWarnings(SupportCodeMode supportCode, bool singleFile, string marshalling, EventStyle eventStyle, StructProperties structProperties)
     {
-        string directory = TestEnvironment.CreateDirectory($"build-{supportCode}-{marshalling}-{eventStyle}");
+        string directory = TestEnvironment.CreateDirectory($"build-{supportCode}-{marshalling}-{eventStyle}-{structProperties}");
         var options = marshalling switch
         {
-            "com" => new MarshallingOptions { DateParameters = ParameterMarshalling.Com, CurrencyParameters = ParameterMarshalling.Com, BoolParameters = ParameterMarshalling.Com },
+            "none" => new MarshallingOptions { Dates = ValueMarshalling.None, Currencies = ValueMarshalling.None, Booleans = ValueMarshalling.None },
             "wrapper" => AllWrappers,
             "safearray-sysarray" => new MarshallingOptions { SafeArrays = SafeArrayMarshalling.SysArray },
             "safearray-wrapper" => AllWrappers with { SafeArrays = SafeArrayMarshalling.Wrapper },
             "safearray-none" => new MarshallingOptions { SafeArrays = SafeArrayMarshalling.None },
             _ => new MarshallingOptions(),
         };
-        string project = CreateProject(TestEnvironment.TestTypeLibrary, directory, supportCode, singleFile, options, eventStyle);
+        string project = CreateProject(TestEnvironment.TestTypeLibrary, directory, supportCode, singleFile, options, eventStyle, structProperties);
 
         Build(project);
     }
@@ -321,15 +323,18 @@ public sealed class IntegrationTests
         program = program
             .Replace("__DATE__", wrappers ? "ComDate" : "DateTime", StringComparison.Ordinal)
             .Replace("__CURRENCY__", wrappers ? "ComCurrency" : "decimal", StringComparison.Ordinal)
-            .Replace("__RECORD__", wrappers
-                ? """
-                  var record = new Record { Date = date, Money = 12.5m, Flag = true };
-                  DateTime recordDate = record.Date;
-                  decimal recordMoney = record.Money;
-                  bool recordFlag = record.Flag;
-                  Console.WriteLine($"Record={recordDate:yyyy-MM-dd}|{recordMoney:0.##}|{recordFlag}|{record.Flag.Value}");
-                  """
-                : string.Empty, StringComparison.Ordinal);
+            .Replace("__RECORD__", """
+                // The members of the structure are wrapper fields, or properties that convert private fields of the COM types.
+                var record = new Record { Date = date, Money = 12.5m, Flag = true };
+                DateTime recordDate = record.Date;
+                decimal recordMoney = record.Money;
+                bool recordFlag = record.Flag;
+                Console.WriteLine($"Record={recordDate:yyyy-MM-dd}|{recordMoney:0.##}|{recordFlag}|{__FLAG_VALUE__}");
+                """, StringComparison.Ordinal)
+            .Replace("__FLAG_VALUE__", wrappers
+                ? "record.Flag.Value"
+                : "(short)typeof(Record).GetField(\"_flag\", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.GetValue(record)!",
+                StringComparison.Ordinal);
         var output = RunConsumer(root, interop, program, allowUnsafe: true);
 
         string[] expected =
@@ -346,7 +351,7 @@ public sealed class IntegrationTests
             "Unknowns=True|True",
             "Calculators=True|5",
             "Dispatches=2",
-            .. wrappers ? ["Record=2024-02-29|12.5|True|-1"] : Array.Empty<string>(),
+            "Record=2024-02-29|12.5|True|-1",
         ];
         CollectionAssert.IsSubsetOf(
             expected,
@@ -907,12 +912,9 @@ public sealed class IntegrationTests
 
     private static readonly MarshallingOptions AllWrappers = new()
     {
-        DateParameters = ParameterMarshalling.Wrapper,
-        DateFields = FieldMarshalling.Wrapper,
-        CurrencyParameters = ParameterMarshalling.Wrapper,
-        CurrencyFields = FieldMarshalling.Wrapper,
-        BoolParameters = ParameterMarshalling.Wrapper,
-        BoolFields = FieldMarshalling.Wrapper,
+        Dates = ValueMarshalling.Wrapper,
+        Currencies = ValueMarshalling.Wrapper,
+        Booleans = ValueMarshalling.Wrapper,
     };
 
     private string CreateProject(
@@ -921,7 +923,8 @@ public sealed class IntegrationTests
         SupportCodeMode supportCode,
         bool singleFile,
         MarshallingOptions? marshalling = null,
-        EventStyle eventStyle = EventStyle.Events) =>
+        EventStyle eventStyle = EventStyle.Events,
+        StructProperties structProperties = StructProperties.NonBlittable) =>
         new ProjectGenerator(_pipeline).CreateProject(new NewProjectRequest
         {
             TypeLibraryPath = typeLibrary,
@@ -930,6 +933,7 @@ public sealed class IntegrationTests
             SingleFile = singleFile,
             Marshalling = marshalling ?? new MarshallingOptions(),
             EventStyle = eventStyle,
+            StructProperties = structProperties,
             PackageSource = TestEnvironment.LocalPackages,
             GlobalPackagesFolder = TestEnvironment.GlobalPackagesFolder,
         });
