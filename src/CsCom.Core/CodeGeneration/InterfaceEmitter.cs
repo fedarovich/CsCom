@@ -84,6 +84,29 @@ internal sealed partial class InterfaceEmitter
         }
     }
 
+    /// <summary>
+    /// Gets the vtable slots of the interface that are not described by the type library, for which <see cref="Emit"/> emits placeholders.
+    /// </summary>
+    public static List<int> GetVtableGaps(InterfaceDefinition definition)
+    {
+        var gaps = new List<int>();
+        int slot = definition.BaseVtableSlots;
+        foreach (var method in definition.Methods)
+        {
+            for (; method.VtableSlot >= 0 && slot < method.VtableSlot; slot++)
+            {
+                gaps.Add(slot);
+            }
+
+            slot = Math.Max(slot, method.VtableSlot + 1);
+        }
+
+        return gaps;
+    }
+
+    /// <summary>The name of the placeholder method of a vtable slot.</summary>
+    public static string GetPlaceholderName(int slot) => $"_VtblGap{slot}";
+
     private string? GetBaseType(InterfaceDefinition definition, string @namespace) => definition.BaseInterface switch
     {
         null => null,
@@ -94,7 +117,7 @@ internal sealed partial class InterfaceEmitter
     };
 
     private static MethodDeclarationSyntax Placeholder(int slot) =>
-        MethodDeclaration(Syntax.Type("int"), Syntax.Identifier($"_VtblGap{slot}"))
+        MethodDeclaration(Syntax.Type("int"), Syntax.Identifier(GetPlaceholderName(slot)))
             .WithAttributeLists(SingletonList(Syntax.AttributeList(Syntax.Attribute($"{Syntax.InteropNamespace}.PreserveSig"))))
             .WithSemicolonToken(Token(SyntaxKind.SemicolonToken))
             .WithDocumentation($"A placeholder for the vtable slot {slot}, which is not described by the type library. Do not call it.");

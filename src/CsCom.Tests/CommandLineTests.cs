@@ -72,6 +72,23 @@ public sealed class CommandLineTests
     }
 
     [TestMethod]
+    public void EventStyleHasADefaultAndCanBeOverridden()
+    {
+        string directory = TestEnvironment.CreateDirectory("cli-events");
+
+        Assert.AreEqual(0, Run("new", "project", TestEnvironment.TestTypeLibrary, "-o", directory, "-v", "quiet"));
+        Assert.AreEqual(CodeGeneration.EventStyle.Events, CsComManifest.Read(directory).EventStyle);
+
+        Assert.AreEqual(0, Run("update", "project", TestEnvironment.TestTypeLibrary, "-o", directory, "--event-style", "interface", "-v", "quiet"));
+        Assert.AreEqual(CodeGeneration.EventStyle.Interface, CsComManifest.Read(directory).EventStyle);
+
+        Assert.AreEqual(0, Run("update", "project", TestEnvironment.TestTypeLibrary, "-o", directory, "-v", "quiet"));
+        Assert.AreEqual(CodeGeneration.EventStyle.Interface, CsComManifest.Read(directory).EventStyle);
+
+        Assert.AreNotEqual(0, Run("new", "project", TestEnvironment.TestTypeLibrary, "--event-style", "delegates"));
+    }
+
+    [TestMethod]
     public void RejectsInvalidMarshallingOptions()
     {
         Assert.AreNotEqual(0, Run("new", "project", TestEnvironment.TestTypeLibrary, "--date-field-marshalling", "managed"));

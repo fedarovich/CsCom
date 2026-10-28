@@ -70,6 +70,7 @@ public sealed partial class ProjectGenerator
             LanguageVersion = languageVersion,
             SingleFile = request.SingleFile ?? manifest.SingleFile,
             Marshalling = request.Marshalling.Apply(manifest.Marshalling),
+            EventStyle = request.EventStyle ?? manifest.EventStyle,
         };
 
         var documents = _pipeline.GenerateCode(library, CreateCodeGenerationOptions(updated));
@@ -182,6 +183,7 @@ public sealed partial class ProjectGenerator
             SingleFile = request.SingleFile,
             SupportCode = request.SupportCode,
             Marshalling = request.Marshalling,
+            EventStyle = request.EventStyle,
         };
     }
 
@@ -193,6 +195,7 @@ public sealed partial class ProjectGenerator
         SingleFileName = manifest.Name + ".cs",
         SupportCode = manifest.SupportCode,
         Marshalling = manifest.Marshalling,
+        EventStyle = manifest.EventStyle,
     };
 
     private static int ValidateLanguageVersion(int? languageVersion, IReadOnlyList<string> targetFrameworks)

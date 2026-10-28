@@ -1,5 +1,6 @@
 using System;
 using System.Runtime.InteropServices;
+using System.Runtime.InteropServices.Marshalling;
 
 namespace CsCom.Runtime;
 
@@ -7,7 +8,9 @@ internal static unsafe partial class OleNativeMethods
 {
     public const int S_OK = 0;
     public const int S_FALSE = 1;
+    public const int E_NOTIMPL = unchecked((int)0x80004001);
     public const int E_NOINTERFACE = unchecked((int)0x80004002);
+    public const int CONNECT_E_NOCONNECTION = unchecked((int)0x80040200);
     public const int CO_E_NOTINITIALIZED = unchecked((int)0x800401F0);
     public const int DISP_E_EXCEPTION = unchecked((int)0x80020009);
     public const int DISP_E_PARAMNOTFOUND = unchecked((int)0x80020004);
@@ -19,6 +22,7 @@ internal static unsafe partial class OleNativeMethods
 
     public static readonly Guid IID_IUnknown = new(0x00000000, 0x0000, 0x0000, 0xC0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46);
     public static readonly Guid IID_IDispatch = new(0x00020400, 0x0000, 0x0000, 0xC0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46);
+    public static readonly Guid IID_IConnectionPointContainer = new(0xB196B284, 0xBAB4, 0x101A, 0xB6, 0x9C, 0x00, 0xAA, 0x00, 0x34, 0x1D, 0x07);
 
     [LibraryImport("ole32.dll")]
     public static partial int CoCreateInstance(in Guid rclsid, void* pUnkOuter, uint dwClsContext, in Guid riid, out void* ppv);
@@ -52,4 +56,13 @@ internal static unsafe partial class OleNativeMethods
 
     [LibraryImport("oleaut32.dll")]
     public static partial int SafeArrayDestroy(nint psa);
+
+    [LibraryImport("oleaut32.dll")]
+    public static partial int VariantChangeType(ComVariant* pvargDest, ComVariant* pvarSrc, ushort wFlags, ushort vt);
+
+    [LibraryImport("oleaut32.dll")]
+    public static partial int VariantCopyInd(ComVariant* pvarDest, ComVariant* pvargSrc);
+
+    [LibraryImport("oleaut32.dll")]
+    public static partial int VariantClear(ComVariant* pvarg);
 }

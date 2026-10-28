@@ -257,6 +257,239 @@ namespace Interop.CsComTest
     }
 
     /// <summary>
+    /// Handles the events of the DShapeEvents event interface. The methods do nothing by default, so only the events of interest have to be implemented.
+    /// </summary>
+    public partial interface IDShapeEventsHandler
+    {
+        void Changed(string? property)
+        {
+        }
+
+        int Compute(int a, object? b) => default;
+
+        void Resize(ref int width, out int height)
+        {
+            height = default;
+        }
+
+        IShape? GetShape() => default;
+
+        string?[]? Names() => default;
+
+        DShapeEvents? Self() => default;
+
+        void Create_()
+        {
+        }
+    }
+
+    /// <summary>
+    /// Represents the method that handles the Changed event of the DShapeEvents event interface.
+    /// </summary>
+    public delegate void DShapeEvents_ChangedEventHandler(string? property);
+
+    /// <summary>
+    /// Represents the method that handles the Compute event of the DShapeEvents event interface.
+    /// </summary>
+    public delegate int DShapeEvents_ComputeEventHandler(int a, object? b);
+
+    /// <summary>
+    /// Represents the method that handles the Resize event of the DShapeEvents event interface.
+    /// </summary>
+    public delegate void DShapeEvents_ResizeEventHandler(ref int width, out int height);
+
+    /// <summary>
+    /// Represents the method that handles the GetShape event of the DShapeEvents event interface.
+    /// </summary>
+    public delegate IShape? DShapeEvents_GetShapeEventHandler();
+
+    /// <summary>
+    /// Represents the method that handles the Names event of the DShapeEvents event interface.
+    /// </summary>
+    public delegate string?[]? DShapeEvents_NamesEventHandler();
+
+    /// <summary>
+    /// Represents the method that handles the Self event of the DShapeEvents event interface.
+    /// </summary>
+    public delegate DShapeEvents? DShapeEvents_SelfEventHandler();
+
+    /// <summary>
+    /// Represents the method that handles the Create event of the DShapeEvents event interface.
+    /// </summary>
+    public delegate void DShapeEvents_Create_EventHandler();
+
+    /// <summary>
+    /// Connects to the DShapeEvents events of a COM object and raises them as .NET events. Dispose the sink to disconnect it.
+    /// </summary>
+    public sealed partial class DShapeEventsSink : IDShapeEventsHandler, global::System.IDisposable
+    {
+        /// <summary>
+        /// The interface identifier (IID) of the DShapeEvents event interface.
+        /// </summary>
+        public static readonly global::System.Guid Iid = new("6B1F2D2A-4C1E-4B71-9D0B-7B7C2E0A1013");
+
+        private readonly global::CsCom.Runtime.EventConnection __connection;
+
+        /// <summary>
+        /// Connects the sink to the DShapeEvents events of a COM object.
+        /// </summary>
+        /// <param name="source">The COM object that raises the events.</param>
+        public DShapeEventsSink(object source)
+        {
+            __connection = Connect(source, this);
+        }
+
+        /// <summary>
+        /// Occurs when the COM object raises the Changed event.
+        /// </summary>
+        public event DShapeEvents_ChangedEventHandler? Changed;
+
+        /// <summary>
+        /// Occurs when the COM object raises the Compute event.
+        /// </summary>
+        public event DShapeEvents_ComputeEventHandler? Compute;
+
+        /// <summary>
+        /// Occurs when the COM object raises the Resize event.
+        /// </summary>
+        public event DShapeEvents_ResizeEventHandler? Resize;
+
+        /// <summary>
+        /// Occurs when the COM object raises the GetShape event.
+        /// </summary>
+        public event DShapeEvents_GetShapeEventHandler? GetShape;
+
+        /// <summary>
+        /// Occurs when the COM object raises the Names event.
+        /// </summary>
+        public event DShapeEvents_NamesEventHandler? Names;
+
+        /// <summary>
+        /// Occurs when the COM object raises the Self event.
+        /// </summary>
+        public event DShapeEvents_SelfEventHandler? Self;
+
+        /// <summary>
+        /// Occurs when the COM object raises the Create event.
+        /// </summary>
+        public event DShapeEvents_Create_EventHandler? Create_;
+
+        /// <summary>
+        /// Disconnects the sink from the events.
+        /// </summary>
+        public void Dispose()
+        {
+            __connection.Dispose();
+        }
+
+        /// <summary>
+        /// Connects a handler to the DShapeEvents events of a COM object.
+        /// </summary>
+        /// <param name="source">The COM object that raises the events.</param>
+        /// <param name="handler">The handler of the events.</param>
+        /// <returns>The connection, which must be disposed to disconnect the handler.</returns>
+        public static global::CsCom.Runtime.EventConnection Connect(object source, IDShapeEventsHandler handler)
+        {
+            global::System.ArgumentNullException.ThrowIfNull(handler);
+            return global::CsCom.Runtime.EventConnection.AdviseDispatch(source, Iid, new DispatchHandler(handler));
+        }
+
+        void IDShapeEventsHandler.Changed(string? property) => this.Changed?.Invoke(property);
+
+        int IDShapeEventsHandler.Compute(int a, object? b) => this.Compute is { } __handler ? __handler(a, b) : default;
+
+        void IDShapeEventsHandler.Resize(ref int width, out int height)
+        {
+            if (this.Resize is { } __handler)
+            {
+                __handler(ref width, out height);
+                return;
+            }
+
+            height = default;
+        }
+
+        IShape? IDShapeEventsHandler.GetShape() => this.GetShape is { } __handler ? __handler() : default;
+
+        string?[]? IDShapeEventsHandler.Names() => this.Names is { } __handler ? __handler() : default;
+
+        DShapeEvents? IDShapeEventsHandler.Self() => this.Self is { } __handler ? __handler() : default;
+
+        void IDShapeEventsHandler.Create_() => this.Create_?.Invoke();
+
+        /// <summary>
+        /// Passes the events raised through IDispatch::Invoke to the handler.
+        /// </summary>
+        private sealed class DispatchHandler : global::CsCom.Runtime.IDispatchEventHandler
+        {
+            private readonly IDShapeEventsHandler __handler;
+
+            public DispatchHandler(IDShapeEventsHandler handler)
+            {
+                __handler = handler;
+            }
+
+            public bool Invoke(int dispId, global::CsCom.Runtime.EventArguments arguments)
+            {
+                switch (dispId)
+                {
+                    case 10:
+                    {
+                        __handler.Changed(arguments.Get<string?>(0));
+                        return true;
+                    }
+
+                    case 11:
+                    {
+                        var __result = __handler.Compute(arguments.Get<int>(0), arguments.Get<object?>(1));
+                        arguments.SetResult(__result);
+                        return true;
+                    }
+
+                    case 12:
+                    {
+                        var __a0 = arguments.Get<int>(0);
+                        __handler.Resize(ref __a0, out var __a1);
+                        arguments.Set(0, __a0);
+                        arguments.Set(1, __a1);
+                        return true;
+                    }
+
+                    case 15:
+                    {
+                        var __result = __handler.GetShape();
+                        arguments.SetResult(__result);
+                        return true;
+                    }
+
+                    case 16:
+                    {
+                        var __result = __handler.Names();
+                        arguments.SetResult(__result);
+                        return true;
+                    }
+
+                    case 17:
+                    {
+                        var __result = __handler.Self();
+                        arguments.SetResult(__result);
+                        return true;
+                    }
+
+                    case 18:
+                    {
+                        __handler.Create_();
+                        return true;
+                    }
+
+                    default:
+                        return false;
+                }
+            }
+        }
+    }
+
+    /// <summary>
     /// A vtable interface
     /// </summary>
     [global::System.Runtime.InteropServices.Marshalling.GeneratedComInterface(StringMarshalling = global::System.Runtime.InteropServices.StringMarshalling.Custom, StringMarshallingCustomType = typeof(global::System.Runtime.InteropServices.Marshalling.BStrStringMarshaller))]
@@ -368,6 +601,637 @@ namespace Interop.CsComTest
     }
 
     /// <summary>
+    /// The events of a shape, raised through IDispatch::Invoke
+    /// </summary>
+    [global::System.Runtime.InteropServices.Marshalling.NativeMarshalling(typeof(global::CsCom.Runtime.DispatchWrapperMarshaller<_ShapeEvents>))]
+    public sealed partial class _ShapeEvents : global::CsCom.Runtime.DispatchObject, global::CsCom.Runtime.IDispatchWrapper<_ShapeEvents>
+    {
+        /// <summary>
+        /// The interface identifier (IID) of the _ShapeEvents dispinterface.
+        /// </summary>
+        public static readonly global::System.Guid Iid = new("6B1F2D2A-4C1E-4B71-9D0B-7B7C2E0A1015");
+
+        private _ShapeEvents(global::CsCom.Runtime.IDispatch dispatch) : base(dispatch)
+        {
+        }
+
+        /// <summary>
+        /// Creates a late-bound wrapper for the specified IDispatch interface.
+        /// </summary>
+        /// <param name="dispatch">The IDispatch interface of the object.</param>
+        public static _ShapeEvents Create(global::CsCom.Runtime.IDispatch dispatch) => new(dispatch);
+
+        /// <summary>
+        /// The shape was moved
+        /// </summary>
+        public void Moved(int X, int Y) => InvokeMethod(1, X, Y);
+
+        public void Closing(ref bool Cancel)
+        {
+            object?[] __args = [Cancel];
+            InvokeMethodByRef(2, __args, [true]);
+            Cancel = global::System.Convert.ToBoolean(__args[0]);
+        }
+
+        public void Renamed(string? Name) => InvokeMethod(3, Name);
+
+        public string? Describe(object? Value, out int length)
+        {
+            object?[] __args = [Value, null];
+            object? __result = InvokeMethodByRef(4, __args, [false, true]);
+            length = global::System.Convert.ToInt32(__args[1]);
+            return (string?)__result;
+        }
+    }
+
+    /// <summary>
+    /// Handles the events of the _ShapeEvents event interface. The methods do nothing by default, so only the events of interest have to be implemented.
+    /// </summary>
+    public partial interface _ShapeEventsHandler
+    {
+        /// <summary>
+        /// The shape was moved
+        /// </summary>
+        void Moved(int X, int Y)
+        {
+        }
+
+        void Closing(ref bool Cancel)
+        {
+        }
+
+        void Renamed(string? Name)
+        {
+        }
+
+        string? Describe(object? Value, out int length)
+        {
+            length = default;
+            return default;
+        }
+    }
+
+    /// <summary>
+    /// Represents the method that handles the Moved event of the _ShapeEvents event interface.
+    /// </summary>
+    public delegate void _ShapeEvents_MovedEventHandler(int X, int Y);
+
+    /// <summary>
+    /// Represents the method that handles the Closing event of the _ShapeEvents event interface.
+    /// </summary>
+    public delegate void _ShapeEvents_ClosingEventHandler(ref bool Cancel);
+
+    /// <summary>
+    /// Represents the method that handles the Renamed event of the _ShapeEvents event interface.
+    /// </summary>
+    public delegate void _ShapeEvents_RenamedEventHandler(string? Name);
+
+    /// <summary>
+    /// Represents the method that handles the Describe event of the _ShapeEvents event interface.
+    /// </summary>
+    public delegate string? _ShapeEvents_DescribeEventHandler(object? Value, out int length);
+
+    /// <summary>
+    /// Connects to the _ShapeEvents events of a COM object and raises them as .NET events. Dispose the sink to disconnect it.
+    /// </summary>
+    public sealed partial class _ShapeEventsSink : _ShapeEventsHandler, global::System.IDisposable
+    {
+        /// <summary>
+        /// The interface identifier (IID) of the _ShapeEvents event interface.
+        /// </summary>
+        public static readonly global::System.Guid Iid = new("6B1F2D2A-4C1E-4B71-9D0B-7B7C2E0A1015");
+
+        private readonly global::CsCom.Runtime.EventConnection __connection;
+
+        /// <summary>
+        /// Connects the sink to the _ShapeEvents events of a COM object.
+        /// </summary>
+        /// <param name="source">The COM object that raises the events.</param>
+        public _ShapeEventsSink(object source)
+        {
+            __connection = Connect(source, this);
+        }
+
+        /// <summary>
+        /// The shape was moved
+        /// </summary>
+        public event _ShapeEvents_MovedEventHandler? Moved;
+
+        /// <summary>
+        /// Occurs when the COM object raises the Closing event.
+        /// </summary>
+        public event _ShapeEvents_ClosingEventHandler? Closing;
+
+        /// <summary>
+        /// Occurs when the COM object raises the Renamed event.
+        /// </summary>
+        public event _ShapeEvents_RenamedEventHandler? Renamed;
+
+        /// <summary>
+        /// Occurs when the COM object raises the Describe event.
+        /// </summary>
+        public event _ShapeEvents_DescribeEventHandler? Describe;
+
+        /// <summary>
+        /// Disconnects the sink from the events.
+        /// </summary>
+        public void Dispose()
+        {
+            __connection.Dispose();
+        }
+
+        /// <summary>
+        /// Connects a handler to the _ShapeEvents events of a COM object.
+        /// </summary>
+        /// <param name="source">The COM object that raises the events.</param>
+        /// <param name="handler">The handler of the events.</param>
+        /// <returns>The connection, which must be disposed to disconnect the handler.</returns>
+        public static global::CsCom.Runtime.EventConnection Connect(object source, _ShapeEventsHandler handler)
+        {
+            global::System.ArgumentNullException.ThrowIfNull(handler);
+            return global::CsCom.Runtime.EventConnection.AdviseDispatch(source, Iid, new DispatchHandler(handler));
+        }
+
+        void _ShapeEventsHandler.Moved(int X, int Y) => this.Moved?.Invoke(X, Y);
+
+        void _ShapeEventsHandler.Closing(ref bool Cancel) => this.Closing?.Invoke(ref Cancel);
+
+        void _ShapeEventsHandler.Renamed(string? Name) => this.Renamed?.Invoke(Name);
+
+        string? _ShapeEventsHandler.Describe(object? Value, out int length)
+        {
+            if (this.Describe is { } __handler)
+            {
+                return __handler(Value, out length);
+            }
+
+            length = default;
+            return default;
+        }
+
+        /// <summary>
+        /// Passes the events raised through IDispatch::Invoke to the handler.
+        /// </summary>
+        private sealed class DispatchHandler : global::CsCom.Runtime.IDispatchEventHandler
+        {
+            private readonly _ShapeEventsHandler __handler;
+
+            public DispatchHandler(_ShapeEventsHandler handler)
+            {
+                __handler = handler;
+            }
+
+            public bool Invoke(int dispId, global::CsCom.Runtime.EventArguments arguments)
+            {
+                switch (dispId)
+                {
+                    case 1:
+                    {
+                        __handler.Moved(arguments.Get<int>(0), arguments.Get<int>(1));
+                        return true;
+                    }
+
+                    case 2:
+                    {
+                        var __a0 = arguments.Get<bool>(0);
+                        __handler.Closing(ref __a0);
+                        arguments.Set(0, __a0);
+                        return true;
+                    }
+
+                    case 3:
+                    {
+                        __handler.Renamed(arguments.Get<string?>(0));
+                        return true;
+                    }
+
+                    case 4:
+                    {
+                        var __result = __handler.Describe(arguments.Get<object?>(0), out var __a1);
+                        arguments.Set(1, __a1);
+                        arguments.SetResult(__result);
+                        return true;
+                    }
+
+                    default:
+                        return false;
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// The events of a shape, raised through the vtable
+    /// </summary>
+    [global::System.Runtime.InteropServices.Marshalling.GeneratedComInterface(StringMarshalling = global::System.Runtime.InteropServices.StringMarshalling.Custom, StringMarshallingCustomType = typeof(global::System.Runtime.InteropServices.Marshalling.BStrStringMarshaller))]
+    [global::System.Runtime.InteropServices.Guid("6B1F2D2A-4C1E-4B71-9D0B-7B7C2E0A1016")]
+    public partial interface IShapeEventsVt
+    {
+        /// <summary>
+        /// The shape was moved
+        /// </summary>
+        void Moved(int X, int Y);
+
+        void Closing([global::System.Runtime.InteropServices.MarshalAs(global::System.Runtime.InteropServices.UnmanagedType.VariantBool)] ref bool Cancel);
+
+        void Renamed(string? Name);
+
+        string? Describe([global::System.Runtime.InteropServices.Marshalling.MarshalUsing(typeof(global::CsCom.Runtime.VariantMarshaller))] object? Value, out int length);
+    }
+
+    /// <summary>
+    /// Handles the events of the IShapeEventsVt event interface. The methods do nothing by default, so only the events of interest have to be implemented.
+    /// </summary>
+    public partial interface IShapeEventsVtHandler
+    {
+        /// <summary>
+        /// The shape was moved
+        /// </summary>
+        void Moved(int X, int Y)
+        {
+        }
+
+        void Closing(ref bool Cancel)
+        {
+        }
+
+        void Renamed(string? Name)
+        {
+        }
+
+        string? Describe(object? Value, out int length)
+        {
+            length = default;
+            return default;
+        }
+    }
+
+    /// <summary>
+    /// Represents the method that handles the Moved event of the IShapeEventsVt event interface.
+    /// </summary>
+    public delegate void IShapeEventsVt_MovedEventHandler(int X, int Y);
+
+    /// <summary>
+    /// Represents the method that handles the Closing event of the IShapeEventsVt event interface.
+    /// </summary>
+    public delegate void IShapeEventsVt_ClosingEventHandler(ref bool Cancel);
+
+    /// <summary>
+    /// Represents the method that handles the Renamed event of the IShapeEventsVt event interface.
+    /// </summary>
+    public delegate void IShapeEventsVt_RenamedEventHandler(string? Name);
+
+    /// <summary>
+    /// Represents the method that handles the Describe event of the IShapeEventsVt event interface.
+    /// </summary>
+    public delegate string? IShapeEventsVt_DescribeEventHandler(object? Value, out int length);
+
+    /// <summary>
+    /// Connects to the IShapeEventsVt events of a COM object and raises them as .NET events. Dispose the sink to disconnect it.
+    /// </summary>
+    public sealed partial class IShapeEventsVtSink : IShapeEventsVtHandler, global::System.IDisposable
+    {
+        /// <summary>
+        /// The interface identifier (IID) of the IShapeEventsVt event interface.
+        /// </summary>
+        public static readonly global::System.Guid Iid = new("6B1F2D2A-4C1E-4B71-9D0B-7B7C2E0A1016");
+
+        private readonly global::CsCom.Runtime.EventConnection __connection;
+
+        /// <summary>
+        /// Connects the sink to the IShapeEventsVt events of a COM object.
+        /// </summary>
+        /// <param name="source">The COM object that raises the events.</param>
+        public IShapeEventsVtSink(object source)
+        {
+            __connection = Connect(source, this);
+        }
+
+        /// <summary>
+        /// The shape was moved
+        /// </summary>
+        public event IShapeEventsVt_MovedEventHandler? Moved;
+
+        /// <summary>
+        /// Occurs when the COM object raises the Closing event.
+        /// </summary>
+        public event IShapeEventsVt_ClosingEventHandler? Closing;
+
+        /// <summary>
+        /// Occurs when the COM object raises the Renamed event.
+        /// </summary>
+        public event IShapeEventsVt_RenamedEventHandler? Renamed;
+
+        /// <summary>
+        /// Occurs when the COM object raises the Describe event.
+        /// </summary>
+        public event IShapeEventsVt_DescribeEventHandler? Describe;
+
+        /// <summary>
+        /// Disconnects the sink from the events.
+        /// </summary>
+        public void Dispose()
+        {
+            __connection.Dispose();
+        }
+
+        /// <summary>
+        /// Connects a handler to the IShapeEventsVt events of a COM object.
+        /// </summary>
+        /// <param name="source">The COM object that raises the events.</param>
+        /// <param name="handler">The handler of the events.</param>
+        /// <returns>The connection, which must be disposed to disconnect the handler.</returns>
+        public static global::CsCom.Runtime.EventConnection Connect(object source, IShapeEventsVtHandler handler)
+        {
+            global::System.ArgumentNullException.ThrowIfNull(handler);
+            return global::CsCom.Runtime.EventConnection.Advise(source, Iid, new ComSink(handler));
+        }
+
+        void IShapeEventsVtHandler.Moved(int X, int Y) => this.Moved?.Invoke(X, Y);
+
+        void IShapeEventsVtHandler.Closing(ref bool Cancel) => this.Closing?.Invoke(ref Cancel);
+
+        void IShapeEventsVtHandler.Renamed(string? Name) => this.Renamed?.Invoke(Name);
+
+        string? IShapeEventsVtHandler.Describe(object? Value, out int length)
+        {
+            if (this.Describe is { } __handler)
+            {
+                return __handler(Value, out length);
+            }
+
+            length = default;
+            return default;
+        }
+
+        /// <summary>
+        /// Implements the IShapeEventsVt event interface and passes the events to the handler.
+        /// </summary>
+        [global::System.Runtime.InteropServices.Marshalling.GeneratedComClass]
+        private sealed partial class ComSink : IShapeEventsVt
+        {
+            private readonly IShapeEventsVtHandler __handler;
+
+            public ComSink(IShapeEventsVtHandler handler)
+            {
+                __handler = handler;
+            }
+
+            public void Moved(int X, int Y) => __handler.Moved(X, Y);
+
+            public void Closing(ref bool Cancel) => __handler.Closing(ref Cancel);
+
+            public void Renamed(string? Name) => __handler.Renamed(Name);
+
+            public string? Describe(object? Value, out int length) => __handler.Describe(Value, out length);
+        }
+    }
+
+    /// <summary>
+    /// The events of a shape, raised through the vtable or IDispatch::Invoke
+    /// </summary>
+    [global::System.Runtime.InteropServices.Marshalling.GeneratedComInterface(StringMarshalling = global::System.Runtime.InteropServices.StringMarshalling.Custom, StringMarshallingCustomType = typeof(global::System.Runtime.InteropServices.Marshalling.BStrStringMarshaller))]
+    [global::System.Runtime.InteropServices.Guid("6B1F2D2A-4C1E-4B71-9D0B-7B7C2E0A1017")]
+    public unsafe partial interface IShapeEventsDual : global::CsCom.Runtime.IDispatch
+    {
+        /// <summary>
+        /// The shape was moved
+        /// </summary>
+        void Moved(int X, int Y);
+
+        void Closing([global::System.Runtime.InteropServices.MarshalAs(global::System.Runtime.InteropServices.UnmanagedType.VariantBool)] ref bool Cancel);
+
+        void Renamed(string? Name);
+
+        string? Describe([global::System.Runtime.InteropServices.Marshalling.MarshalUsing(typeof(global::CsCom.Runtime.VariantMarshaller))] object? Value, out int length);
+    }
+
+    /// <summary>
+    /// Handles the events of the IShapeEventsDual event interface. The methods do nothing by default, so only the events of interest have to be implemented.
+    /// </summary>
+    public partial interface IShapeEventsDualHandler
+    {
+        /// <summary>
+        /// The shape was moved
+        /// </summary>
+        void Moved(int X, int Y)
+        {
+        }
+
+        void Closing(ref bool Cancel)
+        {
+        }
+
+        void Renamed(string? Name)
+        {
+        }
+
+        string? Describe(object? Value, out int length)
+        {
+            length = default;
+            return default;
+        }
+    }
+
+    /// <summary>
+    /// Represents the method that handles the Moved event of the IShapeEventsDual event interface.
+    /// </summary>
+    public delegate void IShapeEventsDual_MovedEventHandler(int X, int Y);
+
+    /// <summary>
+    /// Represents the method that handles the Closing event of the IShapeEventsDual event interface.
+    /// </summary>
+    public delegate void IShapeEventsDual_ClosingEventHandler(ref bool Cancel);
+
+    /// <summary>
+    /// Represents the method that handles the Renamed event of the IShapeEventsDual event interface.
+    /// </summary>
+    public delegate void IShapeEventsDual_RenamedEventHandler(string? Name);
+
+    /// <summary>
+    /// Represents the method that handles the Describe event of the IShapeEventsDual event interface.
+    /// </summary>
+    public delegate string? IShapeEventsDual_DescribeEventHandler(object? Value, out int length);
+
+    /// <summary>
+    /// Connects to the IShapeEventsDual events of a COM object and raises them as .NET events. Dispose the sink to disconnect it.
+    /// </summary>
+    public sealed partial class IShapeEventsDualSink : IShapeEventsDualHandler, global::System.IDisposable
+    {
+        /// <summary>
+        /// The interface identifier (IID) of the IShapeEventsDual event interface.
+        /// </summary>
+        public static readonly global::System.Guid Iid = new("6B1F2D2A-4C1E-4B71-9D0B-7B7C2E0A1017");
+
+        private readonly global::CsCom.Runtime.EventConnection __connection;
+
+        /// <summary>
+        /// Connects the sink to the IShapeEventsDual events of a COM object.
+        /// </summary>
+        /// <param name="source">The COM object that raises the events.</param>
+        public IShapeEventsDualSink(object source)
+        {
+            __connection = Connect(source, this);
+        }
+
+        /// <summary>
+        /// The shape was moved
+        /// </summary>
+        public event IShapeEventsDual_MovedEventHandler? Moved;
+
+        /// <summary>
+        /// Occurs when the COM object raises the Closing event.
+        /// </summary>
+        public event IShapeEventsDual_ClosingEventHandler? Closing;
+
+        /// <summary>
+        /// Occurs when the COM object raises the Renamed event.
+        /// </summary>
+        public event IShapeEventsDual_RenamedEventHandler? Renamed;
+
+        /// <summary>
+        /// Occurs when the COM object raises the Describe event.
+        /// </summary>
+        public event IShapeEventsDual_DescribeEventHandler? Describe;
+
+        /// <summary>
+        /// Disconnects the sink from the events.
+        /// </summary>
+        public void Dispose()
+        {
+            __connection.Dispose();
+        }
+
+        /// <summary>
+        /// Connects a handler to the IShapeEventsDual events of a COM object.
+        /// </summary>
+        /// <param name="source">The COM object that raises the events.</param>
+        /// <param name="handler">The handler of the events.</param>
+        /// <returns>The connection, which must be disposed to disconnect the handler.</returns>
+        public static global::CsCom.Runtime.EventConnection Connect(object source, IShapeEventsDualHandler handler)
+        {
+            global::System.ArgumentNullException.ThrowIfNull(handler);
+            return global::CsCom.Runtime.EventConnection.Advise(source, Iid, new ComSink(handler));
+        }
+
+        void IShapeEventsDualHandler.Moved(int X, int Y) => this.Moved?.Invoke(X, Y);
+
+        void IShapeEventsDualHandler.Closing(ref bool Cancel) => this.Closing?.Invoke(ref Cancel);
+
+        void IShapeEventsDualHandler.Renamed(string? Name) => this.Renamed?.Invoke(Name);
+
+        string? IShapeEventsDualHandler.Describe(object? Value, out int length)
+        {
+            if (this.Describe is { } __handler)
+            {
+                return __handler(Value, out length);
+            }
+
+            length = default;
+            return default;
+        }
+
+        /// <summary>
+        /// Passes the events raised through IDispatch::Invoke to the handler.
+        /// </summary>
+        private sealed class DispatchHandler : global::CsCom.Runtime.IDispatchEventHandler
+        {
+            private readonly IShapeEventsDualHandler __handler;
+
+            public DispatchHandler(IShapeEventsDualHandler handler)
+            {
+                __handler = handler;
+            }
+
+            public bool Invoke(int dispId, global::CsCom.Runtime.EventArguments arguments)
+            {
+                switch (dispId)
+                {
+                    case 1:
+                    {
+                        __handler.Moved(arguments.Get<int>(0), arguments.Get<int>(1));
+                        return true;
+                    }
+
+                    case 2:
+                    {
+                        var __a0 = arguments.Get<bool>(0);
+                        __handler.Closing(ref __a0);
+                        arguments.Set(0, __a0);
+                        return true;
+                    }
+
+                    case 3:
+                    {
+                        __handler.Renamed(arguments.Get<string?>(0));
+                        return true;
+                    }
+
+                    case 4:
+                    {
+                        var __result = __handler.Describe(arguments.Get<object?>(0), out var __a1);
+                        arguments.Set(1, __a1);
+                        arguments.SetResult(__result);
+                        return true;
+                    }
+
+                    default:
+                        return false;
+                }
+            }
+        }
+
+        /// <summary>
+        /// Implements the IShapeEventsDual event interface and passes the events to the handler.
+        /// </summary>
+        [global::System.Runtime.InteropServices.Marshalling.GeneratedComClass]
+        private sealed unsafe partial class ComSink : IShapeEventsDual
+        {
+            private readonly IShapeEventsDualHandler __handler;
+
+            private readonly DispatchHandler __dispatch;
+
+            public ComSink(IShapeEventsDualHandler handler)
+            {
+                __handler = handler;
+                __dispatch = new DispatchHandler(handler);
+            }
+
+            public void Moved(int X, int Y) => __handler.Moved(X, Y);
+
+            public void Closing(ref bool Cancel) => __handler.Closing(ref Cancel);
+
+            public void Renamed(string? Name) => __handler.Renamed(Name);
+
+            public string? Describe(object? Value, out int length) => __handler.Describe(Value, out length);
+
+            int global::CsCom.Runtime.IDispatch.GetTypeInfoCount(out uint pctinfo)
+            {
+                pctinfo = 0;
+                return 0;
+            }
+
+            int global::CsCom.Runtime.IDispatch.GetTypeInfo(uint iTInfo, uint lcid, out nint ppTInfo)
+            {
+                ppTInfo = 0;
+                return unchecked((int)0x80004001);
+            }
+
+            int global::CsCom.Runtime.IDispatch.GetIDsOfNames(in global::System.Guid riid, char** rgszNames, uint cNames, uint lcid, int* rgDispId)
+            {
+                for (uint i = 0; i < cNames; i++)
+                {
+                    rgDispId[i] = -1;
+                }
+
+                return unchecked((int)0x80020006);
+            }
+
+            int global::CsCom.Runtime.IDispatch.Invoke(int dispIdMember, in global::System.Guid riid, uint lcid, ushort wFlags, global::CsCom.Runtime.DispParams* pDispParams, global::System.Runtime.InteropServices.Marshalling.ComVariant* pVarResult, global::CsCom.Runtime.ExcepInfo* pExcepInfo, uint* puArgErr) => global::CsCom.Runtime.DispatchEventSink.InvokeHandler(__dispatch, dispIdMember, pDispParams, pVarResult, pExcepInfo);
+        }
+    }
+
+    /// <summary>
     /// A shape
     /// </summary>
     public static partial class Shape
@@ -424,6 +1288,17 @@ namespace Interop.CsComTest
         /// <param name="context">The context in which the code that manages the newly created object will run.</param>
         [global::System.Diagnostics.CodeAnalysis.RequiresDynamicCode("Late binding with dynamic requires dynamic code generation and is not compatible with Native AOT.")]
         public static dynamic CreateDynamic(global::CsCom.Runtime.ClassContext context = global::CsCom.Runtime.ComActivator.DefaultContext) => global::CsCom.Runtime.ComActivator.CreateDynamicInstance(Clsid, context);
+    }
+
+    /// <summary>
+    /// A shape that raises events through the three kinds of event interfaces
+    /// </summary>
+    public static partial class EventShape
+    {
+        /// <summary>
+        /// The class identifier (CLSID) of the EventShape class.
+        /// </summary>
+        public static readonly global::System.Guid Clsid = new("6B1F2D2A-4C1E-4B71-9D0B-7B7C2E0A1023");
     }
 
     /// <summary>

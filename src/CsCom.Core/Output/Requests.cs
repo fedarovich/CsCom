@@ -37,6 +37,9 @@ public abstract class NewOutputRequest
     /// <summary>How <c>DATE</c>, <c>CURRENCY</c> and <c>VARIANT_BOOL</c> values are represented.</summary>
     public MarshallingOptions Marshalling { get; init; } = new();
 
+    /// <summary>The code generated for the event (source) interfaces.</summary>
+    public EventStyle EventStyle { get; init; }
+
     /// <summary>An additional NuGet package source that provides the CsCom.Runtime package.</summary>
     public string? PackageSource { get; init; }
 
@@ -85,6 +88,9 @@ public sealed class UpdateProjectRequest
 
     /// <summary>The changes to the representation of <c>DATE</c>, <c>CURRENCY</c> and <c>VARIANT_BOOL</c> values.</summary>
     public MarshallingOverrides Marshalling { get; init; } = new();
+
+    /// <summary>The new code generated for the event (source) interfaces.</summary>
+    public EventStyle? EventStyle { get; init; }
 }
 
 /// <summary>

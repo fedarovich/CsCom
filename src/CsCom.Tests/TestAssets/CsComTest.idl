@@ -184,6 +184,48 @@ library CsComTest
     };
 
     [
+        uuid(6B1F2D2A-4C1E-4B71-9D0B-7B7C2E0A1015),
+        helpstring("The events of a shape, raised through IDispatch::Invoke")
+    ]
+    dispinterface _ShapeEvents
+    {
+    properties:
+    methods:
+        [id(1), helpstring("The shape was moved")] void Moved([in] long x, [in] long y);
+        [id(2)] void Closing([in, out] VARIANT_BOOL* Cancel);
+        [id(3)] void Renamed([in] BSTR name);
+        [id(4)] BSTR Describe([in] VARIANT value, [out] long* length);
+    };
+
+    [
+        object,
+        uuid(6B1F2D2A-4C1E-4B71-9D0B-7B7C2E0A1016),
+        helpstring("The events of a shape, raised through the vtable")
+    ]
+    interface IShapeEventsVt : IUnknown
+    {
+        [helpstring("The shape was moved")] HRESULT Moved([in] long x, [in] long y);
+        HRESULT Closing([in, out] VARIANT_BOOL* Cancel);
+        HRESULT Renamed([in] BSTR name);
+        HRESULT Describe([in] VARIANT value, [out] long* length, [out, retval] BSTR* result);
+    };
+
+    [
+        object,
+        uuid(6B1F2D2A-4C1E-4B71-9D0B-7B7C2E0A1017),
+        dual,
+        oleautomation,
+        helpstring("The events of a shape, raised through the vtable or IDispatch::Invoke")
+    ]
+    interface IShapeEventsDual : IDispatch
+    {
+        [id(1), helpstring("The shape was moved")] HRESULT Moved([in] long x, [in] long y);
+        [id(2)] HRESULT Closing([in, out] VARIANT_BOOL* Cancel);
+        [id(3)] HRESULT Renamed([in] BSTR name);
+        [id(4)] HRESULT Describe([in] VARIANT value, [out] long* length, [out, retval] BSTR* result);
+    };
+
+    [
         uuid(6B1F2D2A-4C1E-4B71-9D0B-7B7C2E0A1020),
         helpstring("A shape")
     ]
@@ -209,6 +251,19 @@ library CsComTest
     coclass ShapeEvents
     {
         [default] dispinterface DShapeEvents;
+    };
+
+    [
+        uuid(6B1F2D2A-4C1E-4B71-9D0B-7B7C2E0A1023),
+        noncreatable,
+        helpstring("A shape that raises events through the three kinds of event interfaces")
+    ]
+    coclass EventShape
+    {
+        [default] interface IShape;
+        [default, source] dispinterface _ShapeEvents;
+        [source] interface IShapeEventsVt;
+        [source] interface IShapeEventsDual;
     };
 
     [

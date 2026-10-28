@@ -119,6 +119,26 @@ public sealed class CodeGenerationTests : VerifyBase
     }
 
     [TestMethod]
+    [DataRow(EventStyle.Observable)]
+    [DataRow(EventStyle.Interface)]
+    public Task GeneratesEventCode(EventStyle style)
+    {
+        // The events style is covered by GeneratesFilePerType.
+        var documents = Generate(new CodeGenerationOptions { Namespace = "Interop.CsComTest", ToolVersion = TestEnvironment.ToolVersion, EventStyle = style });
+
+        return Verify(ToTargets(documents.Where(static d => d.RelativePath is "_ShapeEvents.cs" or "IShapeEventsVt.cs" or "IShapeEventsDual.cs")))
+            .UseParameters(style);
+    }
+
+    [TestMethod]
+    public void GeneratesNoEventCodeForTheNoneStyle()
+    {
+        var documents = Generate(new CodeGenerationOptions { Namespace = "Interop.CsComTest", ToolVersion = TestEnvironment.ToolVersion, EventStyle = EventStyle.None });
+
+        Assert.IsFalse(documents.Any(static d => d.GetText().Contains("Sink", StringComparison.Ordinal)));
+    }
+
+    [TestMethod]
     public void UsesTheNamespaceForImportedTypes()
     {
         var documents = Generate(new CodeGenerationOptions { Namespace = "My.Interop", ToolVersion = TestEnvironment.ToolVersion });

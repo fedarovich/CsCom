@@ -37,13 +37,14 @@ The type library can be a `.tlb` file or a `.dll`, `.ocx` or `.exe` file with an
 | `--support-code <package\|public\|internal>` | Where the support code comes from, see below. `package` by default. |
 | `--date-parameter-marshalling`, `--currency-parameter-marshalling`, `--bool-parameter-marshalling` | How `DATE`, `CURRENCY` and `VARIANT_BOOL` parameters and return values are represented: `managed` (default), `com` or `wrapper`, see [Marshalling options](#marshalling-options). |
 | `--date-field-marshalling`, `--currency-field-marshalling`, `--bool-field-marshalling` | How `DATE`, `CURRENCY` and `VARIANT_BOOL` structure fields are represented: `com` (default) or `wrapper`. |
+| `--event-style <events\|observable\|interface\|none>` | The code generated for the events of coclasses: `events` (default), `observable`, `interface` or `none`, see [Events](#events). |
 | `--package-source <PATH>` | An additional NuGet source with the CsCom.Runtime package. |
 | `--keep-temp` | `new assembly` only: keeps the temporary project used to build the assembly. |
 | `-v`, `--verbosity <LEVEL>` | `quiet`, `minimal`, `normal` (default), `detailed` or `diagnostic`. |
 
 `new project` writes `<Name>.csproj`, a `cscom.json` file with the options it was generated with, and the C# files into the
 `Generated` folder. `update project` replaces the C# files of the `Generated` folder using the options recorded in `cscom.json`.
-It accepts `--namespace`, `--csharp-version`, `--single-file [true|false]` and the marshalling options to change them. Code outside of the `Generated`
+It accepts `--namespace`, `--csharp-version`, `--single-file [true|false]`, the marshalling options and `--event-style` to change them. Code outside of the `Generated`
 folder, e.g. partial classes, is not touched.
 
 `new assembly` generates the project in a temporary directory, builds it with `dotnet build` once per runtime identifier and copies
@@ -73,6 +74,7 @@ foreach (object? key in dictionary)                 // _NewEnum via IEnumVARIANT
   properties and indexers that invoke the members by their DISPIDs.
 - **Coclasses** become static classes with the `Clsid` and a `Create()` method that returns the default interface.
   Coclasses whose default interface supports `IDispatch` also get `CreateDynamic()`, see [Late binding with `dynamic`](#late-binding-with-dynamic).
+  Their event (`[source]`) interfaces get a handler interface and a sink class, see [Events](#events).
 - **Enums** become enums and **structs and unions** become blittable structs (`BSTR` and interface pointer fields are `nint`,
   `VARIANT` fields are `ComVariant`, `DATE`, `CURRENCY` and `VARIANT_BOOL` fields are `double`, `long` and `short` or
   [wrappers](#marshalling-options), `SAFEARRAY` fields are `nint` and
@@ -157,10 +159,58 @@ The C# runtime binder requires dynamic code, so `dynamic` cannot be used with Na
 `[RequiresDynamicCode]`, and the typed interop stays trimming and AOT compatible. Arguments are passed by value, so `ref` and `out`
 arguments are not updated, and parameterized properties other than the default one cannot be set.
 
+### Events
+
+COM objects raise events by calling the methods of event interfaces, the `[source]` interfaces of their coclasses, on the sinks
+connected to their connection points. For each event interface, CsCom generates `I<Interface>Handler` (without the `I` prefix for
+names that already start with `I` or `_`), an interface with a method per event that does nothing by default, and `<Interface>Sink`,
+which connects to the events. What else is generated
+depends on `--event-style`:
+
+```csharp
+// events (default): .NET events, with TlbImp-style delegates such as AppEvents_WorkbookBeforeCloseEventHandler
+using var events = new AppEventsSink(app);          // connects (IConnectionPoint::Advise); Dispose disconnects
+events.NewWorkbook += workbook => Console.WriteLine(workbook?.Name);
+events.WorkbookBeforeClose += (Workbook? workbook, ref bool cancel) => cancel = true;
+
+// observable: an IObservable<T> per event, with an args class whose ref and out parameters and Result can be set
+using var events = new AppEventsSink(app);
+using var subscription = events.WorkbookBeforeClose.Subscribe(e => e.Cancel = true);
+
+// events, observable and interface: implement only the methods of the handler interface you need
+sealed class Handler : IAppEventsHandler
+{
+    public void WorkbookBeforeClose(Workbook? Wb, ref bool Cancel) => Cancel = true;
+}
+
+using var connection = AppEventsSink.Connect(app, new Handler());
+```
+
+With `interface`, `<Interface>Sink` is a static class with only `Connect`, and `none` generates no event code. The observables
+are hot: events are not buffered, and disposing the sink completes them. They are plain `IObservable<T>`s, so they work with
+Reactive Extensions without depending on it.
+
+All kinds of event interfaces are supported:
+
+- **Dispinterfaces**, the most common ones (Office, VB6 and ATL components), are received by `DispatchEventSink` of the support
+  code, which implements `IDispatch` and answers `QueryInterface` for the dispinterface. The arguments of `IDispatch::Invoke` are
+  converted to the late-bound types, as in the late-bound wrappers, and `ref` and `out` arguments and results are passed back.
+- **Vtable interfaces** are implemented by a generated `[GeneratedComClass]` sink with the signatures of the generated interface.
+- **Dual interfaces** are implemented in the same way, and the sink also implements `IDispatch::Invoke`, which event sources often use.
+
+The source can be any object returned by the generated code: a COM interface, a late-bound wrapper or a `dynamic` object.
+`EventConnection.Advise` and `EventConnection.AdviseDispatch` of the support code connect hand-written sinks.
+
+Events are delivered on the threads chosen by COM: a single-threaded apartment (STA) object, such as an Office application,
+delivers them through the message loop of the thread that connected the sink. Dispose the sink on that thread, because
+`IConnectionPoint::Unadvise` must be called from the same apartment; there is no finalizer that disconnects it. An exception thrown
+by a handler is returned to the source as `DISP_E_EXCEPTION` with the error information (or as the `HRESULT` for vtable calls),
+and most sources ignore it.
+
 ### Support code
 
 The generated code depends on a few support types: `IDispatch`, `IEnumVARIANT`, `ComActivator`, the `VARIANT`, `SAFEARRAY`, `DATE` and `CURRENCY` marshallers, the
-base class of the late-bound wrappers and the `dynamic` support. With `--support-code package`, the generated project references the **CsCom.Runtime**
+base class of the late-bound wrappers, the event sinks and the `dynamic` support. With `--support-code package`, the generated project references the **CsCom.Runtime**
 NuGet package. With `public` or `internal`, the support code is emitted into the project, in the `<Namespace>.ComSupport` namespace.
 In the `internal` mode all generated types are internal, because a public interface cannot derive from an internal `IDispatch`.
 
@@ -168,7 +218,8 @@ The generated projects disable runtime marshalling, which source-generated COM i
 
 ### Limitations
 
-- COM events (connection points and source interfaces) are not generated yet.
+- Events cannot be handled through `dynamic`, and they are connected through the sink classes rather than through events of the
+  COM interfaces as with TlbImp (`app.WorkbookOpen += ...`), because C# has no extension events.
 - Structure fields stay blittable, so `BSTR`, `SAFEARRAY` and interface pointer fields are raw values.
 - `SAFEARRAY`s are converted to zero-based one-dimensional arrays; their lower bounds are not preserved.
 - Types imported from other type libraries are always generated into the project; referencing other interop assemblies is not supported yet.

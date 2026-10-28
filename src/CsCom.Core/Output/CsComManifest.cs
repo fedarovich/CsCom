@@ -48,6 +48,10 @@ public sealed record CsComManifest
     /// <summary>How <c>DATE</c>, <c>CURRENCY</c> and <c>VARIANT_BOOL</c> values are represented; the defaults when missing.</summary>
     public MarshallingOptions Marshalling { get => _marshalling; init => _marshalling = value ?? new(); }
 
+    /// <summary>The code generated for the event (source) interfaces; <see cref="EventStyle.Events"/> when missing.</summary>
+    [JsonConverter(typeof(CamelCaseEnumConverter<EventStyle>))]
+    public EventStyle EventStyle { get; init; }
+
     /// <summary>
     /// Reads the manifest from the project directory.
     /// </summary>

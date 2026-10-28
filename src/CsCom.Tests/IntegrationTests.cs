@@ -16,21 +16,24 @@ public sealed class IntegrationTests
     private readonly InteropPipeline _pipeline = new();
 
     [TestMethod]
-    [DataRow(SupportCodeMode.Package, false, "default")]
-    [DataRow(SupportCodeMode.Public, false, "default")]
-    [DataRow(SupportCodeMode.Internal, true, "default")]
-    [DataRow(SupportCodeMode.Package, false, "com")]
-    [DataRow(SupportCodeMode.Internal, false, "wrapper")]
-    public void GeneratedTestProjectBuildsWithoutWarnings(SupportCodeMode supportCode, bool singleFile, string marshalling)
+    [DataRow(SupportCodeMode.Package, false, "default", EventStyle.Events)]
+    [DataRow(SupportCodeMode.Public, false, "default", EventStyle.Events)]
+    [DataRow(SupportCodeMode.Internal, true, "default", EventStyle.Events)]
+    [DataRow(SupportCodeMode.Package, false, "com", EventStyle.Events)]
+    [DataRow(SupportCodeMode.Internal, false, "wrapper", EventStyle.Events)]
+    [DataRow(SupportCodeMode.Public, true, "default", EventStyle.Observable)]
+    [DataRow(SupportCodeMode.Internal, false, "wrapper", EventStyle.Interface)]
+    [DataRow(SupportCodeMode.Package, false, "default", EventStyle.None)]
+    public void GeneratedTestProjectBuildsWithoutWarnings(SupportCodeMode supportCode, bool singleFile, string marshalling, EventStyle eventStyle)
     {
-        string directory = TestEnvironment.CreateDirectory($"build-{supportCode}-{marshalling}");
+        string directory = TestEnvironment.CreateDirectory($"build-{supportCode}-{marshalling}-{eventStyle}");
         var options = marshalling switch
         {
             "com" => new MarshallingOptions { DateParameters = ParameterMarshalling.Com, CurrencyParameters = ParameterMarshalling.Com, BoolParameters = ParameterMarshalling.Com },
             "wrapper" => AllWrappers,
             _ => new MarshallingOptions(),
         };
-        string project = CreateProject(TestEnvironment.TestTypeLibrary, directory, supportCode, singleFile, options);
+        string project = CreateProject(TestEnvironment.TestTypeLibrary, directory, supportCode, singleFile, options, eventStyle);
 
         Build(project);
     }
@@ -346,6 +349,270 @@ public sealed class IntegrationTests
     }
 
     [TestMethod]
+    [DataRow(EventStyle.Events)]
+    [DataRow(EventStyle.Observable)]
+    [DataRow(EventStyle.Interface)]
+    public void EventsAreReceivedThroughEachKindOfEventInterface(EventStyle style)
+    {
+        // The consumer implements a COM object that raises events through connection points and connects the generated sinks
+        // to a runtime callable wrapper of it. The object calls the sinks through runtime callable wrappers as well, so that
+        // the events are marshalled to native code and back: dispinterface and dual events through IDispatch::Invoke,
+        // vtable and dual events through the vtable.
+        string root = TestEnvironment.CreateDirectory($"events-{style}");
+        string interop = CreateProject(TestEnvironment.TestTypeLibrary, Path.Combine(root, "Interop"), SupportCodeMode.Package, singleFile: false, eventStyle: style);
+
+        (string Source, string Label)[] sources = [("_ShapeEvents", "Dispatch"), ("IShapeEventsVt", "Vt"), ("IShapeEventsDual", "Dual")];
+        string program = """
+            using System.Runtime.InteropServices;
+            using System.Runtime.InteropServices.Marshalling;
+            using CsCom.Runtime;
+            using Interop.CsComTest;
+
+            var wrappers = new StrategyBasedComWrappers();
+            var source = new EventSource();
+            nint unknown = wrappers.GetOrCreateComInterfaceForObject(source, CreateComInterfaceFlags.None);
+            object proxy = wrappers.GetOrCreateObjectForComInstance(unknown, CreateObjectFlags.UniqueInstance);
+            Marshal.Release(unknown);
+            var disposables = new List<IDisposable>();
+
+            __CONNECT__
+
+            Console.WriteLine($"Connections={source.Connections}");
+            Fire(wrappers, source);
+            foreach (var disposable in disposables)
+            {
+                disposable.Dispose();
+            }
+
+            Console.WriteLine($"Connections={source.Connections}");
+
+            static void Fire(StrategyBasedComWrappers wrappers, EventSource source)
+            {
+                foreach (nint sink in source.Points[_ShapeEventsSink.Iid].Sinks.Values)
+                {
+                    var dispatch = (IDispatch)wrappers.GetOrCreateObjectForComInstance(sink, CreateObjectFlags.UniqueInstance);
+                    Invoke(dispatch, "DispatchInvoke");
+                    try
+                    {
+                        DispatchObject.Invoke(dispatch, 3, DispatchFlags.Method, "fail");
+                    }
+                    catch (COMException e)
+                    {
+                        Console.WriteLine($"Error={e.Message}");
+                    }
+                }
+
+                foreach (nint sink in source.Points[IShapeEventsVtSink.Iid].Sinks.Values)
+                {
+                    var events = (IShapeEventsVt)wrappers.GetOrCreateObjectForComInstance(sink, CreateObjectFlags.UniqueInstance);
+                    events.Moved(1, 2);
+                    bool cancel = false;
+                    events.Closing(ref cancel);
+                    Console.WriteLine($"VtFire.Cancel={cancel}");
+                    events.Renamed("renamed");
+                    string? description = events.Describe(42, out int length);
+                    Console.WriteLine($"VtFire.Describe={description}|{length}");
+                }
+
+                foreach (nint sink in source.Points[IShapeEventsDualSink.Iid].Sinks.Values)
+                {
+                    var events = (IShapeEventsDual)wrappers.GetOrCreateObjectForComInstance(sink, CreateObjectFlags.UniqueInstance);
+                    events.Moved(1, 2);
+                    bool cancel = false;
+                    events.Closing(ref cancel);
+                    Console.WriteLine($"DualFire.Cancel={cancel}");
+                    events.Renamed("renamed");
+                    string? description = events.Describe(42, out int length);
+                    Console.WriteLine($"DualFire.Describe={description}|{length}");
+                    Invoke(events, "DualInvoke");
+                }
+            }
+
+            static void Invoke(IDispatch dispatch, string label)
+            {
+                DispatchObject.Invoke(dispatch, 1, DispatchFlags.Method, 1, 2);
+                object?[] closing = [false];
+                DispatchObject.InvokeByRef(dispatch, 2, DispatchFlags.Method, closing, [true]);
+                Console.WriteLine($"{label}.Cancel={closing[0]}");
+                DispatchObject.Invoke(dispatch, 3, DispatchFlags.Method, "renamed");
+                object?[] describe = [42, null];
+                object? description = DispatchObject.InvokeByRef(dispatch, 4, DispatchFlags.Method, describe, [false, true]);
+                Console.WriteLine($"{label}.Describe={description}|{describe[1]}");
+            }
+
+            [GeneratedComClass]
+            internal sealed partial class EventSource : IConnectionPointContainer
+            {
+                public Dictionary<Guid, ConnectionPoint> Points { get; } = new()
+                {
+                    [_ShapeEventsSink.Iid] = new(_ShapeEventsSink.Iid),
+                    [IShapeEventsVtSink.Iid] = new(IShapeEventsVtSink.Iid),
+                    [IShapeEventsDualSink.Iid] = new(IShapeEventsDualSink.Iid),
+                };
+
+                public int Connections => Points.Values.Sum(static p => p.Sinks.Count);
+
+                public int EnumConnectionPoints(out nint ppEnum)
+                {
+                    ppEnum = 0;
+                    return unchecked((int)0x80004001);
+                }
+
+                public int FindConnectionPoint(in Guid riid, out IConnectionPoint? ppCP)
+                {
+                    ppCP = Points.GetValueOrDefault(riid);
+                    return ppCP is null ? unchecked((int)0x80040200) : 0;
+                }
+            }
+
+            [GeneratedComClass]
+            internal sealed partial class ConnectionPoint(Guid iid) : IConnectionPoint
+            {
+                private uint _cookie;
+
+                public Dictionary<uint, nint> Sinks { get; } = [];
+
+                public int GetConnectionInterface(out Guid pIID)
+                {
+                    pIID = iid;
+                    return 0;
+                }
+
+                public int GetConnectionPointContainer(out nint ppCPC)
+                {
+                    ppCPC = 0;
+                    return unchecked((int)0x80004001);
+                }
+
+                // Like real event sources, asks the sink for the event interface.
+                public int Advise(nint pUnkSink, out uint pdwCookie)
+                {
+                    pdwCookie = 0;
+                    int hr = Marshal.QueryInterface(pUnkSink, iid, out nint sink);
+                    if (hr < 0)
+                    {
+                        return hr;
+                    }
+
+                    pdwCookie = ++_cookie;
+                    Sinks.Add(pdwCookie, sink);
+                    return 0;
+                }
+
+                public int Unadvise(uint dwCookie)
+                {
+                    if (!Sinks.Remove(dwCookie, out nint sink))
+                    {
+                        return unchecked((int)0x80040200);
+                    }
+
+                    Marshal.Release(sink);
+                    return 0;
+                }
+
+                public int EnumConnections(out nint ppEnum)
+                {
+                    ppEnum = 0;
+                    return unchecked((int)0x80004001);
+                }
+            }
+
+            internal sealed class Observer<T>(Action<T> next, Action? completed = null) : IObserver<T>
+            {
+                public void OnNext(T value) => next(value);
+
+                public void OnError(Exception error) => throw error;
+
+                public void OnCompleted() => completed?.Invoke();
+            }
+
+            __HANDLERS__
+            """;
+
+        program = program
+            .Replace("__CONNECT__", string.Join(Environment.NewLine, sources.Select(s => ConnectEvents(style, s.Source, s.Label))), StringComparison.Ordinal)
+            .Replace("__HANDLERS__", style == EventStyle.Interface ? string.Join(Environment.NewLine, sources.Select(static s => HandlerClass(s.Source, s.Label))) : string.Empty, StringComparison.Ordinal);
+        var output = RunConsumer(root, interop, program, allowUnsafe: true);
+
+        string[] expected =
+        [
+            "Connections=3",
+            "Dispatch.Moved=1,2", "Dispatch.Closing=True", "DispatchInvoke.Cancel=True", "Dispatch.Renamed=renamed", "DispatchInvoke.Describe=value 42|7", "Error=boom",
+            "Vt.Moved=1,2", "Vt.Closing=True", "VtFire.Cancel=True", "Vt.Renamed=renamed", "VtFire.Describe=value 42|7",
+            "Dual.Moved=1,2", "Dual.Closing=True", "DualFire.Cancel=True", "Dual.Renamed=renamed", "DualFire.Describe=value 42|7",
+            "DualInvoke.Cancel=True", "DualInvoke.Describe=value 42|7",
+            .. style == EventStyle.Observable ? ["Dispatch.Completed", "Vt.Completed", "Dual.Completed"] : Array.Empty<string>(),
+        ];
+        CollectionAssert.IsSubsetOf(expected, output.ToArray(), string.Join(Environment.NewLine, output));
+        Assert.AreEqual("Connections=0", output.Last(), string.Join(Environment.NewLine, output));
+        Assert.HasCount(2, output.Where(static line => line == "Dual.Moved=1,2"), string.Join(Environment.NewLine, output));
+    }
+
+    private static string ConnectEvents(EventStyle style, string source, string label) => style switch
+    {
+        EventStyle.Events => $$"""
+            var {{label}}Sink = new {{source}}Sink(proxy);
+            {{label}}Sink.Moved += (x, y) => Console.WriteLine($"{{label}}.Moved={x},{y}");
+            {{label}}Sink.Closing += (ref bool cancel) => cancel = true;
+            {{label}}Sink.Closing += (ref bool cancel) => Console.WriteLine($"{{label}}.Closing={cancel}");
+            {{label}}Sink.Renamed += name =>
+            {
+                if (name == "fail") throw new InvalidOperationException("boom");
+                Console.WriteLine($"{{label}}.Renamed={name}");
+            };
+            {{label}}Sink.Describe += (object? value, out int length) =>
+            {
+                length = 7;
+                return $"value {value}";
+            };
+            disposables.Add({{label}}Sink);
+            """,
+        EventStyle.Observable => $$"""
+            var {{label}}Sink = new {{source}}Sink(proxy);
+            disposables.Add({{label}}Sink);
+            disposables.Add({{label}}Sink.Moved.Subscribe(new Observer<{{source}}_MovedEventArgs>(e => Console.WriteLine($"{{label}}.Moved={e.X},{e.Y}"), () => Console.WriteLine("{{label}}.Completed"))));
+            disposables.Add({{label}}Sink.Closing.Subscribe(new Observer<{{source}}_ClosingEventArgs>(e => e.Cancel = true)));
+            disposables.Add({{label}}Sink.Closing.Subscribe(new Observer<{{source}}_ClosingEventArgs>(e => Console.WriteLine($"{{label}}.Closing={e.Cancel}"))));
+            disposables.Add({{label}}Sink.Renamed.Subscribe(new Observer<{{source}}_RenamedEventArgs>(e =>
+            {
+                if (e.Name == "fail") throw new InvalidOperationException("boom");
+                Console.WriteLine($"{{label}}.Renamed={e.Name}");
+            })));
+            disposables.Add({{label}}Sink.Describe.Subscribe(new Observer<{{source}}_DescribeEventArgs>(e =>
+            {
+                e.length = 7;
+                e.Result = $"value {e.Value}";
+            })));
+            """,
+        _ => $"disposables.Add({source}Sink.Connect(proxy, new {label}Handler()));",
+    };
+
+    private static string HandlerClass(string source, string label) => $$"""
+        internal sealed class {{label}}Handler : {{(source.StartsWith('_') || source.StartsWith('I') ? source : "I" + source)}}Handler
+        {
+            public void Moved(int X, int Y) => Console.WriteLine($"{{label}}.Moved={X},{Y}");
+
+            public void Closing(ref bool Cancel)
+            {
+                Cancel = true;
+                Console.WriteLine($"{{label}}.Closing={Cancel}");
+            }
+
+            public void Renamed(string? Name)
+            {
+                if (Name == "fail") throw new InvalidOperationException("boom");
+                Console.WriteLine($"{{label}}.Renamed={Name}");
+            }
+
+            public string? Describe(object? Value, out int length)
+            {
+                length = 7;
+                return $"value {Value}";
+            }
+        }
+        """;
+
+    [TestMethod]
     public void NewAssemblyCopiesTheOutputsOfEachRuntime()
     {
         string output = TestEnvironment.CreateDirectory("assembly");
@@ -430,7 +697,13 @@ public sealed class IntegrationTests
         BoolFields = FieldMarshalling.Wrapper,
     };
 
-    private string CreateProject(string typeLibrary, string directory, SupportCodeMode supportCode, bool singleFile, MarshallingOptions? marshalling = null) =>
+    private string CreateProject(
+        string typeLibrary,
+        string directory,
+        SupportCodeMode supportCode,
+        bool singleFile,
+        MarshallingOptions? marshalling = null,
+        EventStyle eventStyle = EventStyle.Events) =>
         new ProjectGenerator(_pipeline).CreateProject(new NewProjectRequest
         {
             TypeLibraryPath = typeLibrary,
@@ -438,6 +711,7 @@ public sealed class IntegrationTests
             SupportCode = supportCode,
             SingleFile = singleFile,
             Marshalling = marshalling ?? new MarshallingOptions(),
+            EventStyle = eventStyle,
             PackageSource = TestEnvironment.LocalPackages,
             GlobalPackagesFolder = TestEnvironment.GlobalPackagesFolder,
         });

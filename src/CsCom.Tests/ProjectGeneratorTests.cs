@@ -207,7 +207,31 @@ public sealed class ProjectGeneratorTests
             }
             """);
 
-        Assert.AreEqual(new MarshallingOptions(), CsComManifest.Read(directory).Marshalling);
+        var manifest = CsComManifest.Read(directory);
+        Assert.AreEqual(new MarshallingOptions(), manifest.Marshalling);
+        Assert.AreEqual(EventStyle.Events, manifest.EventStyle);
+    }
+
+    [TestMethod]
+    public void RecordsAndUpdatesTheEventStyle()
+    {
+        string directory = TestEnvironment.CreateDirectory("event-style");
+        _generator.CreateProject(new NewProjectRequest
+        {
+            TypeLibraryPath = TestEnvironment.TestTypeLibrary,
+            OutputDirectory = directory,
+            EventStyle = EventStyle.Observable,
+        });
+
+        StringAssert.Contains(File.ReadAllText(Path.Combine(directory, CsComManifest.FileName)), "\"eventStyle\": \"observable\"");
+        StringAssert.Contains(File.ReadAllText(Path.Combine(directory, "Generated", "_ShapeEvents.cs")), "IObservable<_ShapeEvents_MovedEventArgs> Moved");
+
+        _generator.UpdateProject(new UpdateProjectRequest { TypeLibraryPath = TestEnvironment.TestTypeLibrary, ProjectDirectory = directory });
+        Assert.AreEqual(EventStyle.Observable, CsComManifest.Read(directory).EventStyle);
+
+        _generator.UpdateProject(new UpdateProjectRequest { TypeLibraryPath = TestEnvironment.TestTypeLibrary, ProjectDirectory = directory, EventStyle = EventStyle.None });
+        Assert.AreEqual(EventStyle.None, CsComManifest.Read(directory).EventStyle);
+        Assert.IsFalse(File.ReadAllText(Path.Combine(directory, "Generated", "_ShapeEvents.cs")).Contains("Sink", StringComparison.Ordinal));
     }
 
     [TestMethod]

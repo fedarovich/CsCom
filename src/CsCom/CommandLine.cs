@@ -71,6 +71,22 @@ internal static class CommandLine
         HelpName = "package|public|internal",
     };
 
+    private const string EventStyleDescription =
+        "The code generated for the events of coclasses: a sink class with .NET events (events) or observables (observable) and a handler interface, only the handler interface (interface), or none.";
+
+    private static readonly Option<EventStyle> EventStyleOption = new("--event-style")
+    {
+        Description = EventStyleDescription,
+        DefaultValueFactory = static _ => EventStyle.Events,
+        HelpName = "events|observable|interface|none",
+    };
+
+    private static readonly Option<EventStyle?> UpdateEventStyleOption = new("--event-style")
+    {
+        Description = EventStyleDescription + " The value recorded in cscom.json by default.",
+        HelpName = "events|observable|interface|none",
+    };
+
     private static readonly Option<string?> PackageSourceOption = new("--package-source")
     {
         Description = "An additional NuGet package source that provides the CsCom.Runtime package.",
@@ -111,6 +127,7 @@ internal static class CommandLine
                 SingleFile = result.GetValue(SingleFileOption),
                 SupportCode = result.GetValue(SupportCodeOption),
                 Marshalling = NewMarshallingOptions.GetOverrides(result).Apply(new MarshallingOptions()),
+                EventStyle = result.GetValue(EventStyleOption),
                 PackageSource = result.GetValue(PackageSourceOption),
             })));
 
@@ -130,6 +147,7 @@ internal static class CommandLine
                 SingleFile = result.GetValue(SingleFileOption),
                 SupportCode = result.GetValue(SupportCodeOption),
                 Marshalling = NewMarshallingOptions.GetOverrides(result).Apply(new MarshallingOptions()),
+                EventStyle = result.GetValue(EventStyleOption),
                 PackageSource = result.GetValue(PackageSourceOption) ?? GetBundledPackageSource(),
                 KeepTemporaryFiles = result.GetValue(KeepTempOption),
             })));
@@ -143,6 +161,7 @@ internal static class CommandLine
             UpdateSingleFileOption,
         };
         UpdateMarshallingOptions.AddTo(updateProject);
+        updateProject.Options.Add(UpdateEventStyleOption);
         updateProject.SetAction(static result => Run(result, (pipeline, loggerFactory) =>
             new ProjectGenerator(pipeline, loggerFactory).UpdateProject(new UpdateProjectRequest
             {
@@ -152,6 +171,7 @@ internal static class CommandLine
                 LanguageVersion = result.GetValue(LanguageVersionOption),
                 SingleFile = GetSingleFile(result),
                 Marshalling = UpdateMarshallingOptions.GetOverrides(result),
+                EventStyle = result.GetValue(UpdateEventStyleOption),
             })));
 
         return new RootCommand("Generates COM interop code from type libraries using source-generated COM interop.")
@@ -174,6 +194,7 @@ internal static class CommandLine
         command.Options.Add(SingleFileOption);
         command.Options.Add(SupportCodeOption);
         NewMarshallingOptions.AddTo(command);
+        command.Options.Add(EventStyleOption);
         command.Options.Add(PackageSourceOption);
     }
 

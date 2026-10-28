@@ -39,6 +39,7 @@ public sealed class CSharpEmitter
         var context = new EmitContext(library, options, _logger);
         var interfaces = new InterfaceEmitter(context);
         var wrappers = new DispatchWrapperEmitter(context);
+        var events = new EventEmitter(context);
         var types = new TypeEmitters(context);
 
         var units = new List<Unit>();
@@ -50,8 +51,8 @@ public sealed class CSharpEmitter
             {
                 EnumDefinition enumDefinition => [types.EmitEnum(enumDefinition)],
                 RecordDefinition record => [types.EmitRecord(record, @namespace)],
-                InterfaceDefinition { InterfaceKind: InterfaceKind.Dispatch } dispatch => [wrappers.Emit(dispatch, @namespace)],
-                InterfaceDefinition @interface => [.. interfaces.Emit(@interface, @namespace)],
+                InterfaceDefinition { InterfaceKind: InterfaceKind.Dispatch } dispatch => [wrappers.Emit(dispatch, @namespace), .. events.Emit(dispatch, @namespace)],
+                InterfaceDefinition @interface => [.. interfaces.Emit(@interface, @namespace), .. events.Emit(@interface, @namespace)],
                 CoClassDefinition coClass => [types.EmitCoClass(coClass, @namespace)],
                 ModuleDefinition module => types.EmitModule(module, @namespace) is { } declaration ? [declaration] : [],
                 _ => [],

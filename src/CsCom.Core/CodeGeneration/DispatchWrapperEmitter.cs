@@ -85,9 +85,7 @@ internal sealed class DispatchWrapperEmitter
 
     private MemberDeclarationSyntax Method(MethodDefinition method, SignatureBuilder signatures)
     {
-        bool hasRetval = SignatureBuilder.HasRetval(method, out var retvalType);
-        var parameters = signatures.MapLateBoundParameters(hasRetval ? method.Parameters.Take(method.Parameters.Count - 1) : method.Parameters);
-        var returnType = hasRetval ? signatures.Mapper.MapLateBound(retvalType) : method.ReturnsHResult ? LateBoundType.Void : signatures.Mapper.MapLateBound(method.ReturnType);
+        var (returnType, parameters) = signatures.MapLateBoundSignature(method);
         string id = DispId(method.MemberId);
 
         var declaration = MethodDeclaration(Syntax.Type(returnType.Name), Syntax.Identifier(SignatureBuilder.GetMethodName(method)))

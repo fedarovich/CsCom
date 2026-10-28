@@ -58,24 +58,13 @@ public abstract class DispatchObject : IDispatchProvider
     /// <summary>Converts an invocation result to a late-bound wrapper.</summary>
     protected static T? ToWrapper<T>(object? value) where T : class, IDispatchWrapper<T>
     {
-        return value switch
-        {
-            null => null,
-            T wrapper => wrapper,
-            IDispatch dispatch => T.Create(dispatch),
-            _ => throw new InvalidCastException($"The value of type {value.GetType()} does not implement IDispatch."),
-        };
+        return ComConvert.ToWrapper<T>(value);
     }
 
     /// <summary>Converts an invocation result to a COM interface.</summary>
     protected static T? ToInterface<T>(object? value) where T : class
     {
-        return value switch
-        {
-            null => null,
-            IDispatchProvider provider => (T)(object)provider.Dispatch,
-            _ => (T)value,
-        };
+        return ComConvert.ToInterface<T>(value);
     }
 
     /// <summary>Gets an enumerator for a collection that exposes a <c>_NewEnum</c> member.</summary>

@@ -99,23 +99,7 @@ internal sealed class SignatureBuilder
     public MethodDeclarationSyntax BuildComMethod(MethodDefinition method, ref bool isUnsafe)
     {
         bool preserveSig = !method.ReturnsHResult;
-        IEnumerable<ParameterDefinition> parameters = method.Parameters;
-        ManagedType returnType;
-        if (preserveSig)
-        {
-            returnType = _mapper.MapValue(method.ReturnType);
-        }
-        else if (HasRetval(method, out var retvalType))
-        {
-            returnType = retvalType is PrimitiveTypeReference { VarType: VarEnum.VT_VOID } ? new ManagedType("void*", IsPointer: true) : _mapper.MapValue(retvalType);
-            parameters = method.Parameters.Take(method.Parameters.Count - 1);
-        }
-        else
-        {
-            returnType = ManagedType.Void;
-        }
-
-        var signature = MapParameters(parameters);
+        var (returnType, signature) = MapComSignature(method);
         var declaration = MethodDeclaration(Syntax.Type(returnType.Name), Syntax.Identifier(GetMethodName(method)))
             .WithParameterList(Syntax.Parameters(signature.Select(static p => p.ToSyntax())))
             .WithSemicolonToken(Token(SyntaxKind.SemicolonToken));
@@ -133,6 +117,42 @@ internal sealed class SignatureBuilder
 
         isUnsafe |= returnType.IsPointer || signature.Any(static p => p.TypeName.EndsWith('*'));
         return declaration.WithAttributeLists(List(attributes)).WithDocumentation(method.Documentation);
+    }
+
+    /// <summary>
+    /// Maps the return type and the parameters of a method of a source-generated COM interface: methods that return an
+    /// <c>HRESULT</c> return their <c>[retval]</c> parameter, the other ones keep their signature (<c>[PreserveSig]</c>).
+    /// </summary>
+    public (ManagedType ReturnType, List<SignatureParameter> Parameters) MapComSignature(MethodDefinition method)
+    {
+        IEnumerable<ParameterDefinition> parameters = method.Parameters;
+        ManagedType returnType;
+        if (!method.ReturnsHResult)
+        {
+            returnType = _mapper.MapValue(method.ReturnType);
+        }
+        else if (HasRetval(method, out var retvalType))
+        {
+            returnType = retvalType is PrimitiveTypeReference { VarType: VarEnum.VT_VOID } ? new ManagedType("void*", IsPointer: true) : _mapper.MapValue(retvalType);
+            parameters = method.Parameters.Take(method.Parameters.Count - 1);
+        }
+        else
+        {
+            returnType = ManagedType.Void;
+        }
+
+        return (returnType, MapParameters(parameters));
+    }
+
+    /// <summary>
+    /// Maps the return type and the parameters of a method invoked through <c>IDispatch::Invoke</c>.
+    /// </summary>
+    public (LateBoundType ReturnType, List<SignatureParameter> Parameters) MapLateBoundSignature(MethodDefinition method)
+    {
+        bool hasRetval = HasRetval(method, out var retvalType);
+        var parameters = MapLateBoundParameters(hasRetval ? method.Parameters.Take(method.Parameters.Count - 1) : method.Parameters);
+        var returnType = hasRetval ? _mapper.MapLateBound(retvalType) : method.ReturnsHResult ? LateBoundType.Void : _mapper.MapLateBound(method.ReturnType);
+        return (returnType, parameters);
     }
 
     /// <summary>
