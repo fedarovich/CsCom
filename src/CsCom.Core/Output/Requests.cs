@@ -7,8 +7,11 @@ namespace CsCom.Output;
 /// </summary>
 public abstract class OutputRequest
 {
-    /// <summary>The type library: a file, a registered LIBID or a ProgID, see <see cref="TypeLibraries.TypeLibrarySource"/>.</summary>
-    public required string TypeLibraryPath { get; init; }
+    /// <summary>
+    /// The source of the interop types: a type library file, a registered LIBID or ProgID, or a .NET interop assembly, see
+    /// <see cref="TypeLibraries.TypeLibrarySource"/>.
+    /// </summary>
+    public required string Source { get; init; }
 
     /// <summary>The output directory.</summary>
     public string? OutputDirectory { get; init; }
@@ -110,10 +113,10 @@ public sealed class PackAssemblyRequest : AssemblyRequest
 public sealed class UpdateProjectRequest
 {
     /// <summary>
-    /// The type library: a file, a registered LIBID or a ProgID, see <see cref="TypeLibraries.TypeLibrarySource"/>; the type
-    /// library recorded in <c>cscom.json</c> when <see langword="null"/>.
+    /// The source of the interop types: a type library file, a registered LIBID or ProgID, or a .NET interop assembly, see
+    /// <see cref="TypeLibraries.TypeLibrarySource"/>; the source recorded in <c>cscom.json</c> when <see langword="null"/>.
     /// </summary>
-    public string? TypeLibraryPath { get; init; }
+    public string? Source { get; init; }
 
     /// <summary>The directory of the project; the current directory by default.</summary>
     public string? ProjectDirectory { get; init; }

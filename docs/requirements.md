@@ -40,23 +40,23 @@ The tool accept a TLB file as an input and runs it through the processing pipeli
 Generating a new C# project:
 
 ```powershell
-cscom project create [<OPTIONS>] <TlbPath>
+cscom project create [<OPTIONS>] <Source>
 ```
 
 Updating generated C# files in the project:
 
 ```powershell
-cscom project update [<OPTIONS>] <TlbPath>
+cscom project update [<OPTIONS>] <Source>
 ```
 
 Generating a .Net assembly:
 ```powershell
-cscom assembly build [<OPTIONS>] <TlbPath>
+cscom assembly build [<OPTIONS>] <Source>
 ```
 
 Packing the .Net assembly into a NuGet package:
 ```powershell
-cscom assembly pack [<OPTIONS>] <TlbPath>
+cscom assembly pack [<OPTIONS>] <Source>
 ```
 
 ### Well-known options:
@@ -71,6 +71,6 @@ cscom assembly pack [<OPTIONS>] <TlbPath>
 
 + `--runtime|-r <RID>` - the target runtime. Can be specified multi times. `AnyCPU` by default.
 
-+ `--csharp-version|-c <VERSION>` - the C# version to use. If not specified, the default is C# 14 for .NET 10 and C# 15 for .NET 11.
++ `--csharp-version|--cs|-l <VERSION>` - the C# version to use. If not specified, the default is C# 14 for .NET 10 and C# 15 for .NET 11.
 
 + `--single-file` - if specified, only a single C# file containing all types will be produced.

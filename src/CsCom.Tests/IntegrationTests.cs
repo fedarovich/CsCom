@@ -169,7 +169,7 @@ public sealed class IntegrationTests
 
         string project = new ProjectGenerator(_pipeline).CreateProject(new CreateProjectRequest
         {
-            TypeLibraryPath = TestEnvironment.TestTypeLibrary,
+            Source = TestEnvironment.TestTypeLibrary,
             OutputDirectory = directory,
             ConfigurationPath = configuration,
             PackageSource = TestEnvironment.LocalPackages,
@@ -197,7 +197,7 @@ public sealed class IntegrationTests
         string directory = TestEnvironment.CreateDirectory("build-csharp15");
         string project = new ProjectGenerator(_pipeline).CreateProject(new CreateProjectRequest
         {
-            TypeLibraryPath = TestEnvironment.TestTypeLibrary,
+            Source = TestEnvironment.TestTypeLibrary,
             OutputDirectory = directory,
             TargetFrameworks = ["net11.0-windows"],
             PackageSource = TestEnvironment.LocalPackages,
@@ -265,7 +265,7 @@ public sealed class IntegrationTests
         string root = TestEnvironment.CreateDirectory("late-bound");
         string interop = new ProjectGenerator(pipeline).CreateProject(new CreateProjectRequest
         {
-            TypeLibraryPath = TestEnvironment.ScriptingRuntime,
+            Source = TestEnvironment.ScriptingRuntime,
             OutputDirectory = Path.Combine(root, "Interop"),
             PackageSource = TestEnvironment.LocalPackages,
             GlobalPackagesFolder = TestEnvironment.GlobalPackagesFolder,
@@ -710,7 +710,7 @@ public sealed class IntegrationTests
         string root = TestEnvironment.CreateDirectory("default-overloads");
         string interop = new ProjectGenerator(_pipeline).CreateProject(new CreateProjectRequest
         {
-            TypeLibraryPath = TestEnvironment.TestTypeLibrary,
+            Source = TestEnvironment.TestTypeLibrary,
             OutputDirectory = Path.Combine(root, "Interop"),
             Marshalling = AllWrappers with { Bstrs = BstrMarshalling.Wrapper },
             OverloadsForDefaultValues = true,
@@ -760,7 +760,7 @@ public sealed class IntegrationTests
             """);
         string interop = new ProjectGenerator(_pipeline).CreateProject(new CreateProjectRequest
         {
-            TypeLibraryPath = TestEnvironment.TestTypeLibrary,
+            Source = TestEnvironment.TestTypeLibrary,
             OutputDirectory = Path.Combine(root, "Interop"),
             ConfigurationPath = configuration,
             PackageSource = TestEnvironment.LocalPackages,
@@ -1263,7 +1263,7 @@ public sealed class IntegrationTests
 
         var files = new AssemblyGenerator(_pipeline).BuildAssembly(new BuildAssemblyRequest
         {
-            TypeLibraryPath = TestEnvironment.TestTypeLibrary,
+            Source = TestEnvironment.TestTypeLibrary,
             OutputDirectory = output,
             RuntimeIdentifiers = ["win-x64", "win-arm64"],
             PackageSource = TestEnvironment.LocalPackages,
@@ -1288,7 +1288,7 @@ public sealed class IntegrationTests
 
         new AssemblyGenerator(_pipeline).BuildAssembly(new BuildAssemblyRequest
         {
-            TypeLibraryPath = TestEnvironment.TestTypeLibrary,
+            Source = TestEnvironment.TestTypeLibrary,
             OutputDirectory = output,
             SupportCode = SupportCodeMode.Internal,
             Name = "Flat.Interop",
@@ -1312,7 +1312,7 @@ public sealed class IntegrationTests
 
         var files = new AssemblyGenerator(_pipeline).PackAssembly(new PackAssemblyRequest
         {
-            TypeLibraryPath = TestEnvironment.TestTypeLibrary,
+            Source = TestEnvironment.TestTypeLibrary,
             OutputDirectory = output,
             PackageVersion = "2.3.4-test",
             Properties = new Dictionary<string, string> { ["Authors"] = "CsCom Tests", ["PackageLicenseExpression"] = "MIT" },
@@ -1348,7 +1348,7 @@ public sealed class IntegrationTests
 
         var files = new AssemblyGenerator(_pipeline).PackAssembly(new PackAssemblyRequest
         {
-            TypeLibraryPath = TestEnvironment.TestTypeLibrary,
+            Source = TestEnvironment.TestTypeLibrary,
             OutputDirectory = output,
             SupportCode = SupportCodeMode.Internal,
         });
@@ -1422,7 +1422,7 @@ public sealed class IntegrationTests
         StructProperties structProperties = StructProperties.Auto) =>
         new ProjectGenerator(_pipeline).CreateProject(new CreateProjectRequest
         {
-            TypeLibraryPath = typeLibrary,
+            Source = typeLibrary,
             OutputDirectory = directory,
             SupportCode = supportCode,
             SingleFile = singleFile,

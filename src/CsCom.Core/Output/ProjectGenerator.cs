@@ -33,7 +33,7 @@ public sealed partial class ProjectGenerator
     {
         ArgumentNullException.ThrowIfNull(request);
 
-        var library = _pipeline.ReadTypeLibrary(request.TypeLibraryPath, request.ReferencePaths);
+        var library = _pipeline.ReadTypeLibrary(request.Source, request.ReferencePaths);
         var manifest = ResolveSettings(request, library);
         string directory = Path.GetFullPath(request.OutputDirectory ?? manifest.Name);
         if (Directory.Exists(directory)
@@ -69,7 +69,7 @@ public sealed partial class ProjectGenerator
         }
 
         int languageVersion = ValidateLanguageVersion(request.LanguageVersion ?? manifest.LanguageVersion, manifest.TargetFrameworks);
-        string source = request.TypeLibraryPath ?? manifest.TypeLibrary;
+        string source = request.Source ?? manifest.TypeLibrary;
         IReadOnlyList<string>? referencePaths = request.ReferencePaths switch
         {
             null => manifest.ReferencePaths?.Select(path => Path.GetFullPath(Path.Combine(directory, path))).ToList(),
@@ -217,7 +217,7 @@ public sealed partial class ProjectGenerator
         return new CsComManifest
         {
             ToolVersion = ToolInfo.Version,
-            TypeLibrary = TypeLibrarySource.Normalize(request.TypeLibraryPath),
+            TypeLibrary = TypeLibrarySource.Normalize(request.Source),
             Name = name,
             Namespace = @namespace,
             TargetFrameworks = targetFrameworks,

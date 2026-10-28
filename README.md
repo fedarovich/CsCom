@@ -30,7 +30,7 @@ cscom assembly pack C:\Windows\System32\scrrun.dll -o packages --package-version
 cscom list Scripting.Dictionary --type ^IDictionary$
 ```
 
-The type library (`TlbPath`) can be:
+The source (`Source`) can be:
 - **A file:** a `.tlb` file, or a `.dll`, `.ocx` or `.exe` file with an embedded type library. A resource index can be appended,
   e.g. `foo.dll\2`.
 - **A registered LIBID:** `{00020813-0000-0000-C000-000000000046}`, optionally with the version as in the registry
@@ -50,16 +50,16 @@ after an Office update.
 | `--ns`, `--namespace <NAMESPACE>` | The namespace of the generated types. `Interop.<TlbName>` by default. |
 | `-f`, `--framework <TFM>` | The target framework; can be specified multiple times. `net10.0-windows` by default. |
 | `-r`, `--runtime <RID>` | The runtime identifier; can be specified multiple times. `AnyCPU` (no runtime identifier) by default. Not supported by `assembly pack`, whose packages are RID-neutral. |
-| `-c`, `--csharp-version <VERSION>` | The C# version. C# 14 for .NET 10 and C# 15 for .NET 11 by default; only later versions can be specified. |
+| `-l`, `--cs`, `--csharp-version <VERSION>` | The C# version. C# 14 for .NET 10 and C# 15 for .NET 11 by default; only later versions can be specified. |
 | `--single-file` | Generates all types into a single C# file instead of a file per type. |
-| `--support-code <package\|public\|internal>` | Where the support code comes from, see below. `package` by default. |
+| `-s`, `--support-code <package\|public\|internal>` | Where the support code comes from, see below. `package` by default. |
 | `--date-marshalling`, `--currency-marshalling`, `--bool-marshalling` `<bcl\|none\|wrapper>` | How `DATE`, `CURRENCY` and `VARIANT_BOOL` parameters, return values and structure members are represented: `bcl` (default), `none` or `wrapper`, see [Marshalling options](#marshalling-options). |
 | `--struct-properties <auto\|never>` | Whether structure members converted to .NET types are properties (`auto`, default) or all members are public fields of the COM types (`never`), see [Structures](#structures). |
 | `--bstr-marshalling <string\|wrapper\|none>` | How `BSTR` parameters and return values are represented: `string` (default), `wrapper` (`ComBstr`) or `none`, see [BSTRs](#bstrs). |
 | `--safearray-marshalling <array\|sysarray\|wrapper\|none>` | How typed `SAFEARRAY(T)` parameters and return values are represented: `array` (default, `T[]`), `sysarray`, `wrapper` or `none`, see [SAFEARRAYs](#safearrays). |
-| `--event-style <events\|observable\|interface\|none>` | The code generated for the events of coclasses: `events` (default), `observable`, `interface` or `none`, see [Events](#events). |
+| `-e`, `--event-style <events\|observable\|interface\|none>` | The code generated for the events of coclasses: `events` (default), `observable`, `interface` or `none`, see [Events](#events). |
 | `--overloads-for-default-values` | Generates overloads for the methods whose optional parameters have default values that C# cannot express, see [Optional parameters](#optional-parameters). |
-| `--config <PATH>` | An XML file that adds and configures model and syntax transformers, see [Configuration file](#configuration-file). |
+| `-c`, `--config <PATH>` | An XML file that adds and configures model and syntax transformers, see [Configuration file](#configuration-file). |
 | `--reference-path <PATH>` | For interop assemblies: an assembly they reference, or a directory of such assemblies; can be specified multiple times, see [Interop assemblies](#interop-assemblies). |
 | `--package-source <PATH>` | An additional NuGet source with the CsCom.Runtime package. |
 | `--keep-temp` | `assembly build` and `assembly pack` only: keeps the temporary project used to build the assembly. |
@@ -69,7 +69,7 @@ after an Office update.
 
 `project create` writes `<Name>.csproj`, a `cscom.json` file with the options it was generated with, and the C# files into the
 `Generated` folder. `project update` replaces the C# files of the `Generated` folder using the type library and the options recorded
-in `cscom.json`; a `TlbPath` replaces the recorded type library. It accepts `--namespace`, `--csharp-version`, `--single-file [true|false]`, the marshalling options, `--event-style`, `--struct-properties`, `--overloads-for-default-values [true|false]`, `--config`
+in `cscom.json`; a `Source` replaces the recorded type library. It accepts `--namespace`, `--csharp-version`, `--single-file [true|false]`, the marshalling options, `--event-style`, `--struct-properties`, `--overloads-for-default-values [true|false]`, `--config`
 (an empty value removes the file) and `--reference-path` (an empty value removes the paths) to change them. Code outside of the `Generated` folder, e.g. partial classes, is not touched.
 
 `assembly build` generates the project in a temporary directory, builds it with `dotnet build` once per runtime identifier and copies
@@ -91,8 +91,8 @@ because the interop assembly is IL-only.
 
 ### Listing a type library
 
-`cscom list <TlbPath>` writes the types and members of a type library with IDL-like signatures, using the names that the selectors
-of the [configuration file](#configuration-file) match. `--type <REGEX>` (`-t`) selects the types to list, and `--config <PATH>`
+`cscom list <Source>` writes the types and members of a type library with IDL-like signatures, using the names that the selectors
+of the [configuration file](#configuration-file) match. `--type <REGEX>` (`-t`) selects the types to list, and `--config <PATH>` (`-c`)
 applies the model transformers of a configuration file first, e.g. to check renames.
 
 ```

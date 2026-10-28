@@ -14,17 +14,17 @@ namespace CsCom;
 /// </summary>
 internal static class CommandLine
 {
-    private const string TypeLibraryDescription =
-        "The type library: a .tlb file, a .dll, .ocx or .exe file with an embedded type library, a registered LIBID ({GUID} or {GUID}:major.minor) or a ProgID; or a .NET interop assembly, such as a primary interop assembly or the output of TlbImp.";
+    private const string SourceDescription =
+        "The source of the interop types: a type library (a .tlb file, or a .dll, .ocx or .exe file with an embedded type library), a registered LIBID ({GUID} or {GUID}:major.minor) or ProgID, or a .NET interop assembly, such as a primary interop assembly or the output of TlbImp.";
 
-    private static readonly Argument<string> TypeLibraryArgument = new("TlbPath")
+    private static readonly Argument<string> SourceArgument = new("Source")
     {
-        Description = TypeLibraryDescription,
+        Description = SourceDescription,
     };
 
-    private static readonly Argument<string?> UpdateTypeLibraryArgument = new("TlbPath")
+    private static readonly Argument<string?> UpdateSourceArgument = new("Source")
     {
-        Description = TypeLibraryDescription + " The type library recorded in cscom.json by default.",
+        Description = SourceDescription + " The source recorded in cscom.json by default.",
         Arity = ArgumentArity.ZeroOrOne,
     };
 
@@ -64,7 +64,7 @@ internal static class CommandLine
         HelpName = "RID",
     };
 
-    private static readonly Option<int?> LanguageVersionOption = new("--csharp-version", "-c")
+    private static readonly Option<int?> LanguageVersionOption = new("--csharp-version", "--cs", "-l")
     {
         Description = "The C# version of the generated code. C# 14 for .NET 10 and C# 15 for .NET 11 by default.",
         HelpName = "VERSION",
@@ -81,7 +81,7 @@ internal static class CommandLine
         Arity = ArgumentArity.ZeroOrOne,
     };
 
-    private static readonly Option<SupportCodeMode> SupportCodeOption = new("--support-code")
+    private static readonly Option<SupportCodeMode> SupportCodeOption = new("--support-code", "-s")
     {
         Description = "Where the support code (IDispatch, activation, late binding) comes from: the CsCom.Runtime package, or public or internal types emitted into the project.",
         DefaultValueFactory = static _ => SupportCodeMode.Package,
@@ -91,14 +91,14 @@ internal static class CommandLine
     private const string EventStyleDescription =
         "The code generated for the events of coclasses: a sink class with .NET events (events) or observables (observable) and a handler interface, only the handler interface (interface), or none.";
 
-    private static readonly Option<EventStyle> EventStyleOption = new("--event-style")
+    private static readonly Option<EventStyle> EventStyleOption = new("--event-style", "-e")
     {
         Description = EventStyleDescription,
         DefaultValueFactory = static _ => EventStyle.Events,
         HelpName = "events|observable|interface|none",
     };
 
-    private static readonly Option<EventStyle?> UpdateEventStyleOption = new("--event-style")
+    private static readonly Option<EventStyle?> UpdateEventStyleOption = new("--event-style", "-e")
     {
         Description = EventStyleDescription + " The value recorded in cscom.json by default.",
         HelpName = "events|observable|interface|none",
@@ -137,13 +137,13 @@ internal static class CommandLine
 
     private const string ConfigDescription = "An XML file that adds and configures model and syntax transformers.";
 
-    private static readonly Option<string?> ConfigOption = new("--config")
+    private static readonly Option<string?> ConfigOption = new("--config", "-c")
     {
         Description = ConfigDescription,
         HelpName = "PATH",
     };
 
-    private static readonly Option<string?> UpdateConfigOption = new("--config")
+    private static readonly Option<string?> UpdateConfigOption = new("--config", "-c")
     {
         Description = ConfigDescription + " The file recorded in cscom.json by default; an empty value removes it.",
         HelpName = "PATH",
@@ -206,7 +206,7 @@ internal static class CommandLine
         createProject.SetAction(static result => Run(result, (pipeline, loggerFactory) =>
             new ProjectGenerator(pipeline, loggerFactory).CreateProject(new CreateProjectRequest
             {
-                TypeLibraryPath = result.GetRequiredValue(TypeLibraryArgument),
+                Source = result.GetRequiredValue(SourceArgument),
                 OutputDirectory = result.GetValue(OutputOption),
                 Name = result.GetValue(NameOption),
                 Namespace = result.GetValue(NamespaceOption),
@@ -231,7 +231,7 @@ internal static class CommandLine
         buildAssembly.SetAction(static result => Run(result, (pipeline, loggerFactory) =>
             new AssemblyGenerator(pipeline, loggerFactory).BuildAssembly(new BuildAssemblyRequest
             {
-                TypeLibraryPath = result.GetRequiredValue(TypeLibraryArgument),
+                Source = result.GetRequiredValue(SourceArgument),
                 OutputDirectory = result.GetValue(OutputOption),
                 Name = result.GetValue(NameOption),
                 Namespace = result.GetValue(NamespaceOption),
@@ -259,7 +259,7 @@ internal static class CommandLine
         packAssembly.SetAction(static result => Run(result, (pipeline, loggerFactory) =>
             new AssemblyGenerator(pipeline, loggerFactory).PackAssembly(new PackAssemblyRequest
             {
-                TypeLibraryPath = result.GetRequiredValue(TypeLibraryArgument),
+                Source = result.GetRequiredValue(SourceArgument),
                 OutputDirectory = result.GetValue(OutputOption),
                 Name = result.GetValue(NameOption),
                 Namespace = result.GetValue(NamespaceOption),
@@ -281,7 +281,7 @@ internal static class CommandLine
 
         var updateProject = new Command("update", "Regenerates the C# files of a project created with 'cscom project create'.")
         {
-            UpdateTypeLibraryArgument,
+            UpdateSourceArgument,
             OutputOption,
             NamespaceOption,
             LanguageVersionOption,
@@ -296,7 +296,7 @@ internal static class CommandLine
         updateProject.SetAction(static result => Run(result, (pipeline, loggerFactory) =>
             new ProjectGenerator(pipeline, loggerFactory).UpdateProject(new UpdateProjectRequest
             {
-                TypeLibraryPath = result.GetValue(UpdateTypeLibraryArgument),
+                Source = result.GetValue(UpdateSourceArgument),
                 ProjectDirectory = result.GetValue(OutputOption),
                 Namespace = result.GetValue(NamespaceOption),
                 LanguageVersion = result.GetValue(LanguageVersionOption),
@@ -325,7 +325,7 @@ internal static class CommandLine
 
         var list = new Command("list", "Lists the types and members of a type library or an interop assembly with the names that the transformers of configuration files match.")
         {
-            TypeLibraryArgument,
+            SourceArgument,
             TypeFilterOption,
         };
         list.Options.Add(ConfigOption);
@@ -359,7 +359,7 @@ internal static class CommandLine
             }
         }
 
-        var library = pipeline.ReadTypeLibrary(result.GetRequiredValue(TypeLibraryArgument), result.GetValue(ReferencePathOption) ?? []);
+        var library = pipeline.ReadTypeLibrary(result.GetRequiredValue(SourceArgument), result.GetValue(ReferencePathOption) ?? []);
         var configuration = result.GetValue(ConfigOption) is { } path ? PipelineConfiguration.Load(Path.GetFullPath(path), pipeline.Registry) : null;
         pipeline.TransformModel(library, new CodeGenerationOptions { Namespace = "Interop" }, configuration, sanitizeNames: false);
         ModelPrinter.Write(library, result.InvocationConfiguration.Output, filter);
@@ -368,7 +368,7 @@ internal static class CommandLine
 
     private static void AddCreateOptions(Command command, bool withRuntimes = true)
     {
-        command.Arguments.Add(TypeLibraryArgument);
+        command.Arguments.Add(SourceArgument);
         command.Options.Add(OutputOption);
         command.Options.Add(NameOption);
         command.Options.Add(NamespaceOption);

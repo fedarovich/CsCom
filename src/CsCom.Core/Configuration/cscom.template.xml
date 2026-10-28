@@ -2,7 +2,7 @@
 <!--
   The CsCom configuration: adds model and syntax transformers to the pipeline.
   Pass it to 'cscom project create' with the config option; 'cscom project update' applies it again.
-  'cscom list <TlbPath>' shows the names that the selectors match. cscom.xsd gives IntelliSense in XML editors.
+  'cscom list <Source>' shows the names that the selectors match. cscom.xsd gives IntelliSense in XML editors.
 -->
 <CsCom xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="cscom.xsd">
   <ModelTransformers>

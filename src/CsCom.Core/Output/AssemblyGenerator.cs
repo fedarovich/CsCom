@@ -168,7 +168,7 @@ public sealed partial class AssemblyGenerator
         Func<TypeLibrary, CsComManifest, IReadOnlyDictionary<string, string>?> getProperties,
         Func<CsComManifest, string, string, IReadOnlyList<string>> action)
     {
-        var library = _pipeline.ReadTypeLibrary(request.TypeLibraryPath, request.ReferencePaths);
+        var library = _pipeline.ReadTypeLibrary(request.Source, request.ReferencePaths);
         var manifest = _projectGenerator.ResolveSettings(request, library);
         var configuration = _projectGenerator.LoadConfiguration(manifest.Configuration);
         string temp = Path.Combine(Path.GetTempPath(), "cscom", Guid.NewGuid().ToString("N"));

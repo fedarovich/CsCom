@@ -17,9 +17,10 @@ public sealed class CommandLineTests
             "--ns", "Cli.Namespace",
             "-f", "net10.0-windows", "-f", "net11.0-windows",
             "-r", "win-x64",
-            "-c", "14",
+            "-l", "14",
             "--single-file",
-            "--support-code", "internal",
+            "-s", "internal",
+            "-e", "observable",
             "-v", "quiet");
 
         Assert.AreEqual(0, exitCode);
@@ -31,6 +32,7 @@ public sealed class CommandLineTests
         Assert.AreEqual(14, manifest.LanguageVersion);
         Assert.IsTrue(manifest.SingleFile);
         Assert.AreEqual(CodeGeneration.SupportCodeMode.Internal, manifest.SupportCode);
+        Assert.AreEqual(CodeGeneration.EventStyle.Observable, manifest.EventStyle);
         Assert.IsTrue(File.Exists(Path.Combine(directory, "Cli.Interop.csproj")));
     }
 
@@ -88,7 +90,7 @@ public sealed class CommandLineTests
         Assert.AreEqual(0, Run("project", "create", TestEnvironment.TestTypeLibrary, "-o", directory, "-v", "quiet"));
         Assert.AreEqual(CodeGeneration.EventStyle.Events, CsComManifest.Read(directory).EventStyle);
 
-        Assert.AreEqual(0, Run("project", "update", TestEnvironment.TestTypeLibrary, "-o", directory, "--event-style", "interface", "-v", "quiet"));
+        Assert.AreEqual(0, Run("project", "update", TestEnvironment.TestTypeLibrary, "-o", directory, "-e", "interface", "-v", "quiet"));
         Assert.AreEqual(CodeGeneration.EventStyle.Interface, CsComManifest.Read(directory).EventStyle);
 
         Assert.AreEqual(0, Run("project", "update", TestEnvironment.TestTypeLibrary, "-o", directory, "-v", "quiet"));
@@ -134,7 +136,7 @@ public sealed class CommandLineTests
         string configuration = Path.Combine(root, "cscom.xml");
         File.WriteAllText(configuration, "<CsCom><ModelTransformers /><SyntaxTransformers /></CsCom>");
 
-        Assert.AreEqual(0, Run("project", "create", TestEnvironment.TestTypeLibrary, "-o", directory, "--config", configuration, "-v", "quiet"));
+        Assert.AreEqual(0, Run("project", "create", TestEnvironment.TestTypeLibrary, "-o", directory, "-c", configuration, "-v", "quiet"));
         Assert.AreEqual(@"..\cscom.xml", CsComManifest.Read(directory).Configuration);
 
         Assert.AreEqual(0, Run("project", "update", TestEnvironment.TestTypeLibrary, "-o", directory, "-v", "quiet"));
@@ -185,6 +187,8 @@ public sealed class CommandLineTests
         Assert.AreEqual(0, Run("project", "update", "-o", directory, "-v", "quiet"));
         Assert.AreEqual(0, Run("project", "update", "-o", directory, "--single-file", "-v", "quiet"));
         Assert.IsTrue(CsComManifest.Read(directory).SingleFile);
+        Assert.AreEqual(0, Run("project", "update", "-o", directory, "--cs", "15", "-v", "quiet"));
+        Assert.AreEqual(15, CsComManifest.Read(directory).LanguageVersion);
     }
 
     [TestMethod]
@@ -247,7 +251,7 @@ public sealed class CommandLineTests
         // The starter configuration can be used right away.
         File.Delete(configuration);
         Assert.AreEqual(0, Run("config", "create", "-o", directory, "-v", "quiet"));
-        Assert.AreEqual(0, Run("list", TestEnvironment.TestTypeLibrary, "--config", configuration, "-t", "^Color$"));
+        Assert.AreEqual(0, Run("list", TestEnvironment.TestTypeLibrary, "-c", configuration, "-t", "^Color$"));
     }
 
     [TestMethod]

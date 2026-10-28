@@ -13,7 +13,7 @@ public sealed class ProjectGeneratorTests
     {
         string directory = Path.Combine(TestEnvironment.CreateDirectory("defaults"), "Project");
 
-        string project = _generator.CreateProject(new CreateProjectRequest { TypeLibraryPath = TestEnvironment.TestTypeLibrary, OutputDirectory = directory });
+        string project = _generator.CreateProject(new CreateProjectRequest { Source = TestEnvironment.TestTypeLibrary, OutputDirectory = directory });
 
         Assert.AreEqual(Path.Combine(directory, "Interop.CsComTest.csproj"), project);
         string text = File.ReadAllText(project);
@@ -39,7 +39,7 @@ public sealed class ProjectGeneratorTests
 
         string project = _generator.CreateProject(new CreateProjectRequest
         {
-            TypeLibraryPath = TestEnvironment.TestTypeLibrary,
+            Source = TestEnvironment.TestTypeLibrary,
             OutputDirectory = directory,
             Name = "My.Test",
             Namespace = "My.Test.Interop",
@@ -67,7 +67,7 @@ public sealed class ProjectGeneratorTests
         string root = TestEnvironment.CreateDirectory("cpm");
         File.WriteAllText(Path.Combine(root, "Directory.Packages.props"), "<Project><PropertyGroup><ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally></PropertyGroup></Project>");
 
-        string project = _generator.CreateProject(new CreateProjectRequest { TypeLibraryPath = TestEnvironment.TestTypeLibrary, OutputDirectory = Path.Combine(root, "src", "Interop") });
+        string project = _generator.CreateProject(new CreateProjectRequest { Source = TestEnvironment.TestTypeLibrary, OutputDirectory = Path.Combine(root, "src", "Interop") });
 
         StringAssert.Contains(File.ReadAllText(project), "<PackageReference Include=\"CsCom.Runtime\" />");
     }
@@ -76,10 +76,10 @@ public sealed class ProjectGeneratorTests
     public void RefusesToOverwriteProjects()
     {
         string directory = TestEnvironment.CreateDirectory("overwrite");
-        _generator.CreateProject(new CreateProjectRequest { TypeLibraryPath = TestEnvironment.TestTypeLibrary, OutputDirectory = directory });
+        _generator.CreateProject(new CreateProjectRequest { Source = TestEnvironment.TestTypeLibrary, OutputDirectory = directory });
 
         var exception = Assert.ThrowsExactly<CsComException>(() =>
-            _generator.CreateProject(new CreateProjectRequest { TypeLibraryPath = TestEnvironment.TestTypeLibrary, OutputDirectory = directory }));
+            _generator.CreateProject(new CreateProjectRequest { Source = TestEnvironment.TestTypeLibrary, OutputDirectory = directory }));
         StringAssert.Contains(exception.Message, "cscom project update");
     }
 
@@ -91,7 +91,7 @@ public sealed class ProjectGeneratorTests
     {
         var exception = Assert.ThrowsExactly<CsComException>(() => _generator.CreateProject(new CreateProjectRequest
         {
-            TypeLibraryPath = TestEnvironment.TestTypeLibrary,
+            Source = TestEnvironment.TestTypeLibrary,
             OutputDirectory = TestEnvironment.CreateDirectory("invalid"),
             TargetFrameworks = [targetFramework],
             LanguageVersion = languageVersion,
@@ -108,7 +108,7 @@ public sealed class ProjectGeneratorTests
     {
         Assert.ThrowsExactly<CsComException>(() => _generator.CreateProject(new CreateProjectRequest
         {
-            TypeLibraryPath = TestEnvironment.TestTypeLibrary,
+            Source = TestEnvironment.TestTypeLibrary,
             OutputDirectory = TestEnvironment.CreateDirectory("namespace"),
             Namespace = @namespace,
         }));
@@ -118,14 +118,14 @@ public sealed class ProjectGeneratorTests
     public void UpdatesGeneratedFilesAndKeepsUserFiles()
     {
         string directory = TestEnvironment.CreateDirectory("update");
-        string project = _generator.CreateProject(new CreateProjectRequest { TypeLibraryPath = TestEnvironment.TestTypeLibrary, OutputDirectory = directory });
+        string project = _generator.CreateProject(new CreateProjectRequest { Source = TestEnvironment.TestTypeLibrary, OutputDirectory = directory });
         string userFile = Path.Combine(directory, "Extensions.cs");
         File.WriteAllText(userFile, "// user code");
         File.WriteAllText(Path.Combine(directory, "Generated", "Stale.cs"), "// stale");
 
         _generator.UpdateProject(new UpdateProjectRequest
         {
-            TypeLibraryPath = TestEnvironment.TestTypeLibrary,
+            Source = TestEnvironment.TestTypeLibrary,
             ProjectDirectory = directory,
             Namespace = "Renamed",
             LanguageVersion = 15,
@@ -149,13 +149,13 @@ public sealed class ProjectGeneratorTests
         string directory = TestEnvironment.CreateDirectory("update-defaults");
         _generator.CreateProject(new CreateProjectRequest
         {
-            TypeLibraryPath = TestEnvironment.TestTypeLibrary,
+            Source = TestEnvironment.TestTypeLibrary,
             OutputDirectory = directory,
             Namespace = "Custom.Namespace",
             SingleFile = true,
         });
 
-        _generator.UpdateProject(new UpdateProjectRequest { TypeLibraryPath = TestEnvironment.TestTypeLibrary, ProjectDirectory = directory });
+        _generator.UpdateProject(new UpdateProjectRequest { Source = TestEnvironment.TestTypeLibrary, ProjectDirectory = directory });
 
         var manifest = CsComManifest.Read(directory);
         Assert.AreEqual("Custom.Namespace", manifest.Namespace);
@@ -169,7 +169,7 @@ public sealed class ProjectGeneratorTests
         string directory = TestEnvironment.CreateDirectory("marshalling");
         _generator.CreateProject(new CreateProjectRequest
         {
-            TypeLibraryPath = TestEnvironment.TestTypeLibrary,
+            Source = TestEnvironment.TestTypeLibrary,
             OutputDirectory = directory,
             Marshalling = new MarshallingOptions { Dates = ValueMarshalling.Wrapper, Booleans = ValueMarshalling.Wrapper },
         });
@@ -179,7 +179,7 @@ public sealed class ProjectGeneratorTests
 
         _generator.UpdateProject(new UpdateProjectRequest
         {
-            TypeLibraryPath = TestEnvironment.TestTypeLibrary,
+            Source = TestEnvironment.TestTypeLibrary,
             ProjectDirectory = directory,
             Marshalling = new MarshallingOverrides { Dates = ValueMarshalling.None, Currencies = ValueMarshalling.Wrapper },
         });
@@ -238,7 +238,7 @@ public sealed class ProjectGeneratorTests
 
         generator.CreateProject(new CreateProjectRequest
         {
-            TypeLibraryPath = TestEnvironment.TestTypeLibrary,
+            Source = TestEnvironment.TestTypeLibrary,
             OutputDirectory = directory,
             ConfigurationPath = Path.Combine(directory, "cscom.xml"),
         });
@@ -248,12 +248,12 @@ public sealed class ProjectGeneratorTests
         Assert.IsFalse(File.Exists(Path.Combine(generated, "IShape.cs")));
         Assert.IsFalse(File.Exists(Path.Combine(generated, "Point.cs")));
 
-        generator.UpdateProject(new UpdateProjectRequest { TypeLibraryPath = TestEnvironment.TestTypeLibrary, ProjectDirectory = directory });
+        generator.UpdateProject(new UpdateProjectRequest { Source = TestEnvironment.TestTypeLibrary, ProjectDirectory = directory });
         Assert.AreEqual("cscom.xml", CsComManifest.Read(directory).Configuration);
         Assert.IsTrue(File.Exists(Path.Combine(generated, "IFigure.cs")));
         Assert.IsFalse(File.Exists(Path.Combine(generated, "Point.cs")));
 
-        generator.UpdateProject(new UpdateProjectRequest { TypeLibraryPath = TestEnvironment.TestTypeLibrary, ProjectDirectory = directory, ConfigurationPath = "" });
+        generator.UpdateProject(new UpdateProjectRequest { Source = TestEnvironment.TestTypeLibrary, ProjectDirectory = directory, ConfigurationPath = "" });
         Assert.IsNull(CsComManifest.Read(directory).Configuration);
         Assert.IsTrue(File.Exists(Path.Combine(generated, "IShape.cs")));
         Assert.IsTrue(File.Exists(Path.Combine(generated, "Point.cs")));
@@ -269,7 +269,7 @@ public sealed class ProjectGeneratorTests
 
         var exception = Assert.ThrowsExactly<CsComException>(() => _generator.CreateProject(new CreateProjectRequest
         {
-            TypeLibraryPath = TestEnvironment.TestTypeLibrary,
+            Source = TestEnvironment.TestTypeLibrary,
             OutputDirectory = directory,
             ConfigurationPath = configuration,
         }));
@@ -285,7 +285,7 @@ public sealed class ProjectGeneratorTests
         string directory = TestEnvironment.CreateDirectory("event-style");
         _generator.CreateProject(new CreateProjectRequest
         {
-            TypeLibraryPath = TestEnvironment.TestTypeLibrary,
+            Source = TestEnvironment.TestTypeLibrary,
             OutputDirectory = directory,
             EventStyle = EventStyle.Observable,
         });
@@ -293,10 +293,10 @@ public sealed class ProjectGeneratorTests
         StringAssert.Contains(File.ReadAllText(Path.Combine(directory, CsComManifest.FileName)), "\"eventStyle\": \"observable\"");
         StringAssert.Contains(File.ReadAllText(Path.Combine(directory, "Generated", "_ShapeEvents.cs")), "IObservable<_ShapeEvents_MovedEventArgs> Moved");
 
-        _generator.UpdateProject(new UpdateProjectRequest { TypeLibraryPath = TestEnvironment.TestTypeLibrary, ProjectDirectory = directory });
+        _generator.UpdateProject(new UpdateProjectRequest { Source = TestEnvironment.TestTypeLibrary, ProjectDirectory = directory });
         Assert.AreEqual(EventStyle.Observable, CsComManifest.Read(directory).EventStyle);
 
-        _generator.UpdateProject(new UpdateProjectRequest { TypeLibraryPath = TestEnvironment.TestTypeLibrary, ProjectDirectory = directory, EventStyle = EventStyle.None });
+        _generator.UpdateProject(new UpdateProjectRequest { Source = TestEnvironment.TestTypeLibrary, ProjectDirectory = directory, EventStyle = EventStyle.None });
         Assert.AreEqual(EventStyle.None, CsComManifest.Read(directory).EventStyle);
         Assert.IsFalse(File.ReadAllText(Path.Combine(directory, "Generated", "_ShapeEvents.cs")).Contains("Sink", StringComparison.Ordinal));
     }
@@ -305,7 +305,7 @@ public sealed class ProjectGeneratorTests
     public void UpdatesFromTheRecordedTypeLibrary()
     {
         string directory = TestEnvironment.CreateDirectory("recorded-tlb");
-        _generator.CreateProject(new CreateProjectRequest { TypeLibraryPath = TestEnvironment.TestTypeLibrary, OutputDirectory = directory });
+        _generator.CreateProject(new CreateProjectRequest { Source = TestEnvironment.TestTypeLibrary, OutputDirectory = directory });
         File.Delete(Path.Combine(directory, "Generated", "IShape.cs"));
 
         _generator.UpdateProject(new UpdateProjectRequest { ProjectDirectory = directory });
@@ -318,7 +318,7 @@ public sealed class ProjectGeneratorTests
     public void RecordsRegisteredTypeLibraries()
     {
         string directory = TestEnvironment.CreateDirectory("progid");
-        _generator.CreateProject(new CreateProjectRequest { TypeLibraryPath = "Scripting.Dictionary", OutputDirectory = directory });
+        _generator.CreateProject(new CreateProjectRequest { Source = "Scripting.Dictionary", OutputDirectory = directory });
 
         Assert.AreEqual("Scripting.Dictionary", CsComManifest.Read(directory).TypeLibrary);
         Assert.IsTrue(File.Exists(Path.Combine(directory, "Interop.Scripting.csproj")));
@@ -335,7 +335,7 @@ public sealed class ProjectGeneratorTests
     {
         var exception = Assert.ThrowsExactly<CsComException>(() => _generator.UpdateProject(new UpdateProjectRequest
         {
-            TypeLibraryPath = TestEnvironment.TestTypeLibrary,
+            Source = TestEnvironment.TestTypeLibrary,
             ProjectDirectory = TestEnvironment.CreateDirectory("no-manifest"),
         }));
 
@@ -350,25 +350,25 @@ public sealed class ProjectGeneratorTests
 
         var runtimes = Assert.ThrowsExactly<CsComException>(() => generator.PackAssembly(new PackAssemblyRequest
         {
-            TypeLibraryPath = TestEnvironment.TestTypeLibrary,
+            Source = TestEnvironment.TestTypeLibrary,
             OutputDirectory = output,
             RuntimeIdentifiers = ["win-x64"],
         }));
         var version = Assert.ThrowsExactly<CsComException>(() => generator.PackAssembly(new PackAssemblyRequest
         {
-            TypeLibraryPath = TestEnvironment.TestTypeLibrary,
+            Source = TestEnvironment.TestTypeLibrary,
             OutputDirectory = output,
             PackageVersion = "1.x",
         }));
         var property = Assert.ThrowsExactly<CsComException>(() => generator.PackAssembly(new PackAssemblyRequest
         {
-            TypeLibraryPath = TestEnvironment.TestTypeLibrary,
+            Source = TestEnvironment.TestTypeLibrary,
             OutputDirectory = output,
             Properties = new Dictionary<string, string> { ["Package Tags"] = "x" },
         }));
         var buildProperty = Assert.ThrowsExactly<CsComException>(() => generator.BuildAssembly(new BuildAssemblyRequest
         {
-            TypeLibraryPath = TestEnvironment.TestTypeLibrary,
+            Source = TestEnvironment.TestTypeLibrary,
             OutputDirectory = output,
             Properties = new Dictionary<string, string> { ["1x"] = "y" },
         }));
