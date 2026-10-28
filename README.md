@@ -417,24 +417,67 @@ dynamic fso = ComActivator.CreateDynamicInstance("Scripting.FileSystemObject"); 
 dynamic dictionary = Dictionary.CreateDynamic();   // generated for coclasses that support IDispatch
 dynamic shape = typedShape.AsDynamic();            // any IDispatch-based interface or late-bound wrapper
 dynamic tag = ComDynamic.ToDynamic(typedShape.Tag); // an object returned in a VARIANT
+dynamic excel = ComActivator.GetActiveDynamicInstance("Excel.Application"); // a running instance
+dynamic book = ComActivator.BindToDynamicMoniker(@"C:\Data\Book.xlsx");      // VB's GetObject: a document, winmgmts:, ...
 
 dictionary.Add("a", 1);                            // methods
 int count = dictionary.Count;                      // properties
 object item = dictionary.Item("a");                // parameterized properties are invoked like methods
-dictionary["b"] = 2;                               // indexers use the default member (DISPID_VALUE)
+dictionary.Item["a"] = 3;                          // or indexed, also to set them, like sheet.Range["A1"].Value = 5
+dictionary["b"] = 2;                               // indexers and invocations use the default member (DISPID_VALUE)
 string path = fso.BuildPath(Path: @"C:\a", Name: "b"); // named arguments
+calculator.Swap(ref a, ref b);                     // ref and out arguments
 string drive = fso.GetFolder(@"C:\Windows").Drive.DriveLetter; // returned COM objects are dynamic too
 foreach (var key in dictionary) { }                // _NewEnum
-IDispatch dispatch = dictionary;                   // conversions to IDispatch and to the implemented COM interfaces
+IDispatch dispatch = dictionary;                   // conversions to IDispatch, the implemented COM interfaces
+DShapeEvents events = shape.GetEvents();           // and the late-bound wrappers of dispinterfaces
 ```
 
-COM objects returned by dynamic calls are dynamic as well, so calls can be chained. Assigning a COM object to a property or an
-indexer uses `PROPERTYPUTREF` when the property supports it, like VB's `Set`. Unknown members throw `RuntimeBinderException` and
-errors raised by the COM object throw `COMException`.
+- **Returned objects:** COM objects returned by dynamic calls are dynamic as well, so calls can be chained. There is one dynamic
+  object per COM object, so `==` compares COM objects (`if (sheet == excel.ActiveSheet)`), like the runtime callable wrappers
+  of the built-in COM interop. The dynamic objects are attached to the managed objects of the COM objects and do not keep them
+  alive.
+- **Properties:** assigning a COM object to a property or an indexer uses `PROPERTYPUTREF` when the property supports it, like
+  VB's `Set`. A property that requires arguments, or can only be set, can be indexed with its arguments: `dictionary.Item["a"]`,
+  `dictionary.Key["a"] = "b"`.
+- **`ref` and `out` arguments:** they receive the new values. A variable of a COM type is passed as a reference to its type,
+  e.g. an `int` as `VT_BYREF | VT_I4`, which typed by-reference parameters such as `long*` require, so its type must match the
+  parameter: `int` for `long`, `double` for `double`, `bool` for `VARIANT_BOOL`, `string` for `BSTR`. An `object` or `dynamic`
+  variable is passed as a reference to a `VARIANT`, for `VARIANT*` parameters.
+- **Running objects and monikers:** `ComActivator.GetActiveInstance<T>` and `GetActiveDynamicInstance` return an instance
+  registered in the running object table, like `Marshal.GetActiveObject` of .NET Framework, which .NET does not have;
+  `TryGetActiveInstance<T>` and `TryGetActiveDynamicInstance` return `false` instead of throwing when no instance is running
+  or the ProgID is not registered.
+  `BindToMoniker<T>` and `BindToDynamicMoniker` bind a moniker display name, like VB's `GetObject`: the path of a document,
+  which its application opens, `winmgmts:` for WMI or `new:ProgID` for a new instance. Office applications register
+  themselves only after their window has lost the focus once, so an instance that has just been started may not be found.
+- **Events:** `+=` and `-=` add and remove handlers of the events of the source dispinterfaces of the object's coclass, found
+  through `IProvideClassInfo` or, without it, through the first coclass of the type library whose default interface is that
+  of the object. A handler is a delegate with at most the parameters of the event, so a lambda needs a cast. Its `ref` and
+  `out` parameters and its result are returned to the COM object:
+
+  ```csharp
+  excel.WorkbookOpen += (Action<dynamic>)(book => Console.WriteLine(book.Name));
+  excel.WorkbookBeforeClose += new BeforeCloseHandler((dynamic book, ref bool cancel) => cancel = true);
+  ComDynamic.AddEventHandler(book, "Activate", handler); // also for events named like methods, e.g. Workbook.Activate
+  ComDynamic.RemoveEventHandlers(excel);                 // removes all handlers of the object
+
+  delegate void BeforeCloseHandler(dynamic book, ref bool cancel);
+  ```
+
+  The object is connected to the event interface while it has handlers, so remove them, on the thread that added them, when
+  they are no longer needed: the COM object holds the handlers, and handlers that refer to the object keep both alive. Only
+  dispinterfaces are supported; dual and vtable event interfaces need the generated sinks (see [Events](#events)).
+- **Releasing objects:** the COM references are released when the objects are garbage collected, and finalizers do not run
+  when the process exits. An Office application exits after `Quit()` only when all its objects are released, so let them go
+  out of scope and call `GC.Collect()` and `GC.WaitForPendingFinalizers()`, otherwise it keeps running for minutes.
+- **Debugger:** the dynamic view of the debugger lists the properties described by the type information of the object, and
+  `ComDynamic.GetTypeName` returns the name of its type, like VB's `TypeName`.
+- **Errors:** unknown members throw `RuntimeBinderException`. Errors raised by the COM object throw `COMException`, and so do
+  failed invocations, with messages that name the member and the argument, e.g. "Type mismatch in argument 2 of 'BuildPath'."
 
 The C# runtime binder requires dynamic code, so `dynamic` cannot be used with Native AOT: the entry points are annotated with
-`[RequiresDynamicCode]`, and the typed interop stays trimming and AOT compatible. Arguments are passed by value, so `ref` and `out`
-arguments are not updated, and parameterized properties other than the default one cannot be set.
+`[RequiresDynamicCode]`, and the typed interop stays trimming and AOT compatible.
 
 ### Events
 
@@ -495,8 +538,9 @@ The generated projects disable runtime marshalling, which source-generated COM i
 
 ### Limitations
 
-- Events cannot be handled through `dynamic`, and they are connected through the sink classes rather than through events of the
-  COM interfaces as with TlbImp (`app.WorkbookOpen += ...`), because C# has no extension events.
+- Events of the generated interfaces are connected through the sink classes rather than through events of the COM interfaces as
+  with TlbImp (`app.WorkbookOpen += ...`), because C# has no extension events; `dynamic` objects support `+=` for the events
+  of dispinterfaces.
 - Structures keep the layout of the COM structures, so `VARIANT`, `SAFEARRAY` and interface pointer members are raw values, and
   `BSTR` members are `ComBstrValue` views that the code using the structure allocates and frees; only `DATE`, `CURRENCY` and
   `VARIANT_BOOL` members are converted.

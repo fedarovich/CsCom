@@ -14,10 +14,13 @@ internal static unsafe partial class OleNativeMethods
     public const int CO_E_NOTINITIALIZED = unchecked((int)0x800401F0);
     public const int DISP_E_EXCEPTION = unchecked((int)0x80020009);
     public const int DISP_E_PARAMNOTFOUND = unchecked((int)0x80020004);
+    public const int DISP_E_TYPEMISMATCH = unchecked((int)0x80020005);
+    public const int DISP_E_BADPARAMCOUNT = unchecked((int)0x8002000E);
     public const int DISP_E_MEMBERNOTFOUND = unchecked((int)0x80020003);
     public const int DISP_E_UNKNOWNNAME = unchecked((int)0x80020006);
     public const int DISP_E_BADINDEX = unchecked((int)0x8002000B);
     public const int CO_E_CLASSSTRING = unchecked((int)0x800401F3);
+    public const int MK_E_UNAVAILABLE = unchecked((int)0x800401E3);
     public const uint COINIT_MULTITHREADED = 0x0;
     public const uint LOCALE_USER_DEFAULT = 0x0400;
 
@@ -33,6 +36,12 @@ internal static unsafe partial class OleNativeMethods
 
     [LibraryImport("ole32.dll", StringMarshalling = StringMarshalling.Utf16)]
     public static partial int CLSIDFromProgID(string lpszProgID, out Guid lpclsid);
+
+    [LibraryImport("ole32.dll", StringMarshalling = StringMarshalling.Utf16)]
+    public static partial int CoGetObject(string pszName, void* pBindOptions, in Guid riid, out void* ppv);
+
+    [LibraryImport("oleaut32.dll")]
+    public static partial int GetActiveObject(in Guid rclsid, void* pvReserved, out void* ppunk);
 
     [LibraryImport("oleaut32.dll")]
     public static partial uint SafeArrayGetDim(nint psa);

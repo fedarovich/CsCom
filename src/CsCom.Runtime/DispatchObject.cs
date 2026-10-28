@@ -34,7 +34,7 @@ public abstract class DispatchObject : IDispatchProvider
     /// <param name="byRef">For each argument, whether it is passed by reference.</param>
     protected object? InvokeMethodByRef(int dispId, Span<object?> args, ReadOnlySpan<bool> byRef)
     {
-        return DispatchInvoker.Invoke(Dispatch, dispId, DispatchFlags.Method, args, output: args, byRef: byRef);
+        return DispatchInvoker.Invoke(Dispatch, dispId, DispatchFlags.Method, args, output: args, byRef: DispatchInvoker.ToVariantReferences(byRef));
     }
 
     /// <summary>Gets the value of a property.</summary>
@@ -124,6 +124,6 @@ public abstract class DispatchObject : IDispatchProvider
     /// <returns>The result of the invocation.</returns>
     public static object? InvokeByRef(IDispatch dispatch, int dispId, DispatchFlags flags, Span<object?> args, ReadOnlySpan<bool> byRef)
     {
-        return DispatchInvoker.Invoke(dispatch, dispId, flags, args, output: args, byRef: byRef);
+        return DispatchInvoker.Invoke(dispatch, dispId, flags, args, output: args, byRef: DispatchInvoker.ToVariantReferences(byRef));
     }
 }
