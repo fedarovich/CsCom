@@ -80,6 +80,45 @@ public sealed class CodeGenerationTests : VerifyBase
     }
 
     [TestMethod]
+    public Task GeneratesComParametersAndWrapperFields()
+    {
+        var documents = Generate(new CodeGenerationOptions
+        {
+            Namespace = "Interop.CsComTest",
+            ToolVersion = TestEnvironment.ToolVersion,
+            Marshalling = new MarshallingOptions
+            {
+                DateParameters = ParameterMarshalling.Com,
+                CurrencyParameters = ParameterMarshalling.Com,
+                BoolParameters = ParameterMarshalling.Com,
+                DateFields = FieldMarshalling.Wrapper,
+                CurrencyFields = FieldMarshalling.Wrapper,
+                BoolFields = FieldMarshalling.Wrapper,
+            },
+        });
+
+        return Verify(ToTargets(documents.Where(static d => d.RelativePath is "IMarshalling.cs" or "IShape.cs" or "Record.cs")));
+    }
+
+    [TestMethod]
+    public Task GeneratesWrapperParameters()
+    {
+        var documents = Generate(new CodeGenerationOptions
+        {
+            Namespace = "Interop.CsComTest",
+            ToolVersion = TestEnvironment.ToolVersion,
+            Marshalling = new MarshallingOptions
+            {
+                DateParameters = ParameterMarshalling.Wrapper,
+                CurrencyParameters = ParameterMarshalling.Wrapper,
+                BoolParameters = ParameterMarshalling.Wrapper,
+            },
+        });
+
+        return Verify(ToTargets(documents.Where(static d => d.RelativePath is "IMarshalling.cs" or "IShape.cs" or "Record.cs")));
+    }
+
+    [TestMethod]
     public void UsesTheNamespaceForImportedTypes()
     {
         var documents = Generate(new CodeGenerationOptions { Namespace = "My.Interop", ToolVersion = TestEnvironment.ToolVersion });

@@ -33,6 +33,111 @@ public sealed class RuntimeMarshallerTests
     }
 
     [TestMethod]
+    public void ComDateConvertsToAndFromDateTime()
+    {
+        ComDate date = new DateTime(1900, 1, 1, 12, 0, 0);
+        DateTime converted = new ComDate(0);
+
+        Assert.AreEqual(2.5, date.Value);
+        Assert.AreEqual(new DateTime(1899, 12, 30), converted);
+        Assert.AreEqual(new DateTime(1899, 12, 30), default(ComDate).ToDateTime());
+        Assert.AreEqual(new ComDate(2.5), date);
+        Assert.AreNotEqual(new ComDate(2.5), new ComDate(2.75));
+        Assert.AreEqual(new DateTime(1900, 1, 1, 12, 0, 0).ToString(), date.ToString());
+    }
+
+    [TestMethod]
+    public void ComCurrencyConvertsToAndFromDecimal()
+    {
+        ComCurrency currency = 12.3456m;
+        decimal converted = new ComCurrency(-1);
+
+        Assert.AreEqual(123456L, currency.Value);
+        Assert.AreEqual(-0.0001m, converted);
+        Assert.AreEqual(0m, default(ComCurrency).ToDecimal());
+        Assert.AreEqual(new ComCurrency(123456), currency);
+        Assert.AreEqual(12.3456m.ToString(), currency.ToString());
+        Assert.ThrowsExactly<OverflowException>(() => (ComCurrency)decimal.MaxValue);
+    }
+
+    [TestMethod]
+    public void ComBoolConvertsToAndFromBool()
+    {
+        ComBool comTrue = true;
+        bool converted = new ComBool(1);
+
+        Assert.AreEqual((short)-1, comTrue.Value);
+        Assert.AreEqual((short)0, ((ComBool)false).Value);
+        Assert.IsTrue(converted);
+        Assert.IsFalse(default(ComBool));
+        Assert.AreEqual(ComBool.True, new ComBool(1));
+        Assert.IsTrue(new ComBool(1) == ComBool.True);
+        Assert.AreEqual(ComBool.True.GetHashCode(), new ComBool(42).GetHashCode());
+        Assert.AreNotEqual(ComBool.True, ComBool.False);
+        Assert.AreEqual(bool.TrueString, comTrue.ToString());
+    }
+
+    [TestMethod]
+    public void ComBoolSupportsBooleanOperators()
+    {
+        ComBool comTrue = new(1);
+        ComBool comFalse = ComBool.False;
+        int evaluated = 0;
+
+        // The results are normalized to VARIANT_TRUE / VARIANT_FALSE and use the truth values, not the bits (1 ^ -1 is -2).
+        Assert.AreEqual((short)-1, (!comFalse).Value);
+        Assert.AreEqual((short)0, (!comTrue).Value);
+        Assert.AreEqual((short)-1, (comTrue & ComBool.True).Value);
+        Assert.AreEqual((short)0, (comTrue & comFalse).Value);
+        Assert.AreEqual((short)-1, (comFalse | comTrue).Value);
+        Assert.AreEqual((short)0, (comFalse | comFalse).Value);
+        Assert.AreEqual((short)0, (comTrue ^ ComBool.True).Value);
+        Assert.AreEqual((short)-1, (comTrue ^ comFalse).Value);
+        Assert.AreEqual((short)-1, (comTrue & true).Value);
+        Assert.AreEqual((short)-1, (false | comTrue).Value);
+
+        // && and || return the left operand as is when it decides the result.
+        Assert.AreEqual((short)0, (comFalse && Evaluate(ComBool.True)).Value);
+        Assert.AreEqual((short)1, (comTrue || Evaluate(ComBool.False)).Value);
+        Assert.AreEqual(0, evaluated);
+        Assert.AreEqual((short)-1, (comTrue && Evaluate(new ComBool(2))).Value);
+        Assert.AreEqual(1, evaluated);
+
+        ComBool flags = comTrue;
+        flags &= comFalse;
+        Assert.IsFalse(flags);
+        Assert.AreEqual("yes", comTrue ? "yes" : "no");
+
+        ComBool Evaluate(ComBool value)
+        {
+            evaluated++;
+            return value;
+        }
+    }
+
+    [TestMethod]
+    public void PassesWrappersAsTheirVariantTypes()
+    {
+        AssertVariant(new ComDate(2.5), VarEnum.VT_DATE, new DateTime(1900, 1, 1, 12, 0, 0));
+        AssertVariant(new ComCurrency(123456), VarEnum.VT_CY, 12.3456m);
+        AssertVariant(ComBool.True, VarEnum.VT_BOOL, true);
+
+        static void AssertVariant(object value, VarEnum expectedType, object expectedValue)
+        {
+            var variant = VariantMarshaller.ConvertToUnmanaged(value);
+            try
+            {
+                Assert.AreEqual(expectedType, variant.VarType);
+                Assert.AreEqual(expectedValue, VariantMarshaller.ConvertToManaged(variant));
+            }
+            finally
+            {
+                VariantMarshaller.Free(variant);
+            }
+        }
+    }
+
+    [TestMethod]
     public void RoundTripsStrings() => AssertRoundTrip<string?>(["a", null, "", "ü"]);
 
     [TestMethod]

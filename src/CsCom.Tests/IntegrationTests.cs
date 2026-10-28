@@ -16,13 +16,21 @@ public sealed class IntegrationTests
     private readonly InteropPipeline _pipeline = new();
 
     [TestMethod]
-    [DataRow(SupportCodeMode.Package, false)]
-    [DataRow(SupportCodeMode.Public, false)]
-    [DataRow(SupportCodeMode.Internal, true)]
-    public void GeneratedTestProjectBuildsWithoutWarnings(SupportCodeMode supportCode, bool singleFile)
+    [DataRow(SupportCodeMode.Package, false, "default")]
+    [DataRow(SupportCodeMode.Public, false, "default")]
+    [DataRow(SupportCodeMode.Internal, true, "default")]
+    [DataRow(SupportCodeMode.Package, false, "com")]
+    [DataRow(SupportCodeMode.Internal, false, "wrapper")]
+    public void GeneratedTestProjectBuildsWithoutWarnings(SupportCodeMode supportCode, bool singleFile, string marshalling)
     {
-        string directory = TestEnvironment.CreateDirectory($"build-{supportCode}");
-        string project = CreateProject(TestEnvironment.TestTypeLibrary, directory, supportCode, singleFile);
+        string directory = TestEnvironment.CreateDirectory($"build-{supportCode}-{marshalling}");
+        var options = marshalling switch
+        {
+            "com" => new MarshallingOptions { DateParameters = ParameterMarshalling.Com, CurrencyParameters = ParameterMarshalling.Com, BoolParameters = ParameterMarshalling.Com },
+            "wrapper" => AllWrappers,
+            _ => new MarshallingOptions(),
+        };
+        string project = CreateProject(TestEnvironment.TestTypeLibrary, directory, supportCode, singleFile, options);
 
         Build(project);
     }
@@ -159,14 +167,22 @@ public sealed class IntegrationTests
     }
 
     [TestMethod]
-    public void MarshallersRoundTripThroughComWrappers()
+    [DataRow(false)]
+    [DataRow(true)]
+    public void MarshallersRoundTripThroughComWrappers(bool wrappers)
     {
         // The consumer implements IMarshalling and calls it through a runtime callable wrapper of its own COM callable wrapper,
-        // so that every argument is marshalled to native code and back by the generated stubs.
-        string root = TestEnvironment.CreateDirectory("marshallers");
-        string interop = CreateProject(TestEnvironment.TestTypeLibrary, Path.Combine(root, "Interop"), SupportCodeMode.Package, singleFile: false);
+        // so that every argument is marshalled to native code and back by the generated stubs. The same code compiles with
+        // the managed types and with the wrappers, which convert implicitly to and from them.
+        string root = TestEnvironment.CreateDirectory(wrappers ? "marshallers-wrappers" : "marshallers");
+        string interop = CreateProject(
+            TestEnvironment.TestTypeLibrary,
+            Path.Combine(root, "Interop"),
+            SupportCodeMode.Package,
+            singleFile: false,
+            wrappers ? AllWrappers : new MarshallingOptions());
 
-        var output = RunConsumer(root, interop, """
+        string program = """
             using System.Globalization;
             using System.Runtime.InteropServices;
             using System.Runtime.InteropServices.Marshalling;
@@ -184,12 +200,15 @@ public sealed class IntegrationTests
             Console.WriteLine($"Proxy={!ReferenceEquals(proxy, implementation)}");
 
             var date = new DateTime(2024, 2, 29, 12, 30, 0);
-            DateTime result = proxy.Dates(date, out DateTime next);
-            Console.WriteLine($"Dates={result:yyyy-MM-dd HH:mm}|{next:yyyy-MM-dd}");
+            DateTime result = proxy.Dates(date, out var next);
+            DateTime nextDate = next;
+            Console.WriteLine($"Dates={result:yyyy-MM-dd HH:mm}|{nextDate:yyyy-MM-dd}");
 
-            decimal total = 10.5m;
+            __CURRENCY__ total = 10.5m;
             decimal money = proxy.Money(1.25m, ref total);
-            Console.WriteLine($"Money={money:0.####}|{total:0.####}");
+            decimal totalValue = total;
+            Console.WriteLine($"Money={money:0.####}|{totalValue:0.####}");
+            __RECORD__
 
             Console.WriteLine($"Strings={string.Join(",", proxy.Strings(["a", null, "c"])!.Select(static s => s ?? "<null>"))}");
             Console.WriteLine($"Variants={string.Join(",", proxy.Variants([1, "two", true, null])!.Select(static v => v?.ToString() ?? "<null>"))}");
@@ -214,16 +233,16 @@ public sealed class IntegrationTests
             [GeneratedComClass]
             internal sealed partial class MarshallingImpl : IMarshalling
             {
-                public DateTime Dates(DateTime date, out DateTime next)
+                public __DATE__ Dates(__DATE__ date, out __DATE__ next)
                 {
-                    next = date.AddDays(1);
-                    return date.AddHours(1);
+                    next = ((DateTime)date).AddDays(1);
+                    return ((DateTime)date).AddHours(1);
                 }
 
-                public decimal Money(decimal money, ref decimal total)
+                public __CURRENCY__ Money(__CURRENCY__ money, ref __CURRENCY__ total)
                 {
-                    total += money;
-                    return money * 2;
+                    total = (decimal)total + (decimal)money;
+                    return (decimal)money * 2;
                 }
 
                 public string?[]? Strings(string?[]? values) => values?.Reverse().ToArray();
@@ -288,24 +307,40 @@ public sealed class IntegrationTests
 
                 public IEnumVARIANT? enumerator() => throw new NotSupportedException();
             }
-            """, allowUnsafe: true);
+            """;
 
+        program = program
+            .Replace("__DATE__", wrappers ? "ComDate" : "DateTime", StringComparison.Ordinal)
+            .Replace("__CURRENCY__", wrappers ? "ComCurrency" : "decimal", StringComparison.Ordinal)
+            .Replace("__RECORD__", wrappers
+                ? """
+                  var record = new Record { Date = date, Money = 12.5m, Flag = true };
+                  DateTime recordDate = record.Date;
+                  decimal recordMoney = record.Money;
+                  bool recordFlag = record.Flag;
+                  Console.WriteLine($"Record={recordDate:yyyy-MM-dd}|{recordMoney:0.##}|{recordFlag}|{record.Flag.Value}");
+                  """
+                : string.Empty, StringComparison.Ordinal);
+        var output = RunConsumer(root, interop, program, allowUnsafe: true);
+
+        string[] expected =
+        [
+            "Proxy=True",
+            "Dates=2024-02-29 13:30|2024-03-01",
+            "Money=2.5|11.75",
+            "Strings=c,<null>,a",
+            "Variants=1,two,True,<null>",
+            "Numbers=10,20,30",
+            "Flags=1,0,1",
+            "Colors=Blue,Red",
+            "DateArray=2025-02-28",
+            "Unknowns=True|True",
+            "Calculators=True|5",
+            "Dispatches=2",
+            .. wrappers ? ["Record=2024-02-29|12.5|True|-1"] : Array.Empty<string>(),
+        ];
         CollectionAssert.IsSubsetOf(
-            new[]
-            {
-                "Proxy=True",
-                "Dates=2024-02-29 13:30|2024-03-01",
-                "Money=2.5|11.75",
-                "Strings=c,<null>,a",
-                "Variants=1,two,True,<null>",
-                "Numbers=10,20,30",
-                "Flags=1,0,1",
-                "Colors=Blue,Red",
-                "DateArray=2025-02-28",
-                "Unknowns=True|True",
-                "Calculators=True|5",
-                "Dispatches=2",
-            },
+            expected,
             output.ToArray(),
             string.Join(Environment.NewLine, output));
     }
@@ -385,13 +420,24 @@ public sealed class IntegrationTests
         return output.Select(static line => line.Trim()).ToList();
     }
 
-    private string CreateProject(string typeLibrary, string directory, SupportCodeMode supportCode, bool singleFile) =>
+    private static readonly MarshallingOptions AllWrappers = new()
+    {
+        DateParameters = ParameterMarshalling.Wrapper,
+        DateFields = FieldMarshalling.Wrapper,
+        CurrencyParameters = ParameterMarshalling.Wrapper,
+        CurrencyFields = FieldMarshalling.Wrapper,
+        BoolParameters = ParameterMarshalling.Wrapper,
+        BoolFields = FieldMarshalling.Wrapper,
+    };
+
+    private string CreateProject(string typeLibrary, string directory, SupportCodeMode supportCode, bool singleFile, MarshallingOptions? marshalling = null) =>
         new ProjectGenerator(_pipeline).CreateProject(new NewProjectRequest
         {
             TypeLibraryPath = typeLibrary,
             OutputDirectory = directory,
             SupportCode = supportCode,
             SingleFile = singleFile,
+            Marshalling = marshalling ?? new MarshallingOptions(),
             PackageSource = TestEnvironment.LocalPackages,
             GlobalPackagesFolder = TestEnvironment.GlobalPackagesFolder,
         });

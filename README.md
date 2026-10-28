@@ -35,13 +35,15 @@ The type library can be a `.tlb` file or a `.dll`, `.ocx` or `.exe` file with an
 | `-c`, `--csharp-version <VERSION>` | The C# version. C# 14 for .NET 10 and C# 15 for .NET 11 by default; only later versions can be specified. |
 | `--single-file` | Generates all types into a single C# file instead of a file per type. |
 | `--support-code <package\|public\|internal>` | Where the support code comes from, see below. `package` by default. |
+| `--date-parameter-marshalling`, `--currency-parameter-marshalling`, `--bool-parameter-marshalling` | How `DATE`, `CURRENCY` and `VARIANT_BOOL` parameters and return values are represented: `managed` (default), `com` or `wrapper`, see [Marshalling options](#marshalling-options). |
+| `--date-field-marshalling`, `--currency-field-marshalling`, `--bool-field-marshalling` | How `DATE`, `CURRENCY` and `VARIANT_BOOL` structure fields are represented: `com` (default) or `wrapper`. |
 | `--package-source <PATH>` | An additional NuGet source with the CsCom.Runtime package. |
 | `--keep-temp` | `new assembly` only: keeps the temporary project used to build the assembly. |
 | `-v`, `--verbosity <LEVEL>` | `quiet`, `minimal`, `normal` (default), `detailed` or `diagnostic`. |
 
 `new project` writes `<Name>.csproj`, a `cscom.json` file with the options it was generated with, and the C# files into the
 `Generated` folder. `update project` replaces the C# files of the `Generated` folder using the options recorded in `cscom.json`.
-It accepts `--namespace`, `--csharp-version` and `--single-file [true|false]` to change them. Code outside of the `Generated`
+It accepts `--namespace`, `--csharp-version`, `--single-file [true|false]` and the marshalling options to change them. Code outside of the `Generated`
 folder, e.g. partial classes, is not touched.
 
 `new assembly` generates the project in a temporary directory, builds it with `dotnet build` once per runtime identifier and copies
@@ -72,7 +74,8 @@ foreach (object? key in dictionary)                 // _NewEnum via IEnumVARIANT
 - **Coclasses** become static classes with the `Clsid` and a `Create()` method that returns the default interface.
   Coclasses whose default interface supports `IDispatch` also get `CreateDynamic()`, see [Late binding with `dynamic`](#late-binding-with-dynamic).
 - **Enums** become enums and **structs and unions** become blittable structs (`BSTR` and interface pointer fields are `nint`,
-  `VARIANT` fields are `ComVariant`, `CURRENCY` and `DATE` fields are `long` and `double`, `SAFEARRAY` fields are `nint` and
+  `VARIANT` fields are `ComVariant`, `DATE`, `CURRENCY` and `VARIANT_BOOL` fields are `double`, `long` and `short` or
+  [wrappers](#marshalling-options), `SAFEARRAY` fields are `nint` and
   fixed-size arrays are inline arrays).
 - **Modules** become static classes with `[LibraryImport]` functions and constants.
 - **Aliases** are replaced by the aliased types.
@@ -83,13 +86,13 @@ foreach (object? key in dictionary)                 // _NewEnum via IEnumVARIANT
 | --- | --- |
 | `BSTR` | `string?` |
 | `LPSTR`, `LPWSTR` | `string?` with `MarshalAs` |
-| `VARIANT_BOOL` | `bool` |
+| `VARIANT_BOOL` | `bool` (configurable, see below) |
 | `VARIANT` | `object?` (`VariantMarshaller`; `null` is an omitted argument for optional parameters) |
 | `IUnknown*` | `object?` |
 | `IDispatch*` | `IDispatch?` |
 | `DECIMAL` | `decimal` |
-| `CURRENCY` | `decimal` (`CurrencyMarshaller`) |
-| `DATE` | `DateTime` (`DateMarshaller`) |
+| `CURRENCY` | `decimal` (`CurrencyMarshaller`; configurable, see below) |
+| `DATE` | `DateTime` (`DateMarshaller`; configurable, see below) |
 | `SAFEARRAY(T)` | `T[]?` (`SafeArrayMarshaller<T>`), see below |
 | `[out] T*`, `[in, out] T*` | `out T`, `ref T` |
 
@@ -97,6 +100,33 @@ foreach (object? key in dictionary)                 // _NewEnum via IEnumVARIANT
 (`UnknownSafeArrayMarshaller`), `IDispatch*` and interfaces are marshalled as zero-based one-dimensional .NET arrays, and so are
 arrays inside `VARIANT`s. `SAFEARRAY`s of structs, `CURRENCY`, `SCODE` and dispinterfaces are passed as raw `SAFEARRAY*` (`nint`).
 Multi-dimensional `SAFEARRAY`s are not supported.
+
+### Marshalling options
+
+How `DATE`, `CURRENCY` and `VARIANT_BOOL` values are represented can be chosen separately for parameters (and return values)
+and for structure fields, which must stay blittable:
+
+| Option value | `DATE` | `CURRENCY` | `VARIANT_BOOL` | Parameters | Fields |
+| --- | --- | --- | --- | --- | --- |
+| `managed` | `DateTime` | `decimal` | `bool` | default | n/a |
+| `com` | `double` | `long` | `short` | ✓ | default |
+| `wrapper` | `ComDate` | `ComCurrency` | `ComBool` | ✓ | ✓ |
+
+`ComDate`, `ComCurrency` and `ComBool` are `readonly record struct`s from CsCom.Runtime that store the COM value in `Value`
+(an OLE Automation date, a currency value scaled by 10,000, and `VARIANT_TRUE` = -1 / `VARIANT_FALSE` = 0), so they have the
+layout of the COM types, and convert implicitly to and from `DateTime`, `decimal` and `bool`:
+
+```csharp
+var record = new Record { Date = DateTime.Today, Money = 12.5m, Flag = true }; // with --*-field-marshalling wrapper
+DateTime date = record.Date;
+```
+
+`ComBool` compares like a Boolean: any non-zero value equals `ComBool.True`. It also has the `true`/`false` operators and the
+Boolean operators `!`, `&`, `|` and `^`, which return `ComBool.True` or `ComBool.False`, so it can be used in conditions and
+with `&&` and `||` (`if (record.Flag && !other.Flag)`). Passed to `VARIANT` parameters or `dynamic` calls,
+the wrappers become `VT_DATE`, `VT_CY` and `VT_BOOL` values. A wrapper parameter can only have its default value as a C# default
+value, so optional parameters whose default is `true` or non-zero become required. The options do not affect late-bound
+dispinterface wrappers, constants and `SAFEARRAY`s, which use the .NET types.
 
 ### Late binding with `dynamic`
 
@@ -139,7 +169,7 @@ The generated projects disable runtime marshalling, which source-generated COM i
 ### Limitations
 
 - COM events (connection points and source interfaces) are not generated yet.
-- Structure fields stay blittable, so `BSTR`, `CURRENCY`, `DATE`, `SAFEARRAY` and interface pointer fields are raw values.
+- Structure fields stay blittable, so `BSTR`, `SAFEARRAY` and interface pointer fields are raw values.
 - `SAFEARRAY`s are converted to zero-based one-dimensional arrays; their lower bounds are not preserved.
 - Types imported from other type libraries are always generated into the project; referencing other interop assemblies is not supported yet.
 - CsCom.Runtime only targets `net10.0` for now. Source-generated COM expects a base interface from another assembly (`IDispatch`)

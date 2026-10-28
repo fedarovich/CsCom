@@ -119,11 +119,11 @@ internal sealed class TypeMapper
             case PrimitiveTypeReference { VarType: var vt }:
                 return vt switch
                 {
-                    VarEnum.VT_BOOL => new ManagedType("short"),
+                    VarEnum.VT_BOOL => MapField(_context.Options.Marshalling.BoolFields, "short", "ComBool"),
                     VarEnum.VT_BSTR or VarEnum.VT_LPSTR or VarEnum.VT_LPWSTR or VarEnum.VT_UNKNOWN or VarEnum.VT_DISPATCH => ManagedType.IntPtr,
                     VarEnum.VT_VARIANT => new ManagedType($"{Syntax.MarshallingNamespace}.ComVariant"),
-                    VarEnum.VT_CY => new ManagedType("long"),
-                    VarEnum.VT_DATE => new ManagedType("double"),
+                    VarEnum.VT_CY => MapField(_context.Options.Marshalling.CurrencyFields, "long", "ComCurrency"),
+                    VarEnum.VT_DATE => MapField(_context.Options.Marshalling.DateFields, "double", "ComDate"),
                     _ => MapPrimitive(vt) is { Marshalling: null, IsReference: false } mapped ? mapped : ManagedType.IntPtr,
                 };
             case WellKnownTypeReference { Type: WellKnownType.Guid }:
@@ -211,15 +211,27 @@ internal sealed class TypeMapper
         VarEnum.VT_UI8 => new("ulong"),
         VarEnum.VT_R4 => new("float"),
         VarEnum.VT_R8 => new("double"),
-        VarEnum.VT_CY => new("decimal", $"{Syntax.MarshallingNamespace}.MarshalUsing(typeof({_context.Support}.CurrencyMarshaller))"),
-        VarEnum.VT_DATE => new("global::System.DateTime", $"{Syntax.MarshallingNamespace}.MarshalUsing(typeof({_context.Support}.DateMarshaller))"),
+        VarEnum.VT_CY => MapParameter(
+            _context.Options.Marshalling.CurrencyParameters,
+            new("decimal", $"{Syntax.MarshallingNamespace}.MarshalUsing(typeof({_context.Support}.CurrencyMarshaller))"),
+            "long",
+            "ComCurrency"),
+        VarEnum.VT_DATE => MapParameter(
+            _context.Options.Marshalling.DateParameters,
+            new("global::System.DateTime", $"{Syntax.MarshallingNamespace}.MarshalUsing(typeof({_context.Support}.DateMarshaller))"),
+            "double",
+            "ComDate"),
         VarEnum.VT_DECIMAL => new("decimal"),
         VT_INT_PTR => ManagedType.IntPtr,
         VT_UINT_PTR => new("nuint"),
         VarEnum.VT_BSTR => new("string?"),
         VarEnum.VT_LPSTR => new("string?", $"{Syntax.InteropNamespace}.MarshalAs({Syntax.InteropNamespace}.UnmanagedType.LPStr)"),
         VarEnum.VT_LPWSTR => new("string?", $"{Syntax.InteropNamespace}.MarshalAs({Syntax.InteropNamespace}.UnmanagedType.LPWStr)"),
-        VarEnum.VT_BOOL => new("bool", $"{Syntax.InteropNamespace}.MarshalAs({Syntax.InteropNamespace}.UnmanagedType.VariantBool)"),
+        VarEnum.VT_BOOL => MapParameter(
+            _context.Options.Marshalling.BoolParameters,
+            new("bool", $"{Syntax.InteropNamespace}.MarshalAs({Syntax.InteropNamespace}.UnmanagedType.VariantBool)"),
+            "short",
+            "ComBool"),
         VarEnum.VT_VARIANT => new("object?", VariantMarshalling(optional: false)),
         VarEnum.VT_UNKNOWN => new("object?", UnknownMarshalling),
         VarEnum.VT_DISPATCH => new($"{_context.Support}.IDispatch?"),
@@ -228,6 +240,16 @@ internal sealed class TypeMapper
         VarEnum.VT_CLSID => new("global::System.Guid"),
         _ => ManagedType.IntPtr,
     };
+
+    private ManagedType MapParameter(ParameterMarshalling marshalling, ManagedType managed, string comType, string wrapper) => marshalling switch
+    {
+        ParameterMarshalling.Com => new ManagedType(comType),
+        ParameterMarshalling.Wrapper => new ManagedType($"{_context.Support}.{wrapper}"),
+        _ => managed,
+    };
+
+    private ManagedType MapField(FieldMarshalling marshalling, string comType, string wrapper) =>
+        new(marshalling == FieldMarshalling.Wrapper ? $"{_context.Support}.{wrapper}" : comType);
 
     public string VariantMarshalling(bool optional) =>
         $"{Syntax.MarshallingNamespace}.MarshalUsing(typeof({_context.Support}.{(optional ? "OptionalVariantMarshaller" : "VariantMarshaller")}))";

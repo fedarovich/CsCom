@@ -43,6 +43,9 @@ public sealed class CodeGenerationOptions
     /// <summary>Where the support code comes from.</summary>
     public SupportCodeMode SupportCode { get; init; } = SupportCodeMode.Package;
 
+    /// <summary>How <c>DATE</c>, <c>CURRENCY</c> and <c>VARIANT_BOOL</c> values are represented.</summary>
+    public MarshallingOptions Marshalling { get; init; } = new();
+
     /// <summary>The version of the tool written into the file headers.</summary>
     public string ToolVersion { get; init; } = ToolInfo.Version;
 

@@ -164,6 +164,53 @@ public sealed class ProjectGeneratorTests
     }
 
     [TestMethod]
+    public void RecordsAndUpdatesMarshallingOptions()
+    {
+        string directory = TestEnvironment.CreateDirectory("marshalling");
+        _generator.CreateProject(new NewProjectRequest
+        {
+            TypeLibraryPath = TestEnvironment.TestTypeLibrary,
+            OutputDirectory = directory,
+            Marshalling = new MarshallingOptions { DateParameters = ParameterMarshalling.Wrapper, BoolFields = FieldMarshalling.Wrapper },
+        });
+
+        StringAssert.Contains(File.ReadAllText(Path.Combine(directory, CsComManifest.FileName)), "\"dateParameters\": \"wrapper\"");
+        StringAssert.Contains(File.ReadAllText(Path.Combine(directory, "Generated", "Record.cs")), "global::CsCom.Runtime.ComBool Flag;");
+
+        _generator.UpdateProject(new UpdateProjectRequest
+        {
+            TypeLibraryPath = TestEnvironment.TestTypeLibrary,
+            ProjectDirectory = directory,
+            Marshalling = new MarshallingOverrides { DateParameters = ParameterMarshalling.Com, CurrencyFields = FieldMarshalling.Wrapper },
+        });
+
+        var marshalling = CsComManifest.Read(directory).Marshalling;
+        Assert.AreEqual(
+            new MarshallingOptions { DateParameters = ParameterMarshalling.Com, CurrencyFields = FieldMarshalling.Wrapper, BoolFields = FieldMarshalling.Wrapper },
+            marshalling);
+        StringAssert.Contains(File.ReadAllText(Path.Combine(directory, "Generated", "IMarshalling.cs")), "double Dates(double Date, out double Next);");
+    }
+
+    [TestMethod]
+    public void ReadsManifestsWithoutMarshallingOptions()
+    {
+        string directory = TestEnvironment.CreateDirectory("old-manifest");
+        File.WriteAllText(Path.Combine(directory, CsComManifest.FileName), """
+            {
+              "toolVersion": "0.1.0",
+              "typeLibrary": "C:\\Windows\\System32\\scrrun.dll",
+              "name": "Interop.Scripting",
+              "namespace": "Interop.Scripting",
+              "targetFrameworks": [ "net10.0-windows" ],
+              "languageVersion": 14,
+              "supportCode": "package"
+            }
+            """);
+
+        Assert.AreEqual(new MarshallingOptions(), CsComManifest.Read(directory).Marshalling);
+    }
+
+    [TestMethod]
     public void UpdateRequiresAManifest()
     {
         var exception = Assert.ThrowsExactly<CsComException>(() => _generator.UpdateProject(new UpdateProjectRequest

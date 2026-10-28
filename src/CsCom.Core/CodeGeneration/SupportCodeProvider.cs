@@ -50,6 +50,8 @@ internal static class SupportCodeProvider
 
         public override SyntaxNode? VisitEnumDeclaration(EnumDeclarationSyntax node) => MakeInternal(node, base.VisitEnumDeclaration(node));
 
+        public override SyntaxNode? VisitRecordDeclaration(RecordDeclarationSyntax node) => MakeInternal(node, base.VisitRecordDeclaration(node));
+
         // Only the top-level types are made internal; their members keep their accessibility.
         private SyntaxNode? MakeInternal(SyntaxNode original, SyntaxNode? node)
         {

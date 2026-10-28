@@ -35,6 +35,50 @@ public sealed class CommandLineTests
     }
 
     [TestMethod]
+    public void MarshallingOptionsHaveDefaultsAndCanBeOverridden()
+    {
+        string directory = TestEnvironment.CreateDirectory("cli-marshalling");
+
+        Assert.AreEqual(0, Run(
+            "new", "project", TestEnvironment.TestTypeLibrary, "-o", directory,
+            "--date-parameter-marshalling", "wrapper",
+            "--currency-parameter-marshalling", "Com",
+            "--bool-field-marshalling", "wrapper",
+            "-v", "quiet"));
+        Assert.AreEqual(
+            new CodeGeneration.MarshallingOptions
+            {
+                DateParameters = CodeGeneration.ParameterMarshalling.Wrapper,
+                CurrencyParameters = CodeGeneration.ParameterMarshalling.Com,
+                BoolFields = CodeGeneration.FieldMarshalling.Wrapper,
+            },
+            CsComManifest.Read(directory).Marshalling);
+
+        Assert.AreEqual(0, Run(
+            "update", "project", TestEnvironment.TestTypeLibrary, "-o", directory,
+            "--date-parameter-marshalling", "managed",
+            "--date-field-marshalling", "wrapper",
+            "--bool-parameter-marshalling", "com",
+            "-v", "quiet"));
+        Assert.AreEqual(
+            new CodeGeneration.MarshallingOptions
+            {
+                DateFields = CodeGeneration.FieldMarshalling.Wrapper,
+                CurrencyParameters = CodeGeneration.ParameterMarshalling.Com,
+                BoolParameters = CodeGeneration.ParameterMarshalling.Com,
+                BoolFields = CodeGeneration.FieldMarshalling.Wrapper,
+            },
+            CsComManifest.Read(directory).Marshalling);
+    }
+
+    [TestMethod]
+    public void RejectsInvalidMarshallingOptions()
+    {
+        Assert.AreNotEqual(0, Run("new", "project", TestEnvironment.TestTypeLibrary, "--date-field-marshalling", "managed"));
+        Assert.AreNotEqual(0, Run("new", "project", TestEnvironment.TestTypeLibrary, "--bool-parameter-marshalling", "raw"));
+    }
+
+    [TestMethod]
     public void UpdateProjectSwitchesBetweenSingleAndMultipleFiles()
     {
         string directory = TestEnvironment.CreateDirectory("cli-update");

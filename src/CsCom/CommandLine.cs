@@ -82,6 +82,10 @@ internal static class CommandLine
         Description = "Keeps the temporary project used to build the assembly.",
     };
 
+    private static readonly MarshallingCommandOptions NewMarshallingOptions = MarshallingCommandOptions.Create(withDefaults: true);
+
+    private static readonly MarshallingCommandOptions UpdateMarshallingOptions = MarshallingCommandOptions.Create(withDefaults: false);
+
     private static readonly Option<Verbosity> VerbosityOption = new("--verbosity", "-v")
     {
         Description = "The verbosity of the output.",
@@ -106,6 +110,7 @@ internal static class CommandLine
                 LanguageVersion = result.GetValue(LanguageVersionOption),
                 SingleFile = result.GetValue(SingleFileOption),
                 SupportCode = result.GetValue(SupportCodeOption),
+                Marshalling = NewMarshallingOptions.GetOverrides(result).Apply(new MarshallingOptions()),
                 PackageSource = result.GetValue(PackageSourceOption),
             })));
 
@@ -124,6 +129,7 @@ internal static class CommandLine
                 LanguageVersion = result.GetValue(LanguageVersionOption),
                 SingleFile = result.GetValue(SingleFileOption),
                 SupportCode = result.GetValue(SupportCodeOption),
+                Marshalling = NewMarshallingOptions.GetOverrides(result).Apply(new MarshallingOptions()),
                 PackageSource = result.GetValue(PackageSourceOption) ?? GetBundledPackageSource(),
                 KeepTemporaryFiles = result.GetValue(KeepTempOption),
             })));
@@ -136,6 +142,7 @@ internal static class CommandLine
             LanguageVersionOption,
             UpdateSingleFileOption,
         };
+        UpdateMarshallingOptions.AddTo(updateProject);
         updateProject.SetAction(static result => Run(result, (pipeline, loggerFactory) =>
             new ProjectGenerator(pipeline, loggerFactory).UpdateProject(new UpdateProjectRequest
             {
@@ -144,6 +151,7 @@ internal static class CommandLine
                 Namespace = result.GetValue(NamespaceOption),
                 LanguageVersion = result.GetValue(LanguageVersionOption),
                 SingleFile = GetSingleFile(result),
+                Marshalling = UpdateMarshallingOptions.GetOverrides(result),
             })));
 
         return new RootCommand("Generates COM interop code from type libraries using source-generated COM interop.")
@@ -165,6 +173,7 @@ internal static class CommandLine
         command.Options.Add(LanguageVersionOption);
         command.Options.Add(SingleFileOption);
         command.Options.Add(SupportCodeOption);
+        NewMarshallingOptions.AddTo(command);
         command.Options.Add(PackageSourceOption);
     }
 
@@ -229,6 +238,78 @@ internal static class CommandLine
         return File.Exists(Path.Combine(directory, $"CsCom.Runtime.{ToolInfo.Version}.nupkg")) ? directory : null;
     }
 
+    /// <summary>
+    /// The options that select how DATE, CURRENCY and VARIANT_BOOL values are represented. The options of the 'new' commands
+    /// have default values; the options of 'update project' only override the values recorded in cscom.json.
+    /// </summary>
+    private sealed record MarshallingCommandOptions(
+        Option<ParameterMarshalling?> DateParameters,
+        Option<FieldMarshalling?> DateFields,
+        Option<ParameterMarshalling?> CurrencyParameters,
+        Option<FieldMarshalling?> CurrencyFields,
+        Option<ParameterMarshalling?> BoolParameters,
+        Option<FieldMarshalling?> BoolFields)
+    {
+        public static MarshallingCommandOptions Create(bool withDefaults) => new(
+            Parameter("date", "DATE", "DateTime", "double", "ComDate", withDefaults),
+            Field("date", "DATE", "double", "ComDate", withDefaults),
+            Parameter("currency", "CURRENCY", "decimal", "long", "ComCurrency", withDefaults),
+            Field("currency", "CURRENCY", "long", "ComCurrency", withDefaults),
+            Parameter("bool", "VARIANT_BOOL", "bool", "short", "ComBool", withDefaults),
+            Field("bool", "VARIANT_BOOL", "short", "ComBool", withDefaults));
+
+        public void AddTo(Command command)
+        {
+            command.Options.Add(DateParameters);
+            command.Options.Add(DateFields);
+            command.Options.Add(CurrencyParameters);
+            command.Options.Add(CurrencyFields);
+            command.Options.Add(BoolParameters);
+            command.Options.Add(BoolFields);
+        }
+
+        public MarshallingOverrides GetOverrides(ParseResult result) => new()
+        {
+            DateParameters = result.GetValue(DateParameters),
+            DateFields = result.GetValue(DateFields),
+            CurrencyParameters = result.GetValue(CurrencyParameters),
+            CurrencyFields = result.GetValue(CurrencyFields),
+            BoolParameters = result.GetValue(BoolParameters),
+            BoolFields = result.GetValue(BoolFields),
+        };
+
+        private static Option<ParameterMarshalling?> Parameter(string name, string type, string managed, string com, string wrapper, bool withDefaults)
+        {
+            var option = new Option<ParameterMarshalling?>($"--{name}-parameter-marshalling")
+            {
+                Description = $"How {type} parameters and return values are represented: managed ({managed}), com ({com}) or wrapper ({wrapper}).",
+                HelpName = "managed|com|wrapper",
+            };
+
+            if (withDefaults)
+            {
+                option.DefaultValueFactory = static _ => ParameterMarshalling.Managed;
+            }
+
+            return option;
+        }
+
+        private static Option<FieldMarshalling?> Field(string name, string type, string com, string wrapper, bool withDefaults)
+        {
+            var option = new Option<FieldMarshalling?>($"--{name}-field-marshalling")
+            {
+                Description = $"How {type} structure fields are represented: com ({com}) or wrapper ({wrapper}).",
+                HelpName = "com|wrapper",
+            };
+
+            if (withDefaults)
+            {
+                option.DefaultValueFactory = static _ => FieldMarshalling.Com;
+            }
+
+            return option;
+        }
+    }
     private enum Verbosity
     {
         Quiet,

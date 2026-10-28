@@ -27,8 +27,13 @@ public sealed record CsComManifest
     /// <summary>The target frameworks.</summary>
     public required IReadOnlyList<string> TargetFrameworks { get; init; }
 
+    // The JSON source generator sets init-only properties that are missing from the JSON to null,
+    // so the properties added to the manifest later fall back to their defaults.
+    private readonly IReadOnlyList<string> _runtimeIdentifiers = [];
+    private readonly MarshallingOptions _marshalling = new();
+
     /// <summary>The runtime identifiers.</summary>
-    public IReadOnlyList<string> RuntimeIdentifiers { get; init; } = [];
+    public IReadOnlyList<string> RuntimeIdentifiers { get => _runtimeIdentifiers; init => _runtimeIdentifiers = value ?? []; }
 
     /// <summary>The C# version.</summary>
     public required int LanguageVersion { get; init; }
@@ -39,6 +44,9 @@ public sealed record CsComManifest
     /// <summary>Where the support code comes from.</summary>
     [JsonConverter(typeof(CamelCaseEnumConverter<SupportCodeMode>))]
     public SupportCodeMode SupportCode { get; init; }
+
+    /// <summary>How <c>DATE</c>, <c>CURRENCY</c> and <c>VARIANT_BOOL</c> values are represented; the defaults when missing.</summary>
+    public MarshallingOptions Marshalling { get => _marshalling; init => _marshalling = value ?? new(); }
 
     /// <summary>
     /// Reads the manifest from the project directory.
@@ -75,7 +83,8 @@ public sealed record CsComManifest
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     WriteIndented = true,
-    DefaultIgnoreCondition = JsonIgnoreCondition.Never)]
+    DefaultIgnoreCondition = JsonIgnoreCondition.Never,
+    Converters = [typeof(CamelCaseEnumConverter<ParameterMarshalling>), typeof(CamelCaseEnumConverter<FieldMarshalling>)])]
 [JsonSerializable(typeof(CsComManifest))]
 internal sealed partial class CsComJsonContext : JsonSerializerContext
 {

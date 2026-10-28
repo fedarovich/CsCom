@@ -34,6 +34,9 @@ public abstract class NewOutputRequest
     /// <summary>Where the support code comes from.</summary>
     public SupportCodeMode SupportCode { get; init; } = SupportCodeMode.Package;
 
+    /// <summary>How <c>DATE</c>, <c>CURRENCY</c> and <c>VARIANT_BOOL</c> values are represented.</summary>
+    public MarshallingOptions Marshalling { get; init; } = new();
+
     /// <summary>An additional NuGet package source that provides the CsCom.Runtime package.</summary>
     public string? PackageSource { get; init; }
 
@@ -79,4 +82,42 @@ public sealed class UpdateProjectRequest
 
     /// <summary>Whether all types are generated into a single file.</summary>
     public bool? SingleFile { get; init; }
+
+    /// <summary>The changes to the representation of <c>DATE</c>, <c>CURRENCY</c> and <c>VARIANT_BOOL</c> values.</summary>
+    public MarshallingOverrides Marshalling { get; init; } = new();
+}
+
+/// <summary>
+/// Changes to <see cref="MarshallingOptions"/>; the options that are <see langword="null"/> are kept.
+/// </summary>
+public sealed record MarshallingOverrides
+{
+    /// <summary>The new representation of <c>DATE</c> parameters and return values.</summary>
+    public ParameterMarshalling? DateParameters { get; init; }
+
+    /// <summary>The new representation of <c>DATE</c> structure fields.</summary>
+    public FieldMarshalling? DateFields { get; init; }
+
+    /// <summary>The new representation of <c>CURRENCY</c> parameters and return values.</summary>
+    public ParameterMarshalling? CurrencyParameters { get; init; }
+
+    /// <summary>The new representation of <c>CURRENCY</c> structure fields.</summary>
+    public FieldMarshalling? CurrencyFields { get; init; }
+
+    /// <summary>The new representation of <c>VARIANT_BOOL</c> parameters and return values.</summary>
+    public ParameterMarshalling? BoolParameters { get; init; }
+
+    /// <summary>The new representation of <c>VARIANT_BOOL</c> structure fields.</summary>
+    public FieldMarshalling? BoolFields { get; init; }
+
+    /// <summary>Applies the changes to the options.</summary>
+    public MarshallingOptions Apply(MarshallingOptions options) => options with
+    {
+        DateParameters = DateParameters ?? options.DateParameters,
+        DateFields = DateFields ?? options.DateFields,
+        CurrencyParameters = CurrencyParameters ?? options.CurrencyParameters,
+        CurrencyFields = CurrencyFields ?? options.CurrencyFields,
+        BoolParameters = BoolParameters ?? options.BoolParameters,
+        BoolFields = BoolFields ?? options.BoolFields,
+    };
 }

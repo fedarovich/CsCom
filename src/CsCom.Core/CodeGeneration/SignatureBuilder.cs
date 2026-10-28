@@ -252,6 +252,22 @@ internal sealed class SignatureBuilder
     {
         try
         {
+            // The representation of these types depends on the marshalling options: the .NET type, the COM type or a wrapper,
+            // whose only constant is its default value.
+            if (type is PrimitiveTypeReference { VarType: VarEnum.VT_BOOL or VarEnum.VT_CY or VarEnum.VT_DATE } automation)
+            {
+                return typeName switch
+                {
+                    "bool" => IsTrue(value) ? "true" : "false",
+                    "short" => IsTrue(value) ? "-1" : "0",
+                    "decimal" => $"{ToDecimal(value).ToString(CultureInfo.InvariantCulture)}m",
+                    "long" => decimal.ToOACurrency(ToDecimal(value)).ToString(CultureInfo.InvariantCulture),
+                    "double" => FormatFloating(value is DateTime date ? date.ToOADate() : System.Convert.ToDouble(value, CultureInfo.InvariantCulture), "D"),
+                    _ when typeName.StartsWith(_context.Support + ".", StringComparison.Ordinal) && IsDefault(automation.VarType, value) => "default",
+                    _ => null,
+                };
+            }
+
             if (type is UserDefinedTypeReference { Definition: EnumDefinition enumDefinition })
             {
                 long number = System.Convert.ToInt64(value, CultureInfo.InvariantCulture);
@@ -278,6 +294,16 @@ internal sealed class SignatureBuilder
             return null;
         }
 
+        static bool IsTrue(object value) => value is bool b ? b : System.Convert.ToInt64(value, CultureInfo.InvariantCulture) != 0;
+
+        static decimal ToDecimal(object value) => System.Convert.ToDecimal(value, CultureInfo.InvariantCulture);
+
+        static bool IsDefault(VarEnum vt, object value) => vt switch
+        {
+            VarEnum.VT_BOOL => !IsTrue(value),
+            VarEnum.VT_CY => ToDecimal(value) == 0,
+            _ => (value is DateTime date ? date.ToOADate() : System.Convert.ToDouble(value, CultureInfo.InvariantCulture)) == 0,
+        };
 
         static string FormatFloating<T>(T value, string suffix) where T : System.Numerics.IFloatingPointIeee754<T>
         {

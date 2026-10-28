@@ -201,7 +201,9 @@ internal sealed partial class TypeEmitters
         string? type = constant.Type switch
         {
             PrimitiveTypeReference { VarType: VarEnum.VT_BSTR or VarEnum.VT_LPSTR or VarEnum.VT_LPWSTR } => "string",
+            // Constants use the .NET types regardless of the marshalling options.
             PrimitiveTypeReference { VarType: VarEnum.VT_CY } => "decimal",
+            PrimitiveTypeReference { VarType: VarEnum.VT_BOOL } => "bool",
             PrimitiveTypeReference { VarType: VarEnum.VT_VARIANT } => constant.Value switch
             {
                 string => "string",
@@ -214,7 +216,7 @@ internal sealed partial class TypeEmitters
             },
             _ => signatures.Mapper.MapValue(constant.Type) is { Marshalling: null, IsReference: false, IsPointer: false, IsVoid: false } mapped
                 ? mapped.Name
-                : constant.Type is PrimitiveTypeReference { VarType: VarEnum.VT_BOOL } ? "bool" : null,
+                : null,
         };
 
         if (type is null || signatures.FormatConstant(constant.Value, constant.Type, type) is not { } value)

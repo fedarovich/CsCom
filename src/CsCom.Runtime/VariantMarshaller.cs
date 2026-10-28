@@ -9,7 +9,7 @@ namespace CsCom.Runtime;
 /// Marshals <see cref="object"/> values as OLE Automation <c>VARIANT</c>s.
 /// </summary>
 /// <remarks>
-/// Extends <see cref="ComVariantMarshaller"/> with support for enums, COM objects (passed as <c>VT_DISPATCH</c> when
+/// Extends <see cref="ComVariantMarshaller"/> with support for enums, <see cref="ComDate"/>, <see cref="ComCurrency"/> and <see cref="ComBool"/>, COM objects (passed as <c>VT_DISPATCH</c> when
 /// they implement <c>IDispatch</c>), late-bound dispinterface wrappers and <c>dynamic</c> objects, <see cref="Missing"/> (passed as an omitted
 /// optional argument) and one-dimensional arrays (passed as <c>SAFEARRAY</c>s).
 /// </remarks>
@@ -25,6 +25,12 @@ public static unsafe class VariantMarshaller
                 return default;
             case Missing:
                 return ComVariant.CreateRaw(VarEnum.VT_ERROR, OleNativeMethods.DISP_E_PARAMNOTFOUND);
+            case ComDate date:
+                return ComVariant.CreateRaw(VarEnum.VT_DATE, date.Value);
+            case ComCurrency currency:
+                return ComVariant.CreateRaw(VarEnum.VT_CY, currency.Value);
+            case ComBool boolean:
+                return ComVariant.CreateRaw(VarEnum.VT_BOOL, boolean.Value);
             case Enum value:
                 return ConvertEnum(value);
             case Array array:
