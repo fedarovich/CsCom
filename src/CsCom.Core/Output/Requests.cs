@@ -79,6 +79,12 @@ public abstract class AssemblyRequest : OutputRequest
 
     /// <summary>The build configuration.</summary>
     public string Configuration { get; init; } = "Release";
+
+    /// <summary>
+    /// Additional MSBuild properties of the temporary project, e.g. <c>Version</c>, <c>Authors</c> or
+    /// <c>PackageLicenseExpression</c>; they override the properties that CsCom sets.
+    /// </summary>
+    public IReadOnlyDictionary<string, string> Properties { get; init; } = new Dictionary<string, string>();
 }
 
 /// <summary>
@@ -96,12 +102,6 @@ public sealed class PackAssemblyRequest : AssemblyRequest
 {
     /// <summary>The version of the package and the assembly; <c>&lt;major&gt;.&lt;minor&gt;.0</c> of the type library by default.</summary>
     public string? PackageVersion { get; init; }
-
-    /// <summary>
-    /// Additional MSBuild properties of the package, e.g. <c>Authors</c> or <c>PackageLicenseExpression</c>; they override the
-    /// properties that CsCom sets.
-    /// </summary>
-    public IReadOnlyDictionary<string, string> PackageProperties { get; init; } = new Dictionary<string, string>();
 }
 
 /// <summary>

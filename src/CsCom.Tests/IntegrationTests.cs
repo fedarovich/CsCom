@@ -1292,11 +1292,17 @@ public sealed class IntegrationTests
             OutputDirectory = output,
             SupportCode = SupportCodeMode.Internal,
             Name = "Flat.Interop",
+            Properties = new Dictionary<string, string> { ["Version"] = "3.4.5", ["company"] = "CsCom Tests" },
         });
 
         CollectionAssert.AreEquivalent(
             new[] { "Flat.Interop.dll", "Flat.Interop.pdb", "Flat.Interop.xml" },
             Directory.GetFiles(output).Select(Path.GetFileName).ToArray());
+
+        // The MSBuild properties of the request are set in the project.
+        string assembly = Path.Combine(output, "Flat.Interop.dll");
+        Assert.AreEqual(new Version(3, 4, 5, 0), System.Reflection.AssemblyName.GetAssemblyName(assembly).Version);
+        Assert.AreEqual("CsCom Tests", System.Diagnostics.FileVersionInfo.GetVersionInfo(assembly).CompanyName);
     }
 
     [TestMethod]
@@ -1309,7 +1315,7 @@ public sealed class IntegrationTests
             TypeLibraryPath = TestEnvironment.TestTypeLibrary,
             OutputDirectory = output,
             PackageVersion = "2.3.4-test",
-            PackageProperties = new Dictionary<string, string> { ["Authors"] = "CsCom Tests", ["PackageLicenseExpression"] = "MIT" },
+            Properties = new Dictionary<string, string> { ["Authors"] = "CsCom Tests", ["PackageLicenseExpression"] = "MIT" },
             PackageSource = TestEnvironment.LocalPackages,
             GlobalPackagesFolder = TestEnvironment.GlobalPackagesFolder,
         });

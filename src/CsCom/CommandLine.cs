@@ -183,7 +183,7 @@ internal static class CommandLine
 
     private static readonly Option<string[]> PropertyOption = new("--property", "-p")
     {
-        Description = "An MSBuild property of the package, e.g. Authors=Contoso or PackageLicenseExpression=MIT; can be specified multiple times.",
+        Description = "An MSBuild property of the project, e.g. Version=1.2.3, Authors=Contoso or PackageLicenseExpression=MIT; can be specified multiple times.",
         HelpName = "NAME=VALUE",
     };
 
@@ -227,6 +227,7 @@ internal static class CommandLine
         var buildAssembly = new Command("build", "Builds a ready-to-use interop assembly from a type library or an interop assembly.");
         AddCreateOptions(buildAssembly);
         buildAssembly.Options.Add(KeepTempOption);
+        buildAssembly.Options.Add(PropertyOption);
         buildAssembly.SetAction(static result => Run(result, (pipeline, loggerFactory) =>
             new AssemblyGenerator(pipeline, loggerFactory).BuildAssembly(new BuildAssemblyRequest
             {
@@ -247,6 +248,7 @@ internal static class CommandLine
                 ReferencePaths = result.GetValue(ReferencePathOption) ?? [],
                 PackageSource = result.GetValue(PackageSourceOption) ?? GetBundledPackageSource(),
                 KeepTemporaryFiles = result.GetValue(KeepTempOption),
+                Properties = GetProperties(result),
             })));
 
         var packAssembly = new Command("pack", "Builds an interop assembly and packs it into a NuGet package with a symbols package.");
@@ -274,7 +276,7 @@ internal static class CommandLine
                 PackageSource = result.GetValue(PackageSourceOption) ?? GetBundledPackageSource(),
                 KeepTemporaryFiles = result.GetValue(KeepTempOption),
                 PackageVersion = result.GetValue(PackageVersionOption),
-                PackageProperties = GetPackageProperties(result),
+                Properties = GetProperties(result),
             })));
 
         var updateProject = new Command("update", "Regenerates the C# files of a project created with 'cscom project create'.")
@@ -389,7 +391,7 @@ internal static class CommandLine
     }
 
     // The NAME=VALUE pairs of --property; a later value replaces an earlier one with the same name.
-    private static Dictionary<string, string> GetPackageProperties(ParseResult result)
+    private static Dictionary<string, string> GetProperties(ParseResult result)
     {
         var properties = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         foreach (string property in result.GetValue(PropertyOption) ?? [])

@@ -21,7 +21,7 @@ cscom project create C:\Windows\System32\scrrun.dll -o Interop.Scripting
 cscom project update -o Interop.Scripting
 
 # Build a ready-to-use interop assembly
-cscom assembly build C:\Windows\System32\scrrun.dll -o bin
+cscom assembly build C:\Windows\System32\scrrun.dll -o bin -p Version=1.0.0
 
 # Pack it into a NuGet package and a symbols package
 cscom assembly pack C:\Windows\System32\scrrun.dll -o packages --package-version 1.0.0 -p Authors=Contoso
@@ -64,7 +64,7 @@ after an Office update.
 | `--package-source <PATH>` | An additional NuGet source with the CsCom.Runtime package. |
 | `--keep-temp` | `assembly build` and `assembly pack` only: keeps the temporary project used to build the assembly. |
 | `--package-version <VERSION>` | `assembly pack` only: the version of the package and the assembly. `<major>.<minor>.0` of the type library by default. |
-| `-p`, `--property <NAME=VALUE>` | `assembly pack` only: an MSBuild property of the package, e.g. `Authors=Contoso` or `PackageLicenseExpression=MIT`; can be specified multiple times. |
+| `-p`, `--property <NAME=VALUE>` | `assembly build` and `assembly pack` only: an MSBuild property of the temporary project, e.g. `Version=1.2.3`, `Company=Contoso` or `PackageLicenseExpression=MIT`; can be specified multiple times. |
 | `-v`, `--verbosity <LEVEL>` | `quiet`, `minimal`, `normal` (default), `detailed` or `diagnostic`. |
 
 `project create` writes `<Name>.csproj`, a `cscom.json` file with the options it was generated with, and the C# files into the
@@ -75,6 +75,9 @@ in `cscom.json`; a `TlbPath` replaces the recorded type library. It accepts `--n
 `assembly build` generates the project in a temporary directory, builds it with `dotnet build` once per runtime identifier and copies
 the assemblies, PDBs and XML documentation (and `CsCom.Runtime.dll`) to the output directory. With a single target framework and at
 most one runtime identifier, the files are copied directly into the output directory; otherwise into `<TFM>\<RID>` subfolders.
+`--property` sets MSBuild properties of the project and overrides the ones CsCom sets, e.g. the assembly version (`Version=1.2.3`)
+or a strong name (`SignAssembly=true` and `AssemblyOriginatorKeyFile=<full path>`; relative paths are relative to the temporary
+project).
 
 `assembly pack` generates the same project and packs it with `dotnet pack` into `<Name>.<Version>.nupkg`, with the assembly and its
 XML documentation in `lib/<TFM>` for each target framework, and `<Name>.<Version>.snupkg` with the PDBs. The package is RID-neutral,

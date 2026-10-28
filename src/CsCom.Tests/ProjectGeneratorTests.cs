@@ -343,7 +343,7 @@ public sealed class ProjectGeneratorTests
     }
 
     [TestMethod]
-    public void PackAssemblyValidatesTheRequestBeforeBuilding()
+    public void AssemblyGeneratorValidatesTheRequestBeforeBuilding()
     {
         var generator = new AssemblyGenerator(new InteropPipeline());
         string output = TestEnvironment.CreateDirectory("pack-invalid");
@@ -364,12 +364,19 @@ public sealed class ProjectGeneratorTests
         {
             TypeLibraryPath = TestEnvironment.TestTypeLibrary,
             OutputDirectory = output,
-            PackageProperties = new Dictionary<string, string> { ["Package Tags"] = "x" },
+            Properties = new Dictionary<string, string> { ["Package Tags"] = "x" },
+        }));
+        var buildProperty = Assert.ThrowsExactly<CsComException>(() => generator.BuildAssembly(new BuildAssemblyRequest
+        {
+            TypeLibraryPath = TestEnvironment.TestTypeLibrary,
+            OutputDirectory = output,
+            Properties = new Dictionary<string, string> { ["1x"] = "y" },
         }));
 
         Assert.AreEqual("The packages are RID-neutral; runtime identifiers are not supported.", runtimes.Message);
         Assert.AreEqual("'1.x' is not a valid package version, e.g. 1.2.3 or 1.2.3-preview.1 is expected.", version.Message);
         Assert.AreEqual("'Package Tags' is not a valid MSBuild property name.", property.Message);
+        Assert.AreEqual("'1x' is not a valid MSBuild property name.", buildProperty.Message);
         Assert.IsEmpty(Directory.GetFileSystemEntries(output));
     }
 }
