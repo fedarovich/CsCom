@@ -1,5 +1,10 @@
 # CsCom
 
+[![Build](https://github.com/fedarovich/CsCom/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/fedarovich/CsCom/actions/workflows/ci.yml?query=branch%3Amain)
+[![CsCom](https://img.shields.io/nuget/v/CsCom.svg?label=CsCom)](https://www.nuget.org/packages/CsCom)
+[![CsCom.Build](https://img.shields.io/nuget/v/CsCom.Build.svg?label=CsCom.Build)](https://www.nuget.org/packages/CsCom.Build)
+[![CsCom.Runtime](https://img.shields.io/nuget/v/CsCom.Runtime.svg?label=CsCom.Runtime)](https://www.nuget.org/packages/CsCom.Runtime)
+
 CsCom is a command line tool that produces COM interop code from type libraries or existing .NET interop assemblies, similar to
 TlbImp, and an MSBuild package (CsCom.Build) that generates it during the build of a project, see [MSBuild integration](#msbuild-integration).
 Unlike TlbImp, it does not rely on the built-in COM interop of .NET: it generates C# code that uses the
