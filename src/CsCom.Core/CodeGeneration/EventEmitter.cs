@@ -66,7 +66,7 @@ internal sealed partial class EventEmitter
         var signatures = new SignatureBuilder(_context, new TypeMapper(_context, @namespace), @namespace);
         var source = definition.InterfaceKind == InterfaceKind.Dispatch
             ? CreateDispatchSource(definition, guid, signatures)
-            : CreateVtableSource(definition, guid, signatures, _context.Options.Marshalling.SafeArrays);
+            : CreateVtableSource(definition, guid, signatures, _context.Options.Marshalling);
 
         var members = new List<MemberDeclarationSyntax> { EmitHandlerInterface(source) };
         switch (_context.Options.EventStyle)
@@ -95,7 +95,7 @@ internal sealed partial class EventEmitter
         return new Source(definition, guid, AssignNames(definition, events), [], IsDispatch: true, IsDual: false);
     }
 
-    private static Source CreateVtableSource(InterfaceDefinition definition, Guid guid, SignatureBuilder signatures, SafeArrayMarshalling safeArrays)
+    private static Source CreateVtableSource(InterfaceDefinition definition, Guid guid, SignatureBuilder signatures, MarshallingOptions marshalling)
     {
         // The sink implements the methods of the base interfaces as well.
         var hierarchy = new List<InterfaceDefinition>();
@@ -125,13 +125,18 @@ internal sealed partial class EventEmitter
             var (returnType, parameters) = signatures.MapComSignature(method);
             var @event = new Event(method, SignatureBuilder.GetMethodName(method), returnType.Name, parameters, IsDispatched: false);
 
-            // Dual interfaces are also invoked through IDispatch::Invoke, which cannot pass pointers. It passes SAFEARRAYs in
-            // VARIANTs, which are converted to .NET arrays rather than to ComSafeArray<T> or SAFEARRAY pointers.
-            bool passesSafeArrays = safeArrays is SafeArrayMarshalling.Wrapper or SafeArrayMarshalling.None
-                && method.Parameters.Any(static p => (TypeMapper.TryGetByRefElement(p.Type, out var element) ? element : p.Type) is SafeArrayTypeReference);
+            // Dual interfaces are also invoked through IDispatch::Invoke, which cannot pass pointers. It passes SAFEARRAYs and
+            // BSTRs in VARIANTs, which are converted to .NET arrays and strings rather than to the wrappers or the raw pointers,
+            // so these events are only received through the vtable.
+            bool needsVtable = method.Parameters.Any(p => (TypeMapper.TryGetByRefElement(p.Type, out var element) ? element : p.Type) switch
+            {
+                SafeArrayTypeReference => marshalling.SafeArrays is SafeArrayMarshalling.Wrapper or SafeArrayMarshalling.None,
+                PrimitiveTypeReference { VarType: VarEnum.VT_BSTR } => marshalling.Bstrs is BstrMarshalling.Wrapper or BstrMarshalling.None,
+                _ => false,
+            });
             @event = @event with
             {
-                IsDispatched = isDual && method.InvokeKind == InvokeKind.Method && !@event.HasPointers && !passesSafeArrays && dispIds.Add(method.MemberId),
+                IsDispatched = isDual && method.InvokeKind == InvokeKind.Method && !@event.HasPointers && !needsVtable && dispIds.Add(method.MemberId),
             };
             events.Add(@event);
         }

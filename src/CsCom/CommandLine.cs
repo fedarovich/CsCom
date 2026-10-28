@@ -289,12 +289,14 @@ internal static class CommandLine
         Option<ValueMarshalling?> Dates,
         Option<ValueMarshalling?> Currencies,
         Option<ValueMarshalling?> Booleans,
+        Option<BstrMarshalling?> Bstrs,
         Option<SafeArrayMarshalling?> SafeArrays)
     {
         public static MarshallingCommandOptions Create(bool withDefaults) => new(
             Value("date", "DATE", "DateTime", "double", "ComDate", withDefaults),
             Value("currency", "CURRENCY", "decimal", "long", "ComCurrency", withDefaults),
             Value("bool", "VARIANT_BOOL", "bool", "short", "ComBool", withDefaults),
+            Bstr(withDefaults),
             SafeArray(withDefaults));
 
         public void AddTo(Command command)
@@ -302,6 +304,7 @@ internal static class CommandLine
             command.Options.Add(Dates);
             command.Options.Add(Currencies);
             command.Options.Add(Booleans);
+            command.Options.Add(Bstrs);
             command.Options.Add(SafeArrays);
         }
 
@@ -310,8 +313,26 @@ internal static class CommandLine
             Dates = result.GetValue(Dates),
             Currencies = result.GetValue(Currencies),
             Booleans = result.GetValue(Booleans),
+            Bstrs = result.GetValue(Bstrs),
             SafeArrays = result.GetValue(SafeArrays),
         };
+
+        private static Option<BstrMarshalling?> Bstr(bool withDefaults)
+        {
+            var option = new Option<BstrMarshalling?>("--bstr-marshalling")
+            {
+                Description = "How BSTR parameters and return values are represented: string (string), " +
+                    "wrapper (ComBstr, which wraps the native string without copying it) or none (the BSTR pointer).",
+                HelpName = "string|wrapper|none",
+            };
+
+            if (withDefaults)
+            {
+                option.DefaultValueFactory = static _ => BstrMarshalling.String;
+            }
+
+            return option;
+        }
 
         private static Option<SafeArrayMarshalling?> SafeArray(bool withDefaults)
         {

@@ -43,6 +43,7 @@ public sealed class CommandLineTests
             "new", "project", TestEnvironment.TestTypeLibrary, "-o", directory,
             "--date-marshalling", "wrapper",
             "--currency-marshalling", "None",
+            "--bstr-marshalling", "wrapper",
             "--safearray-marshalling", "wrapper",
             "-v", "quiet"));
         Assert.AreEqual(
@@ -50,16 +51,19 @@ public sealed class CommandLineTests
             {
                 Dates = CodeGeneration.ValueMarshalling.Wrapper,
                 Currencies = CodeGeneration.ValueMarshalling.None,
+                Bstrs = CodeGeneration.BstrMarshalling.Wrapper,
                 SafeArrays = CodeGeneration.SafeArrayMarshalling.Wrapper,
             },
             CsComManifest.Read(directory).Marshalling);
         StringAssert.Contains(File.ReadAllText(Path.Combine(directory, CsComManifest.FileName)), "\"dates\": \"wrapper\"");
+        StringAssert.Contains(File.ReadAllText(Path.Combine(directory, CsComManifest.FileName)), "\"bstrs\": \"wrapper\"");
         StringAssert.Contains(File.ReadAllText(Path.Combine(directory, CsComManifest.FileName)), "\"safeArrays\": \"wrapper\"");
 
         Assert.AreEqual(0, Run(
             "update", "project", TestEnvironment.TestTypeLibrary, "-o", directory,
             "--date-marshalling", "bcl",
             "--bool-marshalling", "none",
+            "--bstr-marshalling", "none",
             "--safearray-marshalling", "sysarray",
             "-v", "quiet"));
         Assert.AreEqual(
@@ -67,9 +71,11 @@ public sealed class CommandLineTests
             {
                 Currencies = CodeGeneration.ValueMarshalling.None,
                 Booleans = CodeGeneration.ValueMarshalling.None,
+                Bstrs = CodeGeneration.BstrMarshalling.None,
                 SafeArrays = CodeGeneration.SafeArrayMarshalling.SysArray,
             },
             CsComManifest.Read(directory).Marshalling);
+        StringAssert.Contains(File.ReadAllText(Path.Combine(directory, "Generated", "IStrings.cs")), "nint Echo(nint Value);");
         StringAssert.Contains(File.ReadAllText(Path.Combine(directory, CsComManifest.FileName)), "\"safeArrays\": \"sysarray\"");
         StringAssert.Contains(File.ReadAllText(Path.Combine(directory, "Generated", "IArrays.cs")), "global::System.Array? Matrix(");
     }
@@ -116,6 +122,7 @@ public sealed class CommandLineTests
         Assert.AreNotEqual(0, Run("new", "project", TestEnvironment.TestTypeLibrary, "--date-field-marshalling", "wrapper"));
         Assert.AreNotEqual(0, Run("new", "project", TestEnvironment.TestTypeLibrary, "--bool-marshalling", "managed"));
         Assert.AreNotEqual(0, Run("new", "project", TestEnvironment.TestTypeLibrary, "--currency-marshalling", "com"));
+        Assert.AreNotEqual(0, Run("new", "project", TestEnvironment.TestTypeLibrary, "--bstr-marshalling", "ansi"));
         Assert.AreNotEqual(0, Run("new", "project", TestEnvironment.TestTypeLibrary, "--safearray-marshalling", "vector"));
     }
 

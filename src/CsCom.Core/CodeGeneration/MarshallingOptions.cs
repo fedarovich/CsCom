@@ -23,6 +23,21 @@ public enum ValueMarshalling
 }
 
 /// <summary>
+/// How <c>BSTR</c> parameters and return values are represented.
+/// </summary>
+public enum BstrMarshalling
+{
+    /// <summary>A <see cref="string"/>, converted by a marshaller.</summary>
+    String,
+
+    /// <summary>The CsCom.Runtime <c>ComBstr</c> class, which wraps the <c>BSTR</c> without copying it.</summary>
+    Wrapper,
+
+    /// <summary>The <c>BSTR</c> pointer as is (<see cref="nint"/>), without marshalling.</summary>
+    None,
+}
+
+/// <summary>
 /// How typed <c>SAFEARRAY(T)</c> parameters and return values are represented. Type libraries do not record the rank of
 /// <c>SAFEARRAY</c>s, so only the representations other than <see cref="Array"/> support multidimensional arrays.
 /// </summary>
@@ -43,7 +58,7 @@ public enum SafeArrayMarshalling
 }
 
 /// <summary>
-/// How <c>DATE</c>, <c>CURRENCY</c> and <c>VARIANT_BOOL</c> values and typed <c>SAFEARRAY</c>s are represented in the generated code.
+/// How <c>DATE</c>, <c>CURRENCY</c> and <c>VARIANT_BOOL</c> values, <c>BSTR</c>s and typed <c>SAFEARRAY</c>s are represented in the generated code.
 /// Late-bound dispinterface wrappers always use the .NET types.
 /// </summary>
 public sealed record MarshallingOptions
@@ -56,6 +71,12 @@ public sealed record MarshallingOptions
 
     /// <summary>The representation of <c>VARIANT_BOOL</c> parameters, return values and structure members.</summary>
     public ValueMarshalling Booleans { get; init; }
+
+    /// <summary>
+    /// The representation of <c>BSTR</c> parameters and return values. Structure fields, the elements of <c>SAFEARRAY</c>s and
+    /// <c>VARIANT</c>s, and late-bound dispinterface wrappers are not affected.
+    /// </summary>
+    public BstrMarshalling Bstrs { get; init; }
 
     /// <summary>
     /// The representation of typed <c>SAFEARRAY(T)</c> parameters and return values. Late-bound dispinterface wrappers use

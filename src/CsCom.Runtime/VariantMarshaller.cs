@@ -11,7 +11,8 @@ namespace CsCom.Runtime;
 /// <remarks>
 /// Extends <see cref="ComVariantMarshaller"/> with support for enums, <see cref="ComDate"/>, <see cref="ComCurrency"/> and <see cref="ComBool"/>, COM objects (passed as <c>VT_DISPATCH</c> when
 /// they implement <c>IDispatch</c>), late-bound dispinterface wrappers and <c>dynamic</c> objects, <see cref="Missing"/> (passed as an omitted
-/// optional argument), arrays of up to three dimensions and <see cref="ComSafeArray{T}"/> (passed as <c>SAFEARRAY</c>s).
+/// optional argument), arrays of up to three dimensions and <see cref="ComSafeArray{T}"/> (passed as <c>SAFEARRAY</c>s), and
+/// <see cref="ComBstr"/> (passed as a copy of the <c>BSTR</c>).
 /// </remarks>
 [CustomMarshaller(typeof(object), MarshalMode.Default, typeof(VariantMarshaller))]
 public static unsafe class VariantMarshaller
@@ -37,6 +38,8 @@ public static unsafe class VariantMarshaller
                 return SafeArrayConverter.ToVariant(array);
             case ISafeArrayProvider provider:
                 return CreateSafeArrayVariant(provider.Pointer);
+            case ComBstr bstr:
+                return ComVariant.CreateRaw(VarEnum.VT_BSTR, ComBstr.Copy(bstr.Pointer));
             case IDispatchProvider provider:
                 return CreateObjectVariant(provider.Dispatch);
         }

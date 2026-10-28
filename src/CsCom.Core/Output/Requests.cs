@@ -113,6 +113,9 @@ public sealed record MarshallingOverrides
     /// <summary>The new representation of <c>VARIANT_BOOL</c> parameters, return values and structure members.</summary>
     public ValueMarshalling? Booleans { get; init; }
 
+    /// <summary>The new representation of <c>BSTR</c> parameters and return values.</summary>
+    public BstrMarshalling? Bstrs { get; init; }
+
     /// <summary>The new representation of typed <c>SAFEARRAY(T)</c> parameters and return values.</summary>
     public SafeArrayMarshalling? SafeArrays { get; init; }
 
@@ -122,6 +125,7 @@ public sealed record MarshallingOverrides
         Dates = Dates ?? options.Dates,
         Currencies = Currencies ?? options.Currencies,
         Booleans = Booleans ?? options.Booleans,
+        Bstrs = Bstrs ?? options.Bstrs,
         SafeArrays = SafeArrays ?? options.SafeArrays,
     };
 }

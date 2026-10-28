@@ -623,6 +623,20 @@ namespace Interop.CsComTest
     }
 
     /// <summary>
+    /// Covers the BSTR marshalling
+    /// </summary>
+    [global::System.Runtime.InteropServices.Marshalling.GeneratedComInterface(StringMarshalling = global::System.Runtime.InteropServices.StringMarshalling.Custom, StringMarshallingCustomType = typeof(global::System.Runtime.InteropServices.Marshalling.BStrStringMarshaller))]
+    [global::System.Runtime.InteropServices.Guid("6B1F2D2A-4C1E-4B71-9D0B-7B7C2E0A1019")]
+    public partial interface IStrings
+    {
+        string? Echo(string? Value);
+
+        void Append(ref string? Value, string? suffix = "!");
+
+        void Split(string? Value, out string? first, out string? rest);
+    }
+
+    /// <summary>
     /// The events of a shape, raised through IDispatch::Invoke
     /// </summary>
     [global::System.Runtime.InteropServices.Marshalling.NativeMarshalling(typeof(global::CsCom.Runtime.DispatchWrapperMarshaller<_ShapeEvents>))]

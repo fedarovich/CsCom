@@ -262,7 +262,13 @@ internal sealed class TypeMapper
         VarEnum.VT_DECIMAL => new("decimal"),
         VT_INT_PTR => ManagedType.IntPtr,
         VT_UINT_PTR => new("nuint"),
-        VarEnum.VT_BSTR => new("string?"),
+        // String parameters are marshalled as BSTRs by the StringMarshalling of the interfaces and functions.
+        VarEnum.VT_BSTR => _context.Options.Marshalling.Bstrs switch
+        {
+            BstrMarshalling.Wrapper => new($"{_context.Support}.ComBstr?"),
+            BstrMarshalling.None => ManagedType.IntPtr,
+            _ => new("string?"),
+        },
         VarEnum.VT_LPSTR => new("string?", $"{Syntax.InteropNamespace}.MarshalAs({Syntax.InteropNamespace}.UnmanagedType.LPStr)"),
         VarEnum.VT_LPWSTR => new("string?", $"{Syntax.InteropNamespace}.MarshalAs({Syntax.InteropNamespace}.UnmanagedType.LPWStr)"),
         VarEnum.VT_BOOL => MapParameter(

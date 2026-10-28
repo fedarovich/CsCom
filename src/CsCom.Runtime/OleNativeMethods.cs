@@ -85,6 +85,22 @@ internal static unsafe partial class OleNativeMethods
 
     [LibraryImport("oleaut32.dll")]
     public static partial int VariantClear(ComVariant* pvarg);
+
+    [LibraryImport("oleaut32.dll")]
+    public static partial nint SysAllocStringLen(char* strIn, uint ui);
+
+    /// <summary>Allocates a <c>BSTR</c> of a length in bytes, which can be odd; with a null <paramref name="psz"/>, the content is uninitialized.</summary>
+    [LibraryImport("oleaut32.dll")]
+    public static partial nint SysAllocStringByteLen(byte* psz, uint len);
+
+    [LibraryImport("oleaut32.dll")]
+    public static partial uint SysStringLen(nint pbstr);
+
+    [LibraryImport("oleaut32.dll")]
+    public static partial uint SysStringByteLen(nint bstr);
+
+    [LibraryImport("oleaut32.dll")]
+    public static partial void SysFreeString(nint bstrString);
 }
 
 /// <summary>

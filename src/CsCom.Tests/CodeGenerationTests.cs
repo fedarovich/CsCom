@@ -97,6 +97,22 @@ public sealed class CodeGenerationTests : VerifyBase
     }
 
     [TestMethod]
+    [DataRow(BstrMarshalling.Wrapper)]
+    [DataRow(BstrMarshalling.None)]
+    public Task GeneratesBstrMarshalling(BstrMarshalling mode)
+    {
+        var documents = Generate(new CodeGenerationOptions
+        {
+            Namespace = "Interop.CsComTest",
+            ToolVersion = TestEnvironment.ToolVersion,
+            Marshalling = new MarshallingOptions { Bstrs = mode },
+        });
+
+        return Verify(ToTargets(documents.Where(static d => d.RelativePath is "IStrings.cs" or "ICalculator.cs" or "IShape.cs" or "IShapeEventsDual.cs")))
+            .UseParameters(mode);
+    }
+
+    [TestMethod]
     [DataRow(StructProperties.Always)]
     [DataRow(StructProperties.Never)]
     public Task GeneratesStructProperties(StructProperties mode)

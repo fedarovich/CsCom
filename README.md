@@ -37,6 +37,7 @@ The type library can be a `.tlb` file or a `.dll`, `.ocx` or `.exe` file with an
 | `--support-code <package\|public\|internal>` | Where the support code comes from, see below. `package` by default. |
 | `--date-marshalling`, `--currency-marshalling`, `--bool-marshalling` `<bcl\|none\|wrapper>` | How `DATE`, `CURRENCY` and `VARIANT_BOOL` parameters, return values and structure members are represented: `bcl` (default), `none` or `wrapper`, see [Marshalling options](#marshalling-options). |
 | `--struct-properties <always\|nonblittable\|never>` | Whether structure members are public fields or properties: `nonblittable` (default), `always` or `never`, see [Structures](#structures). |
+| `--bstr-marshalling <string\|wrapper\|none>` | How `BSTR` parameters and return values are represented: `string` (default), `wrapper` (`ComBstr`) or `none`, see [BSTRs](#bstrs). |
 | `--safearray-marshalling <array\|sysarray\|wrapper\|none>` | How typed `SAFEARRAY(T)` parameters and return values are represented: `array` (default, `T[]`), `sysarray`, `wrapper` or `none`, see [SAFEARRAYs](#safearrays). |
 | `--event-style <events\|observable\|interface\|none>` | The code generated for the events of coclasses: `events` (default), `observable`, `interface` or `none`, see [Events](#events). |
 | `--package-source <PATH>` | An additional NuGet source with the CsCom.Runtime package. |
@@ -85,7 +86,7 @@ foreach (object? key in dictionary)                 // _NewEnum via IEnumVARIANT
 
 | Type library | C# |
 | --- | --- |
-| `BSTR` | `string?` |
+| `BSTR` | `string?` (configurable, see [BSTRs](#bstrs)) |
 | `LPSTR`, `LPWSTR` | `string?` with `MarshalAs` |
 | `VARIANT_BOOL` | `bool` (configurable, see below) |
 | `VARIANT` | `object?` (`VariantMarshaller`; `null` is an omitted argument for optional parameters) |
@@ -146,6 +147,38 @@ It is disposable and follows the COM ownership rules:
 
 A finalizer destroys the arrays that are not disposed. `ComSafeArray<T>.FromPointer` wraps a `SAFEARRAY*`, e.g. a structure
 field or a parameter in the `none` mode, and `Detach` gives the pointer up.
+
+### BSTRs
+
+`BSTR` parameters and return values are copied to and from `string`s by default. `--bstr-marshalling` selects another
+representation, e.g. to read a large string without copying it or to keep the exact length of a `BSTR` that holds binary data:
+
+| Value | `BSTR` |
+| --- | --- |
+| `string` (default) | `string?` (`BStrStringMarshaller`) |
+| `wrapper` | `ComBstr?`, which wraps the `BSTR` without copying it |
+| `none` | the `BSTR` pointer (`nint`) |
+
+```csharp
+// --bstr-marshalling wrapper
+using ComBstr? xml = document.GetXml();
+ReadOnlySpan<char> characters = xml!.AsSpan();  // valid until disposed; ToString() copies, AsBytes() gives the bytes
+
+using var name = ComBstr.Create("Shape 1");     // or CreateFromBytes for binary data
+shape.Name = name;
+```
+
+`ComBstr` is disposable and follows the same ownership rules as [`ComSafeArray<T>`](#safearrays): passed strings stay owned by the
+caller, returned strings are owned by the receiver, a string replaced by the callee of an `[in, out]` parameter is detached, and
+COM objects implemented in .NET receive views that are only valid during the call. `ComBstr.FromPointer` wraps a `BSTR`, e.g. a
+structure field, and `Detach` gives the pointer up.
+
+- **Default values:** a `ComBstr` or `nint` parameter cannot have a string as its C# default value, so `BSTR` parameters with
+  a `defaultvalue` become required, together with the optional parameters before them.
+- **Events:** dual event interfaces can also be invoked through `IDispatch::Invoke`, which passes `BSTR`s in `VARIANT`s. In the
+  `wrapper` and `none` modes, their events with `BSTR` parameters are only received through the vtable.
+- **Other places:** structure fields stay `nint`, and late-bound wrappers, dispinterface events, `VARIANT`s, the elements of
+  `SAFEARRAY`s and constants use `string`. A `ComBstr` passed to a `VARIANT` parameter is passed as a copy.
 
 ### Marshalling options
 
@@ -280,7 +313,7 @@ and most sources ignore it.
 
 ### Support code
 
-The generated code depends on a few support types: `IDispatch`, `IEnumVARIANT`, `ComActivator`, the `VARIANT`, `SAFEARRAY`, `DATE` and `CURRENCY` marshallers, the
+The generated code depends on a few support types: `IDispatch`, `IEnumVARIANT`, `ComActivator`, the `VARIANT`, `SAFEARRAY`, `BSTR`, `DATE` and `CURRENCY` marshallers, the
 base class of the late-bound wrappers, the event sinks and the `dynamic` support. With `--support-code package`, the generated project references the **CsCom.Runtime**
 NuGet package. With `public` or `internal`, the support code is emitted into the project, in the `<Namespace>.ComSupport` namespace.
 In the `internal` mode all generated types are internal, because a public interface cannot derive from an internal `IDispatch`.

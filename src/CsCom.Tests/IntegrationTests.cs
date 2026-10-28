@@ -27,6 +27,8 @@ public sealed class IntegrationTests
     [DataRow(SupportCodeMode.Package, false, "safearray-sysarray", EventStyle.Events, StructProperties.NonBlittable)]
     [DataRow(SupportCodeMode.Internal, true, "safearray-wrapper", EventStyle.Events, StructProperties.NonBlittable)]
     [DataRow(SupportCodeMode.Public, false, "safearray-none", EventStyle.Events, StructProperties.NonBlittable)]
+    [DataRow(SupportCodeMode.Internal, true, "bstr-wrapper", EventStyle.Events, StructProperties.NonBlittable)]
+    [DataRow(SupportCodeMode.Package, false, "bstr-none", EventStyle.Events, StructProperties.NonBlittable)]
     [DataRow(SupportCodeMode.Public, false, "default", EventStyle.Events, StructProperties.Always)]
     [DataRow(SupportCodeMode.Internal, true, "wrapper", EventStyle.Events, StructProperties.Never)]
     public void GeneratedTestProjectBuildsWithoutWarnings(SupportCodeMode supportCode, bool singleFile, string marshalling, EventStyle eventStyle, StructProperties structProperties)
@@ -39,6 +41,8 @@ public sealed class IntegrationTests
             "safearray-sysarray" => new MarshallingOptions { SafeArrays = SafeArrayMarshalling.SysArray },
             "safearray-wrapper" => AllWrappers with { SafeArrays = SafeArrayMarshalling.Wrapper },
             "safearray-none" => new MarshallingOptions { SafeArrays = SafeArrayMarshalling.None },
+            "bstr-wrapper" => new MarshallingOptions { Bstrs = BstrMarshalling.Wrapper },
+            "bstr-none" => new MarshallingOptions { Bstrs = BstrMarshalling.None },
             _ => new MarshallingOptions(),
         };
         string project = CreateProject(TestEnvironment.TestTypeLibrary, directory, supportCode, singleFile, options, eventStyle, structProperties);
@@ -569,6 +573,191 @@ public sealed class IntegrationTests
 
         string[] lines = ["Values=2x2|1,a,2.5,<null>", "Cube=2x3x4|123|12", .. expected];
         CollectionAssert.IsSubsetOf(lines, output.ToArray(), string.Join(Environment.NewLine, output));
+    }
+
+    [TestMethod]
+    [DataRow(BstrMarshalling.String)]
+    [DataRow(BstrMarshalling.Wrapper)]
+    [DataRow(BstrMarshalling.None)]
+    public void BstrsRoundTripThroughComWrappers(BstrMarshalling mode)
+    {
+        // Like SafeArraysRoundTripThroughComWrappers, the consumer implements IStrings and calls it through a runtime callable
+        // wrapper of its own COM callable wrapper, so that the strings and their ownership go through both directions of the
+        // generated stubs.
+        string root = TestEnvironment.CreateDirectory($"bstrs-{mode}");
+        string interop = CreateProject(
+            TestEnvironment.TestTypeLibrary,
+            Path.Combine(root, "Interop"),
+            SupportCodeMode.Package,
+            singleFile: false,
+            new MarshallingOptions { Bstrs = mode });
+
+        string program = """
+            using System.Runtime.InteropServices;
+            using System.Runtime.InteropServices.Marshalling;
+            using CsCom.Runtime;
+            using Interop.CsComTest;
+
+            var wrappers = new StrategyBasedComWrappers();
+            var implementation = new StringsImpl();
+            nint unknown = wrappers.GetOrCreateComInterfaceForObject(implementation, CreateComInterfaceFlags.None);
+            var proxy = (IStrings)wrappers.GetOrCreateObjectForComInstance(unknown, CreateObjectFlags.UniqueInstance);
+            Marshal.Release(unknown);
+
+            __CALLS__
+
+            [GeneratedComClass]
+            internal sealed partial class StringsImpl : IStrings
+            {
+                __IMPL__
+            }
+            """;
+
+        (string calls, string implementation, string[] expected) = mode switch
+        {
+            BstrMarshalling.String => (
+                """
+                Console.WriteLine($"Echo={proxy.Echo("hello")}");
+                string? value = "a";
+                proxy.Append(ref value);
+                proxy.Append(ref value, "?");
+                Console.WriteLine($"Append={value}");
+                proxy.Split("a b c", out var first, out var rest);
+                Console.WriteLine($"Split={first}|{rest}");
+                """,
+                """
+                public string? Echo(string? value) => value;
+
+                public void Append(ref string? value, string? suffix) => value += suffix;
+
+                public void Split(string? value, out string? first, out string? rest)
+                {
+                    int i = value!.IndexOf(' ');
+                    first = value[..i];
+                    rest = value[(i + 1)..];
+                }
+                """,
+                new[] { "Echo=hello", "Append=a!?", "Split=a|b c" }),
+            BstrMarshalling.Wrapper => (
+                """
+                using var input = ComBstr.Create("hello");
+                using (var echoed = proxy.Echo(input)!)
+                {
+                    Console.WriteLine($"Echo={echoed}|{echoed.OwnsString}|{!ReferenceEquals(echoed, input)}|{input}|ViewInvalid={IsDisposed(StringsImpl.View!)}");
+                }
+
+                using (var binary = ComBstr.CreateFromBytes([1, 2, 3]))
+                using (var binaryEcho = proxy.Echo(binary)!)
+                {
+                    Console.WriteLine($"Binary={binaryEcho.ByteLength}|{string.Join(",", binaryEcho.AsBytes().ToArray())}");
+                }
+
+                using var empty = ComBstr.Create("");
+                ComBstr? value = ComBstr.Create("a");
+                var original = value;
+                proxy.Append(ref value, empty);
+                Console.WriteLine($"Unchanged={ReferenceEquals(original, value)}|{value}");
+                using var suffix = ComBstr.Create("!");
+                proxy.Append(ref value, suffix);
+                Console.WriteLine($"Replaced={ReferenceEquals(original, value)}|{IsDisposed(original)}|{value}|{value!.OwnsString}");
+                value.Dispose();
+
+                using var text = ComBstr.Create("a b c");
+                proxy.Split(text, out var first, out var rest);
+                Console.WriteLine($"Split={first}|{rest}|{first!.OwnsString}");
+                first.Dispose();
+                rest!.Dispose();
+
+                static bool IsDisposed(ComBstr bstr)
+                {
+                    try
+                    {
+                        _ = bstr.Pointer;
+                        return false;
+                    }
+                    catch (ObjectDisposedException)
+                    {
+                        return true;
+                    }
+                }
+                """,
+                """
+                public static ComBstr? View { get; private set; }
+
+                // Returns the view of the argument, which is copied for the caller.
+                public ComBstr? Echo(ComBstr? value)
+                {
+                    View = value;
+                    return value;
+                }
+
+                public void Append(ref ComBstr? value, ComBstr? suffix)
+                {
+                    if (suffix!.Length > 0)
+                    {
+                        value = ComBstr.Create(value!.ToString() + suffix.ToString());
+                    }
+                }
+
+                public void Split(ComBstr? value, out ComBstr? first, out ComBstr? rest)
+                {
+                    string text = value!.ToString();
+                    int i = text.IndexOf(' ');
+                    first = ComBstr.Create(text.AsSpan(0, i));
+                    rest = ComBstr.Create(text.AsSpan(i + 1));
+                }
+                """,
+                new[] { "Echo=hello|True|True|hello|ViewInvalid=True", "Binary=3|1,2,3", "Unchanged=True|a", "Replaced=False|True|a!|True", "Split=a|b c|True" }),
+            _ => (
+                """
+                nint input = Marshal.StringToBSTR("hello");
+                nint echoed = proxy.Echo(input);
+                Console.WriteLine($"Echo={Marshal.PtrToStringBSTR(echoed)}|{echoed != input}");
+                Marshal.FreeBSTR(echoed);
+                Marshal.FreeBSTR(input);
+
+                nint value = Marshal.StringToBSTR("a");
+                nint suffix = Marshal.StringToBSTR("!");
+                proxy.Append(ref value, suffix);
+                Console.WriteLine($"Append={Marshal.PtrToStringBSTR(value)}");
+                Marshal.FreeBSTR(value);
+                Marshal.FreeBSTR(suffix);
+
+                nint text = Marshal.StringToBSTR("a b c");
+                proxy.Split(text, out nint first, out nint rest);
+                Console.WriteLine($"Split={Marshal.PtrToStringBSTR(first)}|{Marshal.PtrToStringBSTR(rest)}");
+                Marshal.FreeBSTR(first);
+                Marshal.FreeBSTR(rest);
+                Marshal.FreeBSTR(text);
+                """,
+                """
+                public nint Echo(nint value) => Marshal.StringToBSTR(Marshal.PtrToStringBSTR(value));
+
+                // The callee frees the string it replaces.
+                public void Append(ref nint value, nint suffix)
+                {
+                    string result = Marshal.PtrToStringBSTR(value) + Marshal.PtrToStringBSTR(suffix);
+                    Marshal.FreeBSTR(value);
+                    value = Marshal.StringToBSTR(result);
+                }
+
+                public void Split(nint value, out nint first, out nint rest)
+                {
+                    string text = Marshal.PtrToStringBSTR(value);
+                    int i = text.IndexOf(' ');
+                    first = Marshal.StringToBSTR(text[..i]);
+                    rest = Marshal.StringToBSTR(text[(i + 1)..]);
+                }
+                """,
+                new[] { "Echo=hello|True", "Append=a!", "Split=a|b c" }),
+        };
+
+        program = program
+            .Replace("__CALLS__", calls, StringComparison.Ordinal)
+            .Replace("__IMPL__", implementation, StringComparison.Ordinal);
+        var output = RunConsumer(root, interop, program, allowUnsafe: true);
+
+        CollectionAssert.IsSubsetOf(expected, output.ToArray(), string.Join(Environment.NewLine, output));
     }
 
     [TestMethod]

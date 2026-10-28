@@ -170,6 +170,18 @@ library CsComTest
     };
 
     [
+        object,
+        uuid(6B1F2D2A-4C1E-4B71-9D0B-7B7C2E0A1019),
+        helpstring("Covers the BSTR marshalling")
+    ]
+    interface IStrings : IUnknown
+    {
+        HRESULT Echo([in] BSTR value, [out, retval] BSTR* result);
+        HRESULT Append([in, out] BSTR* value, [in, defaultvalue("!")] BSTR suffix);
+        HRESULT Split([in] BSTR value, [out] BSTR* first, [out] BSTR* rest);
+    };
+
+    [
         uuid(6B1F2D2A-4C1E-4B71-9D0B-7B7C2E0A1013),
         helpstring("The events of a shape")
     ]
