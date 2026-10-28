@@ -6,7 +6,7 @@
     <authors>$authors$</authors>
     <license type="expression">MIT</license>
     <projectUrl>$projectUrl$</projectUrl>
-    <repository type="git" url="$repositoryUrl$" />
+    <repository type="git" url="$repositoryUrl$" commit="$repositoryCommit$" />
     <description>$description$</description>
     <tags>$tags$</tags>
     <dependencies>

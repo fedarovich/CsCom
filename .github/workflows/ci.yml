@@ -50,10 +50,11 @@ jobs:
           }
           "CSCOM_VERSION=$version" >> $env:GITHUB_ENV
 
-      # The build also creates the CsCom.Runtime and CsCom.Build packages in artifacts/packages.
+      # The build also creates the CsCom.Runtime (with its symbols) and CsCom.Build packages in artifacts/packages. It is a
+      # reproducible CI build (ContinuousIntegrationBuild), which src/Directory.Build.props enables on GitHub Actions.
       - name: Build
         run: |
-          $properties = @('-p:ContinuousIntegrationBuild=true')
+          $properties = @()
           if ($env:CSCOM_VERSION) { $properties += "-p:Version=$env:CSCOM_VERSION" }
           dotnet build src/CsCom.slnx -c Release @properties
 
@@ -62,7 +63,7 @@ jobs:
 
       - name: Pack the tool
         run: |
-          $properties = @('-p:ContinuousIntegrationBuild=true')
+          $properties = @()
           if ($env:CSCOM_VERSION) { $properties += "-p:Version=$env:CSCOM_VERSION" }
           dotnet pack src/CsCom/CsCom.csproj -c Release -o artifacts/packages @properties
 
@@ -80,7 +81,9 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: packages
-          path: artifacts/packages/*.nupkg
+          path: |
+            artifacts/packages/*.nupkg
+            artifacts/packages/*.snupkg
           if-no-files-found: error
 
   publish:
@@ -107,6 +110,8 @@ jobs:
         with:
           user: ${{ secrets.NUGET_USER }}
 
-      # A re-run after a partial push skips the packages that were pushed.
+      # On Windows, dotnet nuget push only expands the wildcard after a backslash. It also pushes the .snupkg next to a .nupkg
+      # (CsCom.Runtime) to the symbol server of nuget.org with the same key. A re-run after a partial push skips the packages
+      # that were pushed.
       - name: Push the packages
-        run: dotnet nuget push "packages/*.nupkg" --api-key "${{ steps.login.outputs.NUGET_API_KEY }}" --source https://api.nuget.org/v3/index.json --skip-duplicate
+        run: dotnet nuget push "packages\*.nupkg" --api-key "${{ steps.login.outputs.NUGET_API_KEY }}" --source https://api.nuget.org/v3/index.json --skip-duplicate

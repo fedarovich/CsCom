@@ -1,6 +1,5 @@
 using System.Runtime.InteropServices;
 using CsCom.Model;
-using Microsoft.Extensions.Logging;
 
 namespace CsCom.InteropAssemblies;
 
@@ -372,17 +371,5 @@ public sealed partial class InteropAssemblyReader
         // types; their value types other than the mapped ones are not supported.
         private static bool IsFrameworkType(Type type) =>
             type.Assembly.Location.StartsWith(RuntimeEnvironment.GetRuntimeDirectory(), StringComparison.OrdinalIgnoreCase);
-
-        [LoggerMessage(Level = LogLevel.Warning, Message = "'{Member}' uses {Type}, which is not supported; it is imported as {Native}")]
-        private partial void LogUnsupportedType(string member, string type, string native);
-
-        [LoggerMessage(Level = LogLevel.Warning, Message = "The structure '{Name}' has an explicit layout, which is imported as a sequential layout")]
-        private partial void LogExplicitLayout(string name);
-
-        [LoggerMessage(Level = LogLevel.Warning, Message = "'{Member}' is a C-style array, which is imported as a pointer to its first element")]
-        private partial void LogCArray(string member);
-
-        [LoggerMessage(Level = LogLevel.Warning, Message = "The enum '{Name}' is based on {Type} rather than Int32, so it is imported as {Type}")]
-        private partial void LogEnumUnderlyingType(string name, string type);
     }
 }

@@ -19,6 +19,15 @@
   </PropertyGroup>
 
   <PropertyGroup>
+    <!--
+      Reproducible builds: the output only depends on the sources, and the CI build maps the source paths to /_/ so that it does
+      not depend on the build machine either. The SDK adds Source Link and embeds the untracked sources into the PDBs.
+    -->
+    <Deterministic>true</Deterministic>
+    <ContinuousIntegrationBuild Condition="'$(GITHUB_ACTIONS)' == 'true'">true</ContinuousIntegrationBuild>
+  </PropertyGroup>
+
+  <PropertyGroup>
     <!-- Local feed that receives the CsCom.Runtime package on every build. -->
     <CsComLocalPackagesDir>$([MSBuild]::NormalizeDirectory('$(MSBuildThisFileDirectory)', '..', 'artifacts', 'packages'))</CsComLocalPackagesDir>
   </PropertyGroup>

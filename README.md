@@ -846,6 +846,10 @@ artifact of the run.
 - **Releasing:** push a tag with a semantic version, e.g. `1.2.3` or `1.2.3-beta.1`. The tag sets the version of CsCom,
   CsCom.Runtime and CsCom.Build (instead of the `VersionPrefix` of `src/Directory.Build.props`), and the `publish` job pushes
   them to nuget.org. A tag that is not a semantic version fails the build.
+- **Symbols:** CsCom.Runtime also has a symbols package (`.snupkg`), which `dotnet nuget push` publishes to the symbol server
+  of nuget.org together with the package. With Source Link, debuggers get the sources of the exact commit from GitHub.
+- **Reproducible builds:** the builds are deterministic, and on GitHub Actions `ContinuousIntegrationBuild` maps the source
+  paths to `/_/`, so the same commit and SDK produce identical assemblies. The packages record the commit they were built from.
 - **Trusted publishing:** the job gets a short-lived API key from nuget.org instead of using a stored one. This requires a
   Trusted Publishing policy on nuget.org (repository owner `fedarovich`, repository `CsCom`, workflow file `ci.yml`) and the
   repository secret `NUGET_USER` with the nuget.org profile name (not the email address).

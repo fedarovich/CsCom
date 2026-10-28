@@ -34,14 +34,17 @@
     <InternalsVisibleTo Include="CsCom.Tests" />
   </ItemGroup>
 
-  <!-- Publishes the cscom tool, the generator of the task, and passes the paths and the metadata to the nuspec. -->
+  <!--
+    Publishes the cscom tool, the generator of the task, and passes the paths and the metadata to the nuspec. It runs after the
+    dependencies of GenerateNuspec, which set RepositoryCommit from Source Link.
+  -->
   <Target Name="PrepareCsComPackage" BeforeTargets="GenerateNuspec">
     <MSBuild Projects="..\CsCom\CsCom.csproj" Targets="Publish" />
     <MSBuild Projects="..\CsCom\CsCom.csproj" Targets="GetCsComPublishDirectory">
       <Output TaskParameter="TargetOutputs" PropertyName="_CsComGeneratorDirectory" />
     </MSBuild>
     <PropertyGroup>
-      <NuspecProperties>version=$(PackageVersion);authors=$(Authors);description=$(Description);tags=$(PackageTags.Replace(';', ' '));projectUrl=$(PackageProjectUrl);repositoryUrl=$(RepositoryUrl);taskAssembly=$(TargetPath);generatorDirectory=$(_CsComGeneratorDirectory)</NuspecProperties>
+      <NuspecProperties>version=$(PackageVersion);authors=$(Authors);description=$(Description);tags=$(PackageTags.Replace(';', ' '));projectUrl=$(PackageProjectUrl);repositoryUrl=$(RepositoryUrl);repositoryCommit=$(RepositoryCommit);taskAssembly=$(TargetPath);generatorDirectory=$(_CsComGeneratorDirectory)</NuspecProperties>
     </PropertyGroup>
   </Target>
 

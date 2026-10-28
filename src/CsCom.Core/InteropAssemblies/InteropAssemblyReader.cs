@@ -551,6 +551,9 @@ public sealed partial class InteropAssemblyReader
             return reader.GetMetadataReader();
         }
 
+        // All the logging methods of the session are declared in this part. With methods in several parts, the logging generator
+        // emits a part per part, and the compiler orders the fields of these parts differently from build to build, so that the
+        // builds are not reproducible.
         [LoggerMessage(Level = LogLevel.Debug, Message = "Reading {Kind} '{Name}'")]
         private partial void LogReadingType(Model.TypeKind kind, string name);
 
@@ -562,6 +565,18 @@ public sealed partial class InteropAssemblyReader
 
         [LoggerMessage(Level = LogLevel.Debug, Message = "Skipping '{Name}', which is a source-generated COM interface rather than a [ComImport] one")]
         private partial void LogSkippingGeneratedInterface(string name);
+
+        [LoggerMessage(Level = LogLevel.Warning, Message = "'{Member}' uses {Type}, which is not supported; it is imported as {Native}")]
+        private partial void LogUnsupportedType(string member, string type, string native);
+
+        [LoggerMessage(Level = LogLevel.Warning, Message = "The structure '{Name}' has an explicit layout, which is imported as a sequential layout")]
+        private partial void LogExplicitLayout(string name);
+
+        [LoggerMessage(Level = LogLevel.Warning, Message = "'{Member}' is a C-style array, which is imported as a pointer to its first element")]
+        private partial void LogCArray(string member);
+
+        [LoggerMessage(Level = LogLevel.Warning, Message = "The enum '{Name}' is based on {Type} rather than Int32, so it is imported as {Type}")]
+        private partial void LogEnumUnderlyingType(string name, string type);
 
         // Alignment is the alignment recorded in the model, the packing when it is specified; FieldAlignment is the alignment
         // of the structure as a field of another structure.
