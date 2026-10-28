@@ -10,13 +10,14 @@ namespace CsCom.Runtime;
 internal static unsafe class ComObjects
 {
     /// <summary>
-    /// Gets an AddRef'd <c>IUnknown</c> pointer for a COM object, a late-bound wrapper or a managed object, or 0 for <see langword="null"/>.
+    /// Gets an AddRef'd <c>IUnknown</c> pointer for a COM object, a late-bound or <c>dynamic</c> wrapper or a managed object,
+    /// or 0 for <see langword="null"/>.
     /// </summary>
     public static nint GetUnknown(object? value)
     {
-        if (value is DispatchObject wrapper)
+        if (value is IDispatchProvider provider)
         {
-            value = wrapper.Dispatch;
+            value = provider.Dispatch;
         }
 
         if (value is null)

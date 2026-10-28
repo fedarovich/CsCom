@@ -10,7 +10,7 @@ namespace CsCom.Runtime;
 /// </summary>
 /// <remarks>
 /// Extends <see cref="ComVariantMarshaller"/> with support for enums, COM objects (passed as <c>VT_DISPATCH</c> when
-/// they implement <c>IDispatch</c>), late-bound dispinterface wrappers, <see cref="Missing"/> (passed as an omitted
+/// they implement <c>IDispatch</c>), late-bound dispinterface wrappers and <c>dynamic</c> objects, <see cref="Missing"/> (passed as an omitted
 /// optional argument) and one-dimensional arrays (passed as <c>SAFEARRAY</c>s).
 /// </remarks>
 [CustomMarshaller(typeof(object), MarshalMode.Default, typeof(VariantMarshaller))]
@@ -29,8 +29,8 @@ public static unsafe class VariantMarshaller
                 return ConvertEnum(value);
             case Array array:
                 return SafeArrayConverter.ToVariant(array);
-            case DispatchObject wrapper:
-                return CreateObjectVariant(wrapper.Dispatch);
+            case IDispatchProvider provider:
+                return CreateObjectVariant(provider.Dispatch);
         }
 
         if (ComWrappers.TryGetComInstance(managed, out nint unknown))

@@ -150,7 +150,7 @@ internal static unsafe class SafeArrayConverter
             return CreateEnums(array, Type.GetTypeCode(type));
         }
 
-        bool isWrapper = typeof(DispatchObject).IsAssignableFrom(type);
+        bool isWrapper = typeof(IDispatchProvider).IsAssignableFrom(type);
         if (type.IsInterface || isWrapper)
         {
             VarEnum vt = isWrapper || typeof(IDispatch).IsAssignableFrom(type) ? VarEnum.VT_DISPATCH : VarEnum.VT_UNKNOWN;

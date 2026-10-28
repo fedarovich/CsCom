@@ -70,6 +70,7 @@ foreach (object? key in dictionary)                 // _NewEnum via IEnumVARIANT
 - **Dispinterfaces** can only be called through `IDispatch::Invoke`, so they become late-bound wrapper classes with methods,
   properties and indexers that invoke the members by their DISPIDs.
 - **Coclasses** become static classes with the `Clsid` and a `Create()` method that returns the default interface.
+  Coclasses whose default interface supports `IDispatch` also get `CreateDynamic()`, see [Late binding with `dynamic`](#late-binding-with-dynamic).
 - **Enums** become enums and **structs and unions** become blittable structs (`BSTR` and interface pointer fields are `nint`,
   `VARIANT` fields are `ComVariant`, `CURRENCY` and `DATE` fields are `long` and `double`, `SAFEARRAY` fields are `nint` and
   fixed-size arrays are inline arrays).
@@ -97,10 +98,39 @@ foreach (object? key in dictionary)                 // _NewEnum via IEnumVARIANT
 arrays inside `VARIANT`s. `SAFEARRAY`s of structs, `CURRENCY`, `SCODE` and dispinterfaces are passed as raw `SAFEARRAY*` (`nint`).
 Multi-dimensional `SAFEARRAY`s are not supported.
 
+### Late binding with `dynamic`
+
+The COM objects created by source-generated COM interop do not support `dynamic` by themselves. CsCom.Runtime provides
+`DynamicDispatchObject`, which resolves members by name with `IDispatch::GetIDsOfNames` and invokes them with `IDispatch::Invoke`:
+
+```csharp
+dynamic fso = ComActivator.CreateDynamicInstance("Scripting.FileSystemObject"); // by ProgID or CLSID, no interop types needed
+dynamic dictionary = Dictionary.CreateDynamic();   // generated for coclasses that support IDispatch
+dynamic shape = typedShape.AsDynamic();            // any IDispatch-based interface or late-bound wrapper
+dynamic tag = ComDynamic.ToDynamic(typedShape.Tag); // an object returned in a VARIANT
+
+dictionary.Add("a", 1);                            // methods
+int count = dictionary.Count;                      // properties
+object item = dictionary.Item("a");                // parameterized properties are invoked like methods
+dictionary["b"] = 2;                               // indexers use the default member (DISPID_VALUE)
+string path = fso.BuildPath(Path: @"C:\a", Name: "b"); // named arguments
+string drive = fso.GetFolder(@"C:\Windows").Drive.DriveLetter; // returned COM objects are dynamic too
+foreach (var key in dictionary) { }                // _NewEnum
+IDispatch dispatch = dictionary;                   // conversions to IDispatch and to the implemented COM interfaces
+```
+
+COM objects returned by dynamic calls are dynamic as well, so calls can be chained. Assigning a COM object to a property or an
+indexer uses `PROPERTYPUTREF` when the property supports it, like VB's `Set`. Unknown members throw `RuntimeBinderException` and
+errors raised by the COM object throw `COMException`.
+
+The C# runtime binder requires dynamic code, so `dynamic` cannot be used with Native AOT: the entry points are annotated with
+`[RequiresDynamicCode]`, and the typed interop stays trimming and AOT compatible. Arguments are passed by value, so `ref` and `out`
+arguments are not updated, and parameterized properties other than the default one cannot be set.
+
 ### Support code
 
-The generated code depends on a few support types: `IDispatch`, `IEnumVARIANT`, `ComActivator`, the `VARIANT`, `SAFEARRAY`, `DATE` and `CURRENCY` marshallers and the
-base class of the late-bound wrappers. With `--support-code package`, the generated project references the **CsCom.Runtime**
+The generated code depends on a few support types: `IDispatch`, `IEnumVARIANT`, `ComActivator`, the `VARIANT`, `SAFEARRAY`, `DATE` and `CURRENCY` marshallers, the
+base class of the late-bound wrappers and the `dynamic` support. With `--support-code package`, the generated project references the **CsCom.Runtime**
 NuGet package. With `public` or `internal`, the support code is emitted into the project, in the `<Namespace>.ComSupport` namespace.
 In the `internal` mode all generated types are internal, because a public interface cannot derive from an internal `IDispatch`.
 

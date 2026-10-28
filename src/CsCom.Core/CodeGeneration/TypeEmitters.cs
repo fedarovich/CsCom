@@ -111,6 +111,20 @@ internal sealed partial class TypeEmitters
                     $"Creates an instance of the {definition.OriginalName} class.",
                     ("param name=\"context\"", "The context in which the code that manages the newly created object will run.")));
 
+                // Objects whose default interface is a vtable interface may not implement IDispatch.
+                bool isDispatchable = definition.DefaultInterface?.Interface is
+                    UserDefinedTypeReference { Definition: InterfaceDefinition { InterfaceKind: InterfaceKind.Dual or InterfaceKind.Dispatch } }
+                    or PrimitiveTypeReference { VarType: VarEnum.VT_DISPATCH };
+                if (isDispatchable)
+                {
+                    members.Add(ParseMember(
+                            $"[global::System.Diagnostics.CodeAnalysis.RequiresDynamicCode({Syntax.Literal("Late binding with dynamic requires dynamic code generation and is not compatible with Native AOT.")})] " +
+                            $"public static dynamic CreateDynamic({context}) => {support}.ComActivator.CreateDynamicInstance(Clsid, context);")
+                        .WithDocumentation(
+                            $"Creates an instance of the {definition.OriginalName} class for late binding with dynamic.",
+                            ("param name=\"context\"", "The context in which the code that manages the newly created object will run.")));
+                }
+
                 string Create(string type, string method) =>
                     $"public static {type} Create({context}) => {support}.ComActivator.{method}<{type}>(Clsid, context);";
             }

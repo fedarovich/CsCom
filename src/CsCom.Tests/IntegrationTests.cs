@@ -64,6 +64,7 @@ public sealed class IntegrationTests
         string interop = CreateProject(TestEnvironment.ScriptingRuntime, Path.Combine(root, "Interop"), SupportCodeMode.Package, singleFile: false);
 
         var output = RunConsumer(root, interop, """
+            using CsCom.Runtime;
             using Interop.Scripting;
 
             IDictionary dictionary = Dictionary.Create();
@@ -91,10 +92,15 @@ public sealed class IntegrationTests
             Console.WriteLine($"Exists={fileSystem.FileExists(path)}");
             IFolder folder = fileSystem.GetFolder(Path.GetTempPath())!;
             Console.WriteLine($"Created={folder.DateCreated.Year > 1990 && folder.DateCreated <= DateTime.Now}");
+
+            dynamic late = Dictionary.CreateDynamic();
+            late.Add("x", 42);
+            Console.WriteLine($"Dynamic={late.Item("x")}|{late.Count}");
+            Console.WriteLine($"AsDynamic={dictionary.AsDynamic().Count}|{fileSystem.AsDynamic().GetFolder(Path.GetTempPath()).Drive.IsReady}");
             """);
 
         CollectionAssert.IsSubsetOf(
-            new[] { "Count=2", "Exists=True", "Item=two", "Keys=a,b", "Key=a", "Key=b", "Line=Hello", "Exists=False", "Created=True" },
+            new[] { "Count=2", "Exists=True", "Item=two", "Keys=a,b", "Key=a", "Key=b", "Line=Hello", "Exists=False", "Created=True", "Dynamic=42|1", "AsDynamic=2|True" },
             output.ToArray(),
             string.Join(Environment.NewLine, output));
     }

@@ -11,6 +11,9 @@ internal static unsafe partial class OleNativeMethods
     public const int CO_E_NOTINITIALIZED = unchecked((int)0x800401F0);
     public const int DISP_E_EXCEPTION = unchecked((int)0x80020009);
     public const int DISP_E_PARAMNOTFOUND = unchecked((int)0x80020004);
+    public const int DISP_E_MEMBERNOTFOUND = unchecked((int)0x80020003);
+    public const int DISP_E_UNKNOWNNAME = unchecked((int)0x80020006);
+    public const int CO_E_CLASSSTRING = unchecked((int)0x800401F3);
     public const uint COINIT_MULTITHREADED = 0x0;
     public const uint LOCALE_USER_DEFAULT = 0x0400;
 
@@ -22,6 +25,9 @@ internal static unsafe partial class OleNativeMethods
 
     [LibraryImport("ole32.dll")]
     public static partial int CoInitializeEx(void* pvReserved, uint dwCoInit);
+
+    [LibraryImport("ole32.dll", StringMarshalling = StringMarshalling.Utf16)]
+    public static partial int CLSIDFromProgID(string lpszProgID, out Guid lpclsid);
 
     [LibraryImport("oleaut32.dll")]
     public static partial uint SafeArrayGetDim(nint psa);
