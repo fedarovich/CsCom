@@ -148,6 +148,10 @@ It is disposable and follows the COM ownership rules:
 A finalizer destroys the arrays that are not disposed. `ComSafeArray<T>.FromPointer` wraps a `SAFEARRAY*`, e.g. a structure
 field or a parameter in the `none` mode, and `Detach` gives the pointer up.
 
+`AsSpan()` gives the elements of a one-dimensional array in place, without converting them, so `T` must have their layout:
+the numeric type of the elements or an enum based on it, `decimal`, `ComBool`, `ComDate` or `ComCurrency`. The span is valid
+until the wrapper is disposed.
+
 ### BSTRs
 
 `BSTR` parameters and return values are copied to and from `string`s by default. `--bstr-marshalling` selects another

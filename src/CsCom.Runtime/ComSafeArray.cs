@@ -123,6 +123,14 @@ public sealed unsafe class ComSafeArray<T> : IDisposable, ISafeArrayProvider
         set => SetValue(value, index0, index1, index2);
     }
 
+    /// <summary>Gets or sets an element of a multidimensional array.</summary>
+    /// <param name="indices">The indices of the dimensions, within their bounds.</param>
+    public T this[params ReadOnlySpan<int> indices]
+    {
+        get => GetValue(indices);
+        set => SetValue(value, indices);
+    }
+
     /// <summary>Creates a one-dimensional <c>SAFEARRAY</c> with the elements of an array; the element type is derived from <typeparamref name="T"/>.</summary>
     public static ComSafeArray<T> Create(T[] values) => FromArray(values);
 
@@ -192,6 +200,35 @@ public sealed unsafe class ComSafeArray<T> : IDisposable, ISafeArrayProvider
             SafeArrayConverter.WriteElement((void*)element, vt, value);
             return null;
         });
+    }
+
+    /// <summary>
+    /// Gets the elements of a one-dimensional array in the memory of the <c>SAFEARRAY</c>, without converting them.
+    /// </summary>
+    /// <remarks>
+    /// The element at index 0 of the span is at the lower bound of the array. <typeparamref name="T"/> must have the layout of
+    /// the elements: the numeric type of the elements or an enum based on it, <see cref="decimal"/> for <c>VT_DECIMAL</c>,
+    /// <see cref="ComBool"/> for <c>VT_BOOL</c>, <see cref="ComDate"/> for <c>VT_DATE</c> or <see cref="ComCurrency"/> for
+    /// <c>VT_CY</c>. The span is valid until the instance is disposed or detached, and while the <c>SAFEARRAY</c> is not
+    /// resized or destroyed by its owner.
+    /// </remarks>
+    /// <exception cref="InvalidOperationException">
+    /// The array is not one-dimensional, or its elements cannot be accessed as <typeparamref name="T"/>.
+    /// </exception>
+    /// <exception cref="ObjectDisposedException">The instance was disposed or detached.</exception>
+    public Span<T> AsSpan()
+    {
+        nint pointer = Pointer;
+        CheckRank(pointer, 1);
+        VarEnum vt = ElementType;
+        if (!HasLayoutOf(vt))
+        {
+            throw new InvalidOperationException($"The elements of the SAFEARRAY are {vt}, which cannot be accessed as a span of {typeof(T)}.");
+        }
+
+        Marshal.ThrowExceptionForHR(OleNativeMethods.SafeArrayAccessData(pointer, out void* data));
+        OleNativeMethods.SafeArrayUnaccessData(pointer);
+        return new Span<T>(data, GetLength(0));
     }
 
     /// <summary>Copies the elements of a one-dimensional array to a zero-based .NET array.</summary>
@@ -274,14 +311,42 @@ public sealed unsafe class ComSafeArray<T> : IDisposable, ISafeArrayProvider
         return new(SafeArrayConverter.Create(values, SafeArrayConverter.GetVarType(typeof(T))).Psa, ownsArray: true);
     }
 
-    private Array ToManagedArray(int rank)
+    private static void CheckRank(nint pointer, int rank)
     {
-        nint pointer = Pointer;
         if (OleNativeMethods.SafeArrayGetDim(pointer) != rank)
         {
             throw new InvalidOperationException($"The array has {OleNativeMethods.SafeArrayGetDim(pointer)} dimensions, not {rank}.");
         }
+    }
 
+    // Whether T has the layout of the elements, so that they can be accessed without converting them.
+    private static bool HasLayoutOf(VarEnum vt)
+    {
+        Type type = typeof(T).IsEnum ? Enum.GetUnderlyingType(typeof(T)) : typeof(T);
+        return vt switch
+        {
+            VarEnum.VT_I1 => type == typeof(sbyte),
+            VarEnum.VT_UI1 => type == typeof(byte),
+            VarEnum.VT_I2 => type == typeof(short),
+            VarEnum.VT_UI2 => type == typeof(ushort),
+            VarEnum.VT_I4 or VarEnum.VT_INT or VarEnum.VT_ERROR => type == typeof(int),
+            VarEnum.VT_UI4 or VarEnum.VT_UINT => type == typeof(uint),
+            VarEnum.VT_I8 => type == typeof(long),
+            VarEnum.VT_UI8 => type == typeof(ulong),
+            VarEnum.VT_R4 => type == typeof(float),
+            VarEnum.VT_R8 => type == typeof(double),
+            VarEnum.VT_DECIMAL => type == typeof(decimal),
+            VarEnum.VT_BOOL => type == typeof(ComBool),
+            VarEnum.VT_DATE => type == typeof(ComDate),
+            VarEnum.VT_CY => type == typeof(ComCurrency),
+            _ => false,
+        };
+    }
+
+    private Array ToManagedArray(int rank)
+    {
+        nint pointer = Pointer;
+        CheckRank(pointer, rank);
         return SafeArrayConverter.ToManaged(pointer)!;
     }
 

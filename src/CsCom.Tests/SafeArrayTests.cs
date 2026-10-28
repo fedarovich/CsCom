@@ -200,4 +200,55 @@ public sealed class SafeArrayTests
         var exception = Assert.ThrowsExactly<NotSupportedException>(() => SafeArrayMarshaller<int>.ConvertToManaged(matrix.Pointer));
         StringAssert.Contains(exception.Message, "--safearray-marshalling");
     }
+
+    [TestMethod]
+    public void ComSafeArrayExposesVectorsAsSpans()
+    {
+        using var values = ComSafeArray<double>.Create([1.5, 2.5]);
+        Span<double> span = values.AsSpan();
+        CollectionAssert.AreEqual(new[] { 1.5, 2.5 }, span.ToArray());
+        span[1] = 3;
+        Assert.AreEqual(3, values[1]);
+        span.Fill(4);
+        CollectionAssert.AreEqual(new[] { 4.0, 4.0 }, values.ToArray());
+
+        using var oneBased = ComSafeArray<int>.Create(VarEnum.VT_I4, [3], [1]);
+        oneBased.AsSpan()[0] = 7;
+        Assert.AreEqual(7, oneBased[1]);
+        Assert.AreEqual(3, oneBased.AsSpan().Length);
+
+        using var flags = ComSafeArray<ComBool>.Create(VarEnum.VT_BOOL, [2]);
+        flags.AsSpan()[1] = new ComBool(-1);
+        Assert.IsFalse(flags[0]);
+        Assert.IsTrue(flags[1]);
+
+        using var days = ComSafeArray<DayOfWeek>.Create([DayOfWeek.Monday, DayOfWeek.Friday]);
+        Assert.AreEqual(DayOfWeek.Friday, days.AsSpan()[1]);
+
+        using var empty = ComSafeArray<int>.Create(VarEnum.VT_I4, [0]);
+        Assert.IsTrue(empty.AsSpan().IsEmpty);
+    }
+
+    [TestMethod]
+    public void ComSafeArrayRejectsInvalidSpans()
+    {
+        using var matrix = ComSafeArray<int>.Create(new int[2, 2]);
+        Assert.ThrowsExactly<InvalidOperationException>(() => matrix.AsSpan());
+
+        using var strings = ComSafeArray<string?>.Create(["a"]);
+        Assert.ThrowsExactly<InvalidOperationException>(() => strings.AsSpan());
+
+        using var widened = ComSafeArray<long>.Create(VarEnum.VT_I4, [1]);
+        Assert.ThrowsExactly<InvalidOperationException>(() => widened.AsSpan());
+
+        using var booleans = ComSafeArray<bool>.Create([true]);
+        Assert.ThrowsExactly<InvalidOperationException>(() => booleans.AsSpan());
+
+        using var dates = ComSafeArray<DateTime>.Create([DateTime.Today]);
+        Assert.ThrowsExactly<InvalidOperationException>(() => dates.AsSpan());
+
+        var disposed = ComSafeArray<int>.Create([1]);
+        disposed.Dispose();
+        Assert.ThrowsExactly<ObjectDisposedException>(() => disposed.AsSpan());
+    }
 }
