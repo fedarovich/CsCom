@@ -14,6 +14,31 @@
   </PropertyGroup>
 
   <!--
+    Solution Explorer shows the items of the evaluation, so the files that the last build generated are included here: those in
+    the intermediate output (or outside the project) under the virtual folder CsComGeneratedFilesFolder, and those in a folder of
+    the project in place. The default globs skip the output folder, which keeps the files from being compiled twice and hides the
+    state files. The files are only included with references, so that the files of removed references are not compiled.
+  -->
+  <PropertyGroup>
+    <DefaultItemExcludes>$(DefaultItemExcludes);$(CsComOutputPath)**</DefaultItemExcludes>
+    <_CsComOutputFullPath>$([MSBuild]::NormalizeDirectory('$(MSBuildProjectDirectory)', '$(CsComOutputPath)').ToUpperInvariant())</_CsComOutputFullPath>
+    <_CsComIntermediateFullPath>$([MSBuild]::NormalizeDirectory('$(MSBuildProjectDirectory)', '$(BaseIntermediateOutputPath)').ToUpperInvariant())</_CsComIntermediateFullPath>
+    <_CsComProjectFullPath>$([MSBuild]::NormalizeDirectory('$(MSBuildProjectDirectory)').ToUpperInvariant())</_CsComProjectFullPath>
+    <_CsComOutputInIntermediate>$(_CsComOutputFullPath.StartsWith('$(_CsComIntermediateFullPath)'))</_CsComOutputInIntermediate>
+    <_CsComOutputInProject>$(_CsComOutputFullPath.StartsWith('$(_CsComProjectFullPath)'))</_CsComOutputInProject>
+    <_CsComLinkGeneratedFiles>false</_CsComLinkGeneratedFiles>
+    <_CsComLinkGeneratedFiles Condition="'$(_CsComOutputInIntermediate)' == 'true' or '$(_CsComOutputInProject)' != 'true'">true</_CsComLinkGeneratedFiles>
+  </PropertyGroup>
+
+  <ItemGroup Condition="'$(CsComShowGeneratedFiles)' == 'true' and '@(CsComReference)' != ''">
+    <Compile Include="$(CsComOutputPath)**\*.cs"
+             CsComGenerated="true"
+             Link="$(CsComGeneratedFilesFolder)\%(RecursiveDir)%(Filename)%(Extension)"
+             Condition="'$(_CsComLinkGeneratedFiles)' == 'true'" />
+    <Compile Include="$(CsComOutputPath)**\*.cs" CsComGenerated="true" Condition="'$(_CsComLinkGeneratedFiles)' != 'true'" />
+  </ItemGroup>
+
+  <!--
     Generates the code before the compilation, also in the design-time builds of Visual Studio, so that IntelliSense sees the
     generated types. The generator only runs when the items, the properties or the files they read changed.
   -->
@@ -41,7 +66,10 @@
     </CsComGenerate>
 
     <ItemGroup>
-      <Compile Include="@(_CsComGeneratedFile)" />
+      <!-- The files of the evaluation are replaced by those that the generator wrote, which can have changed since. -->
+      <_CsComEvaluatedFile Include="@(Compile)" Condition="'%(Compile.CsComGenerated)' == 'true'" />
+      <Compile Remove="@(_CsComEvaluatedFile)" />
+      <Compile Include="@(_CsComGeneratedFile)" CsComGenerated="true" />
       <FileWrites Include="@(_CsComGeneratedFile);$(CsComOutputPath)cscom.request.json;$(CsComOutputPath)cscom.state" />
     </ItemGroup>
 

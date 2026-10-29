@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Text.Json;
 using CsCom.Output;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -48,11 +49,52 @@ public sealed class BuildPackageTests
             new[] { "Drawing.Interop", "Interop.CsComTest", "Interop.Scripting", "Ole.Interop" },
             Directory.GetDirectories(generated).Select(Path.GetFileName).ToArray());
 
-        // The second build does not run the generator.
+        // The second build does not run the generator. Its evaluation includes the generated files, which are compiled once.
         string dictionary = Path.Combine(generated, "Interop.Scripting", "Dictionary.cs");
         var written = File.GetLastWriteTimeUtc(dictionary);
         StringAssert.Contains(Build(project), "CsCom: the interop code in");
         Assert.AreEqual(written, File.GetLastWriteTimeUtc(dictionary));
+
+        // Solution Explorer shows the files of the intermediate output under the CsCom folder.
+        CollectionAssert.Contains(
+            GetItems(project, "Compile"),
+            (@"obj\Debug\net10.0-windows\CsCom\Interop.Scripting\Dictionary.cs", @"CsCom\Interop.Scripting\Dictionary.cs"));
+    }
+
+    [TestMethod]
+    public void GeneratesIntoAFolderOfTheProject()
+    {
+        // E.g. to commit the generated files, which Solution Explorer then shows in place.
+        string project = CreateConsumer(
+            "build-package-folder",
+            """<CsComReference Include="Scripting.Dictionary" />""",
+            program: """
+                using Interop.Scripting;
+
+                var dictionary = Dictionary.Create();
+                dictionary.Add("a", "one");
+                Console.WriteLine($"Count={dictionary.Count}");
+                """,
+            properties: @"<CsComOutputPath>Generated\CsCom\</CsComOutputPath>");
+        string directory = Path.GetDirectoryName(project)!;
+
+        Assert.AreEqual("Count=1", Run(project).Last());
+        Assert.IsTrue(File.Exists(Path.Combine(directory, "Generated", "CsCom", "Interop.Scripting", "Dictionary.cs")));
+
+        // The default globs skip the folder, so the files are compiled once and the state files are not shown.
+        Build(project);
+        CollectionAssert.Contains(GetItems(project, "Compile"), (@"Generated\CsCom\Interop.Scripting\Dictionary.cs", string.Empty));
+        Assert.IsFalse(GetItems(project, "None").Any(static item => item.Path.Contains("cscom.", StringComparison.Ordinal)));
+
+        // Without them in Solution Explorer, the files are only added by the build.
+        Assert.IsFalse(GetItems(project, "Compile", "-p:CsComShowGeneratedFiles=false").Any(static item => item.Path.StartsWith("Generated", StringComparison.Ordinal)));
+        Build(project, "-p:CsComShowGeneratedFiles=false");
+
+        // The files of removed references are not compiled: they would require unsafe code, which only the build enables.
+        File.WriteAllText(project, File.ReadAllText(project).Replace("""<CsComReference Include="Scripting.Dictionary" />""", string.Empty, StringComparison.Ordinal));
+        File.WriteAllText(Path.Combine(directory, "Program.cs"), """Console.WriteLine("No references");""");
+        Assert.AreEqual("No references", Run(project).Last());
+        Assert.IsFalse(GetItems(project, "Compile").Any(static item => item.Path.StartsWith("Generated", StringComparison.Ordinal)));
     }
 
     [TestMethod]
@@ -182,13 +224,27 @@ public sealed class BuildPackageTests
     }
 
     // Builds the project with detailed messages, so that the messages of the task are included, and checks that it has no warnings.
-    private static string Build(string project)
+    private static string Build(string project, params string[] arguments)
     {
-        var (exitCode, output) = DotNetCli.Run(["build", project, "-v", "n"], Path.GetDirectoryName(project)!, NullLogger.Instance);
+        var (exitCode, output) = DotNetCli.Run(["build", project, "-v", "n", .. arguments], Path.GetDirectoryName(project)!, NullLogger.Instance);
         string text = string.Join(Environment.NewLine, output);
         Assert.AreEqual(0, exitCode, text);
         Assert.IsFalse(output.Any(static line => line.Contains(": warning ", StringComparison.Ordinal)), text);
         return text;
+    }
+
+    // The items of a type in the evaluation of the project, which Solution Explorer shows: their paths and links.
+    private static List<(string Path, string Link)> GetItems(string project, string itemType, params string[] arguments)
+    {
+        var (exitCode, output) = DotNetCli.Run(["msbuild", project, $"-getItem:{itemType}", .. arguments], Path.GetDirectoryName(project)!, NullLogger.Instance);
+        string text = string.Join(Environment.NewLine, output);
+        Assert.AreEqual(0, exitCode, text);
+        using var json = JsonDocument.Parse(text[text.IndexOf('{', StringComparison.Ordinal)..]);
+        return json.RootElement.GetProperty("Items").TryGetProperty(itemType, out var items)
+            ? [.. items.EnumerateArray().Select(static item => (
+                item.GetProperty("Identity").GetString()!,
+                item.TryGetProperty("Link", out var link) ? link.GetString() ?? string.Empty : string.Empty))]
+            : [];
     }
 
     private static int RunCommand(params string[] args) => CommandLine.Create().Parse([.. args, "-v", "quiet"]).Invoke(new System.CommandLine.InvocationConfiguration

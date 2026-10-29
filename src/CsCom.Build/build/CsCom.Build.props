@@ -35,6 +35,12 @@
     <CsComDisableRuntimeMarshalling Condition="'$(CsComDisableRuntimeMarshalling)' == ''">true</CsComDisableRuntimeMarshalling>
     <!-- Disables CA2256 and, when the project generates documentation, CS1591 for the code of the COM source generator. -->
     <CsComSuppressGeneratorWarnings Condition="'$(CsComSuppressGeneratorWarnings)' == ''">true</CsComSuppressGeneratorWarnings>
+    <!--
+      Shows the generated files in Solution Explorer: those in the intermediate output (CsComOutputPath by default) under the
+      virtual folder CsComGeneratedFilesFolder, and those in a folder of the project in place.
+    -->
+    <CsComShowGeneratedFiles Condition="'$(CsComShowGeneratedFiles)' == ''">true</CsComShowGeneratedFiles>
+    <CsComGeneratedFilesFolder Condition="'$(CsComGeneratedFilesFolder)' == ''">CsCom</CsComGeneratedFilesFolder>
   </PropertyGroup>
 
   <ItemGroup>
