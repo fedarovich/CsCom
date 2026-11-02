@@ -257,6 +257,7 @@ public sealed partial class LibrarySetGenerator
             EventStyle = reference?.EventStyle ?? options.EventStyle,
             StructProperties = reference?.StructProperties ?? options.StructProperties,
             OverloadsForDefaultValues = reference?.OverloadsForDefaultValues ?? options.OverloadsForDefaultValues,
+            Dynamic = options.Dynamic,
             SuppressedWarnings = options.SuppressedWarnings,
             ToolVersion = options.ToolVersion,
         };

@@ -19,6 +19,11 @@
                       Exclude="..\CsCom.Runtime\bin\**;..\CsCom.Runtime\obj\**"
                       LogicalName="CsCom.Runtime/%(RecursiveDir)%(Filename)%(Extension)"
                       Visible="false" />
+    <!-- The late binding with dynamic, emitted with the dynamic option only. -->
+    <EmbeddedResource Include="..\CsCom.Runtime.Dynamic\**\*.cs"
+                      Exclude="..\CsCom.Runtime.Dynamic\bin\**;..\CsCom.Runtime.Dynamic\obj\**"
+                      LogicalName="CsCom.Runtime.Dynamic/%(RecursiveDir)%(Filename)%(Extension)"
+                      Visible="false" />
   </ItemGroup>
 
   <ItemGroup>

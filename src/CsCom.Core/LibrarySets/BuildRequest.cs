@@ -47,6 +47,9 @@ public sealed class BuildRequest
     /// <summary>Whether overloads are generated for default values by default (<c>$(CsComOverloadsForDefaultValues)</c>).</summary>
     public string OverloadsForDefaultValues { get; init; } = string.Empty;
 
+    /// <summary>Whether the late binding with <c>dynamic</c> is generated (<c>$(CsComDynamic)</c>).</summary>
+    public string Dynamic { get; init; } = string.Empty;
+
     /// <summary>The default representation of <c>DATE</c> values (<c>$(CsComDateMarshalling)</c>).</summary>
     public string DateMarshalling { get; init; } = string.Empty;
 

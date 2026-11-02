@@ -204,6 +204,26 @@ internal static class CommandLine
         Arity = ArgumentArity.ZeroOrOne,
     };
 
+    private const string DynamicDescription =
+        "Generates the late binding with C# dynamic: the CreateDynamic methods of the coclasses and the support of CsCom.Runtime.Dynamic, " +
+        "a reference to its package or, with '--support-code public' or 'internal', its code.";
+
+    private static readonly Option<bool> DynamicOption = new("--dynamic", "-d")
+    {
+        Description = DynamicDescription,
+    };
+
+    private static readonly Option<bool?> UpdateDynamicOption = new("--dynamic", "-d")
+    {
+        Description = DynamicDescription + " The value recorded in cscom.json by default.",
+        Arity = ArgumentArity.ZeroOrOne,
+    };
+
+    private static readonly Option<bool> ReferenceDynamicOption = new("--dynamic", "-d")
+    {
+        Description = "Sets the CsComDynamic property of the project, which generates the late binding with C# dynamic, and adds a reference to the CsCom.Runtime.Dynamic package.",
+    };
+
     private const string ConfigDescription =
         "An XML file that adds and configures the model and syntax transformers of a library, e.g. Excel=excel.cscom.xml, whether it is a source or is used by them; can be repeated. A file without a library name applies to a single source.";
 
@@ -296,6 +316,7 @@ internal static class CommandLine
                 EventStyle = result.GetValue(EventStyleOption),
                 StructProperties = result.GetValue(StructPropertiesOption),
                 OverloadsForDefaultValues = result.GetValue(OverloadsOption),
+                Dynamic = result.GetValue(DynamicOption),
                 ConfigurationPath = GetLibraryValues(result, ConfigOption, "configuration file").Single,
                 ConfigurationPaths = GetLibraryValues(result, ConfigOption, "configuration file").ByLibrary,
                 ReferencePaths = result.GetValue(ReferencePathOption) ?? [],
@@ -323,6 +344,7 @@ internal static class CommandLine
                 EventStyle = result.GetValue(EventStyleOption),
                 StructProperties = result.GetValue(StructPropertiesOption),
                 OverloadsForDefaultValues = result.GetValue(OverloadsOption),
+                Dynamic = result.GetValue(DynamicOption),
                 ConfigurationPath = GetLibraryValues(result, ConfigOption, "configuration file").Single,
                 ConfigurationPaths = GetLibraryValues(result, ConfigOption, "configuration file").ByLibrary,
                 ReferencePaths = result.GetValue(ReferencePathOption) ?? [],
@@ -352,6 +374,7 @@ internal static class CommandLine
                 EventStyle = result.GetValue(EventStyleOption),
                 StructProperties = result.GetValue(StructPropertiesOption),
                 OverloadsForDefaultValues = result.GetValue(OverloadsOption),
+                Dynamic = result.GetValue(DynamicOption),
                 ConfigurationPath = GetLibraryValues(result, ConfigOption, "configuration file").Single,
                 ConfigurationPaths = GetLibraryValues(result, ConfigOption, "configuration file").ByLibrary,
                 ReferencePaths = result.GetValue(ReferencePathOption) ?? [],
@@ -373,6 +396,7 @@ internal static class CommandLine
         updateProject.Options.Add(UpdateEventStyleOption);
         updateProject.Options.Add(UpdateStructPropertiesOption);
         updateProject.Options.Add(UpdateOverloadsOption);
+        updateProject.Options.Add(UpdateDynamicOption);
         updateProject.Options.Add(UpdateConfigOption);
         updateProject.Options.Add(UpdateReferencePathOption);
         updateProject.SetAction(static result => Run(result, (pipeline, loggerFactory) =>
@@ -388,6 +412,7 @@ internal static class CommandLine
                 EventStyle = result.GetValue(UpdateEventStyleOption),
                 StructProperties = result.GetValue(UpdateStructPropertiesOption),
                 OverloadsForDefaultValues = GetFlag(result, UpdateOverloadsOption),
+                Dynamic = GetFlag(result, UpdateDynamicOption),
                 ConfigurationPath = GetLibraryValues(result, UpdateConfigOption, "configuration file").Single,
                 ConfigurationPaths = GetLibraryValues(result, UpdateConfigOption, "configuration file").ByLibrary,
                 ReferencePaths = result.GetResult(UpdateReferencePathOption) is { Implicit: false }
@@ -431,6 +456,7 @@ internal static class CommandLine
         addReference.Options.Add(ReferenceEventStyleOption);
         addReference.Options.Add(ReferenceStructPropertiesOption);
         addReference.Options.Add(ReferenceOverloadsOption);
+        addReference.Options.Add(ReferenceDynamicOption);
         addReference.Options.Add(ReferenceConfigOption);
         addReference.Options.Add(ReferencePathOption);
         addReference.SetAction(static result => Run(result, (_, loggerFactory) =>
@@ -445,6 +471,7 @@ internal static class CommandLine
                 EventStyle = result.GetValue(ReferenceEventStyleOption),
                 StructProperties = result.GetValue(ReferenceStructPropertiesOption),
                 OverloadsForDefaultValues = GetFlag(result, ReferenceOverloadsOption),
+                Dynamic = result.GetValue(ReferenceDynamicOption),
             })));
 
         var listReferences = new Command("list", "Lists the CsComReference items written in a project file with their metadata.")
@@ -597,6 +624,7 @@ internal static class CommandLine
         command.Options.Add(EventStyleOption);
         command.Options.Add(StructPropertiesOption);
         command.Options.Add(OverloadsOption);
+        command.Options.Add(DynamicOption);
         command.Options.Add(ConfigOption);
         command.Options.Add(ReferencePathOption);
         command.Options.Add(PackageSourceOption);

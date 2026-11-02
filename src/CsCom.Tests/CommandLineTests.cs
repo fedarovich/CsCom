@@ -393,6 +393,35 @@ public sealed class CommandLineTests
     }
 
     [TestMethod]
+    public void GeneratesTheLateBindingWithDynamicOnRequest()
+    {
+        string directory = TestEnvironment.CreateDirectory("cli-dynamic");
+        string shape = Path.Combine(directory, "Generated", "Interop.CsComTest", "Shape.cs");
+
+        Assert.AreEqual(0, Run("project", "create", TestEnvironment.TestTypeLibrary, "-o", directory, "-d", "-v", "quiet"));
+        Assert.IsTrue(CsComManifest.Read(directory).Dynamic);
+        StringAssert.Contains(File.ReadAllText(shape), "CreateDynamic");
+
+        // The recorded value is kept, and can be changed.
+        Assert.AreEqual(0, Run("project", "update", "-o", directory, "-v", "quiet"));
+        StringAssert.Contains(File.ReadAllText(shape), "CreateDynamic");
+        Assert.AreEqual(0, Run("project", "update", "-o", directory, "--dynamic", "false", "-v", "quiet"));
+        Assert.IsFalse(File.ReadAllText(shape).Contains("CreateDynamic", StringComparison.Ordinal));
+        Assert.AreEqual(0, Run("project", "update", "-o", directory, "--dynamic", "-v", "quiet"));
+        StringAssert.Contains(File.ReadAllText(shape), "CreateDynamic");
+
+        // 'reference add --dynamic' sets the property of CsCom.Build and references the package.
+        string consumer = TestEnvironment.CreateDirectory("cli-dynamic-reference");
+        File.WriteAllText(Path.Combine(consumer, "Directory.Packages.props"), "<Project />");
+        string project = Path.Combine(consumer, "App.csproj");
+        File.WriteAllText(project, "<Project Sdk=\"Microsoft.NET.Sdk\">\n  <PropertyGroup>\n    <OutputType>Exe</OutputType>\n  </PropertyGroup>\n</Project>\n");
+        Assert.AreEqual(0, Run("reference", "add", "Scripting.Dictionary", "--project", project, "-d", "-v", "quiet"));
+        string text = File.ReadAllText(project);
+        StringAssert.Contains(text, "    <OutputType>Exe</OutputType>\n    <CsComDynamic>true</CsComDynamic>\n");
+        StringAssert.Contains(text, $"<PackageReference Include=\"CsCom.Build\" Version=\"{ToolInfo.Version}\" />\n    <PackageReference Include=\"CsCom.Runtime.Dynamic\" Version=\"{ToolInfo.Version}\" />");
+    }
+
+    [TestMethod]
     public void ManagesTheReferencesOfProjects()
     {
         string directory = TestEnvironment.CreateDirectory("cli-reference");

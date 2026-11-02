@@ -66,6 +66,32 @@ public sealed class CodeGenerationTests : VerifyBase
     }
 
     [TestMethod]
+    [DataRow(SupportCodeMode.Package)]
+    [DataRow(SupportCodeMode.Public)]
+    [DataRow(SupportCodeMode.Internal)]
+    public void GeneratesTheLateBindingWithDynamicOnlyWithTheOption(SupportCodeMode mode)
+    {
+        var withoutDynamic = Generate(new CodeGenerationOptions { Namespace = "Interop.CsComTest", SupportCode = mode, ToolVersion = TestEnvironment.ToolVersion });
+        var withDynamic = Generate(new CodeGenerationOptions { Namespace = "Interop.CsComTest", SupportCode = mode, Dynamic = true, ToolVersion = TestEnvironment.ToolVersion });
+
+        // The activation through the extension of ComActivator in ComDynamic is called in its qualified form.
+        string support = mode == SupportCodeMode.Package ? "global::CsCom.Runtime" : "global::Interop.CsComTest.ComSupport";
+        Assert.IsFalse(withoutDynamic.Single(static d => d.RelativePath == "Shape.cs").GetText().Contains("CreateDynamic", StringComparison.Ordinal));
+        StringAssert.Contains(
+            withDynamic.Single(static d => d.RelativePath == "Shape.cs").GetText(),
+            $"public static dynamic CreateDynamic({support}.ClassContext context = {support}.ComActivator.DefaultContext) => {support}.ComDynamic.CreateDynamicInstance(Clsid, context);");
+
+        // The support code of CsCom.Runtime.Dynamic is only emitted with the option.
+        Assert.IsFalse(withoutDynamic.Any(static d => d.RelativePath.EndsWith("DynamicDispatchObject.cs", StringComparison.Ordinal)));
+        Assert.AreEqual(
+            mode != SupportCodeMode.Package,
+            withDynamic.Any(static d => d.RelativePath == "ComSupport/DynamicDispatchObject.cs"));
+        Assert.AreEqual(
+            mode != SupportCodeMode.Package,
+            withDynamic.Any(static d => d.RelativePath == "ComSupport/DynamicEventSink.cs"));
+    }
+
+    [TestMethod]
     public void GeneratesTheSupportCodeIntoTheSingleFile()
     {
         var documents = Generate(new CodeGenerationOptions

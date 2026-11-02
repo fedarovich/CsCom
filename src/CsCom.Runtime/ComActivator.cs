@@ -67,30 +67,6 @@ public static unsafe class ComActivator
     }
 
     /// <summary>
-    /// Creates an instance of the COM class identified by <paramref name="clsid"/> for late binding with <c>dynamic</c>.
-    /// </summary>
-    /// <param name="clsid">The class identifier.</param>
-    /// <param name="context">The context in which the code that manages the newly created object will run.</param>
-    /// <exception cref="InvalidCastException">The object does not implement <c>IDispatch</c>.</exception>
-    [RequiresDynamicCode(ComDynamic.RequiresDynamicCodeMessage)]
-    public static dynamic CreateDynamicInstance(Guid clsid, ClassContext context = DefaultContext)
-    {
-        return DynamicDispatchObject.GetOrCreate(CreateInstance<IDispatch>(clsid, context));
-    }
-
-    /// <summary>
-    /// Creates an instance of the COM class identified by <paramref name="progId"/> for late binding with <c>dynamic</c>.
-    /// </summary>
-    /// <param name="progId">The programmatic identifier of the class, e.g. <c>Excel.Application</c>.</param>
-    /// <param name="context">The context in which the code that manages the newly created object will run.</param>
-    /// <exception cref="InvalidCastException">The object does not implement <c>IDispatch</c>.</exception>
-    [RequiresDynamicCode(ComDynamic.RequiresDynamicCodeMessage)]
-    public static dynamic CreateDynamicInstance(string progId, ClassContext context = DefaultContext)
-    {
-        return CreateDynamicInstance(GetClassId(progId), context);
-    }
-
-    /// <summary>
     /// Gets the running instance of the COM class identified by <paramref name="clsid"/>, registered in the running object table,
     /// and returns it as <typeparamref name="T"/>, like <c>Marshal.GetActiveObject</c> of .NET Framework.
     /// </summary>
@@ -112,30 +88,6 @@ public static unsafe class ComActivator
     public static T GetActiveInstance<T>(string progId) where T : class
     {
         return GetActiveInstance<T>(GetClassId(progId), $"'{progId}'");
-    }
-
-    /// <summary>
-    /// Gets the running instance of the COM class identified by <paramref name="clsid"/> for late binding with <c>dynamic</c>.
-    /// </summary>
-    /// <param name="clsid">The class identifier.</param>
-    /// <exception cref="COMException">No instance of the class is registered (<c>MK_E_UNAVAILABLE</c>).</exception>
-    /// <exception cref="InvalidCastException">The object does not implement <c>IDispatch</c>.</exception>
-    [RequiresDynamicCode(ComDynamic.RequiresDynamicCodeMessage)]
-    public static dynamic GetActiveDynamicInstance(Guid clsid)
-    {
-        return DynamicDispatchObject.GetOrCreate(GetActiveInstance<IDispatch>(clsid));
-    }
-
-    /// <summary>
-    /// Gets the running instance of the COM class identified by <paramref name="progId"/> for late binding with <c>dynamic</c>.
-    /// </summary>
-    /// <param name="progId">The programmatic identifier of the class, e.g. <c>Excel.Application</c>.</param>
-    /// <exception cref="COMException">No instance of the class is registered (<c>MK_E_UNAVAILABLE</c>).</exception>
-    /// <exception cref="InvalidCastException">The object does not implement <c>IDispatch</c>.</exception>
-    [RequiresDynamicCode(ComDynamic.RequiresDynamicCodeMessage)]
-    public static dynamic GetActiveDynamicInstance(string progId)
-    {
-        return DynamicDispatchObject.GetOrCreate(GetActiveInstance<IDispatch>(progId));
     }
 
     /// <summary>
@@ -171,36 +123,6 @@ public static unsafe class ComActivator
     }
 
     /// <summary>
-    /// Gets the running instance of the COM class identified by <paramref name="clsid"/>, if one is registered in the running
-    /// object table, for late binding with <c>dynamic</c>.
-    /// </summary>
-    /// <param name="clsid">The class identifier.</param>
-    /// <param name="instance">The running instance, or <see langword="null"/>.</param>
-    /// <returns><see langword="true"/> if an instance is running; <see langword="false"/> otherwise.</returns>
-    /// <exception cref="InvalidCastException">The object does not implement <c>IDispatch</c>.</exception>
-    [RequiresDynamicCode(ComDynamic.RequiresDynamicCodeMessage)]
-    public static bool TryGetActiveDynamicInstance(Guid clsid, [NotNullWhen(true)] out dynamic? instance)
-    {
-        instance = TryGetActiveInstance(clsid, out IDispatch? dispatch) ? DynamicDispatchObject.GetOrCreate(dispatch) : null;
-        return instance is not null;
-    }
-
-    /// <summary>
-    /// Gets the running instance of the COM class identified by <paramref name="progId"/>, if one is registered in the running
-    /// object table, for late binding with <c>dynamic</c>.
-    /// </summary>
-    /// <param name="progId">The programmatic identifier of the class, e.g. <c>Excel.Application</c>.</param>
-    /// <param name="instance">The running instance, or <see langword="null"/>.</param>
-    /// <returns><see langword="true"/> if an instance is running; <see langword="false"/> otherwise, also if the ProgID is not registered.</returns>
-    /// <exception cref="InvalidCastException">The object does not implement <c>IDispatch</c>.</exception>
-    [RequiresDynamicCode(ComDynamic.RequiresDynamicCodeMessage)]
-    public static bool TryGetActiveDynamicInstance(string progId, [NotNullWhen(true)] out dynamic? instance)
-    {
-        instance = TryGetActiveInstance(progId, out IDispatch? dispatch) ? DynamicDispatchObject.GetOrCreate(dispatch) : null;
-        return instance is not null;
-    }
-
-    /// <summary>
     /// Gets the object identified by a moniker display name and returns it as <typeparamref name="T"/>, like VB's
     /// <c>GetObject</c>: e.g. the path of a document, which is opened by its application, <c>winmgmts:</c> for WMI or
     /// <c>new:Scripting.Dictionary</c> for a new instance.
@@ -223,18 +145,6 @@ public static unsafe class ComActivator
         }
 
         return ToObject<T>(unknown, $"'{name}'");
-    }
-
-    /// <summary>
-    /// Gets the object identified by a moniker display name for late binding with <c>dynamic</c>, like VB's <c>GetObject</c>.
-    /// </summary>
-    /// <param name="name">The display name of the moniker, e.g. the path of a document or <c>winmgmts:</c>.</param>
-    /// <exception cref="COMException">The name is not a valid moniker or the object cannot be bound.</exception>
-    /// <exception cref="InvalidCastException">The object does not implement <c>IDispatch</c>.</exception>
-    [RequiresDynamicCode(ComDynamic.RequiresDynamicCodeMessage)]
-    public static dynamic BindToDynamicMoniker(string name)
-    {
-        return DynamicDispatchObject.GetOrCreate(BindToMoniker<IDispatch>(name));
     }
 
     /// <summary>

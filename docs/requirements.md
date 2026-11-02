@@ -89,3 +89,5 @@ cscom reference remove [<OPTIONS>] <Source>
 + `--csharp-version|--cs|-l <VERSION>` - the C# version to use. If not specified, the default is C# 14 for .NET 10 and C# 15 for .NET 11.
 
 + `--single-file` - if specified, only a single C# file containing all types will be produced.
+
++ `--dynamic|-d` - generates the support of C# `dynamic`: the CsCom.Runtime.Dynamic package is referenced, or its code is generated with `--support-code public` or `internal`. The `CsComDynamic` MSBuild property of CsCom.Build does the same.

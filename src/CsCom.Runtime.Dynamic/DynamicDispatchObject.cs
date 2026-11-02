@@ -42,11 +42,16 @@ public sealed class DynamicDispatchObject : DynamicObject, IDispatchProvider, IE
     // the COM objects.
     private static readonly ConditionalWeakTable<IDispatch, DynamicDispatchObject> Wrappers = new();
 
+    private const int DISP_E_MEMBERNOTFOUND = unchecked((int)0x80020003);
+    private const int DISP_E_PARAMNOTFOUND = unchecked((int)0x80020004);
+    private const int DISP_E_UNKNOWNNAME = unchecked((int)0x80020006);
+    private const int DISP_E_BADPARAMCOUNT = unchecked((int)0x8002000E);
+
     private static readonly Lock EventSinksLock = new();
 
     private readonly ConcurrentDictionary<string, Member> _members = new(StringComparer.OrdinalIgnoreCase);
     private IReadOnlyList<string>? _propertyNames;
-    private EventInterface[]? _eventInterfaces;
+    private IReadOnlyList<EventInterface>? _eventInterfaces;
     private Dictionary<Guid, DynamicEventSink>? _eventSinks;
 
     private DynamicDispatchObject(IDispatch dispatch)
@@ -74,7 +79,7 @@ public sealed class DynamicDispatchObject : DynamicObject, IDispatchProvider, IE
     /// </summary>
     public override IEnumerable<string> GetDynamicMemberNames()
     {
-        return _propertyNames ??= ComTypeInfo.GetTypeInfo(Dispatch) is { } typeInfo ? ComTypeInfo.GetPropertyNames(typeInfo) : [];
+        return _propertyNames ??= ComDispatch.GetPropertyNames(Dispatch);
     }
 
     /// <inheritdoc/>
@@ -95,7 +100,7 @@ public sealed class DynamicDispatchObject : DynamicObject, IDispatchProvider, IE
 
         if (!member.IsIndexed)
         {
-            int hr = DispatchInvoker.TryInvoke(Dispatch, member.DispId, DispatchFlags.PropertyGet | DispatchFlags.Method, [], [], default, default, out object? value, out int argument);
+            int hr = ComDispatch.TryInvoke(Dispatch, member.DispId, DispatchFlags.PropertyGet | DispatchFlags.Method, [], [], default, default, out object? value, out int argument);
             if (hr >= 0)
             {
                 result = Wrap(value);
@@ -104,9 +109,9 @@ public sealed class DynamicDispatchObject : DynamicObject, IDispatchProvider, IE
 
             // A property that requires arguments, e.g. Range in sheet.Range["A1"], is indexed by the caller, and so is a property
             // that can only be set, e.g. Key in dictionary.Key["a"] = "b". Using the property as a value repeats the error.
-            if (hr is not (OleNativeMethods.DISP_E_BADPARAMCOUNT or OleNativeMethods.DISP_E_PARAMNOTFOUND or OleNativeMethods.DISP_E_MEMBERNOTFOUND))
+            if (hr is not (DISP_E_BADPARAMCOUNT or DISP_E_PARAMNOTFOUND or DISP_E_MEMBERNOTFOUND))
             {
-                DispatchInvoker.ThrowInvocationException(hr, member.DispId, binder.Name, DispatchFlags.PropertyGet | DispatchFlags.Method, 0, argument);
+                throw ComDispatch.CreateInvocationException(hr, member.DispId, binder.Name, DispatchFlags.PropertyGet | DispatchFlags.Method, 0, argument);
             }
 
             _members[binder.Name] = member with { IsIndexed = true };
@@ -201,7 +206,7 @@ public sealed class DynamicDispatchObject : DynamicObject, IDispatchProvider, IE
     /// </summary>
     IEnumerator IEnumerable.GetEnumerator()
     {
-        object? enumerator = DispatchInvoker.Invoke(Dispatch, DispIds.NewEnum, DispatchFlags.Method | DispatchFlags.PropertyGet, []);
+        object? enumerator = ComDispatch.Invoke(Dispatch, DispIds.NewEnum, DispatchFlags.Method | DispatchFlags.PropertyGet, []);
         return Enumerate(ComEnumerator.FromObject(enumerator));
     }
 
@@ -395,7 +400,7 @@ public sealed class DynamicDispatchObject : DynamicObject, IDispatchProvider, IE
 
     private bool TryGetEvent(string name, [NotNullWhen(true)] out EventInterface? eventInterface, out EventMember member)
     {
-        _eventInterfaces ??= ComTypeInfo.GetEventInterfaces(Dispatch);
+        _eventInterfaces ??= ComDispatch.GetEventInterfaces(Dispatch);
         foreach (EventInterface candidate in _eventInterfaces)
         {
             if (candidate.Events.TryGetValue(name, out member))
@@ -425,8 +430,8 @@ public sealed class DynamicDispatchObject : DynamicObject, IDispatchProvider, IE
         }
 
         Span<int> ids = [0];
-        int hr = DispatchInvoker.GetDispIds(Dispatch, [name], ids);
-        if (hr == OleNativeMethods.DISP_E_UNKNOWNNAME)
+        int hr = ComDispatch.GetDispIds(Dispatch, [name], ids);
+        if (hr == DISP_E_UNKNOWNNAME)
         {
             return false;
         }
@@ -451,8 +456,8 @@ public sealed class DynamicDispatchObject : DynamicObject, IDispatchProvider, IE
 
         string[] names = [name, .. argumentNames];
         var ids = new int[names.Length];
-        int hr = DispatchInvoker.GetDispIds(Dispatch, names, ids);
-        if (hr == OleNativeMethods.DISP_E_UNKNOWNNAME)
+        int hr = ComDispatch.GetDispIds(Dispatch, names, ids);
+        if (hr == DISP_E_UNKNOWNNAME)
         {
             if (ids[0] == DispIds.Unknown)
             {
@@ -476,12 +481,12 @@ public sealed class DynamicDispatchObject : DynamicObject, IDispatchProvider, IE
     private bool SetProperty(int dispId, object?[] args, string? name)
     {
         if (IsComObject(args[^1])
-            && DispatchInvoker.TryInvoke(Dispatch, dispId, DispatchFlags.PropertyPutRef, args, [], default, default, out _, out _) >= 0)
+            && ComDispatch.TryInvoke(Dispatch, dispId, DispatchFlags.PropertyPutRef, args, [], default, default, out _, out _) >= 0)
         {
             return true;
         }
 
-        DispatchInvoker.Invoke(Dispatch, dispId, DispatchFlags.PropertyPut, args, memberName: name);
+        ComDispatch.Invoke(Dispatch, dispId, DispatchFlags.PropertyPut, args, memberName: name);
         return true;
     }
 
@@ -490,17 +495,17 @@ public sealed class DynamicDispatchObject : DynamicObject, IDispatchProvider, IE
     {
         if (byRefTypes is null)
         {
-            return Wrap(DispatchInvoker.Invoke(Dispatch, dispId, flags, args, namedDispIds, memberName: name));
+            return Wrap(ComDispatch.Invoke(Dispatch, dispId, flags, args, namedDispIds, memberName: name));
         }
 
         // Variables of the COM types are passed as references to their types, which typed by-reference parameters require,
         // and object and dynamic variables as references to VARIANTs. A null string is passed as an empty BSTR.
-        var kinds = new ByRefKind[args.Length];
+        var kinds = new DispatchArgumentKind[args.Length];
         for (int i = 0; i < args.Length; i++)
         {
             if (byRefTypes[i] is { } type)
             {
-                kinds[i] = type == typeof(object) ? ByRefKind.Variant : ByRefKind.Typed;
+                kinds[i] = type == typeof(object) ? DispatchArgumentKind.Variant : DispatchArgumentKind.Typed;
                 if (type == typeof(string))
                 {
                     args[i] ??= string.Empty;
@@ -508,7 +513,7 @@ public sealed class DynamicDispatchObject : DynamicObject, IDispatchProvider, IE
             }
         }
 
-        object? result = DispatchInvoker.Invoke(Dispatch, dispId, flags, args, namedDispIds, args, kinds, name);
+        object? result = ComDispatch.Invoke(Dispatch, dispId, flags, args, namedDispIds, args, kinds, name);
         for (int i = 0; i < args.Length; i++)
         {
             if (byRefTypes[i] is { } type)
@@ -685,6 +690,102 @@ public static class ComDynamic
     internal const string RequiresDynamicCodeMessage = "Late binding with dynamic requires dynamic code generation and is not compatible with Native AOT.";
 
     /// <summary>
+    /// The activation of COM classes for late binding with <c>dynamic</c>, e.g. <c>ComActivator.CreateDynamicInstance("Excel.Application")</c>.
+    /// </summary>
+    extension(ComActivator)
+    {
+        /// <summary>
+        /// Creates an instance of the COM class identified by <paramref name="clsid"/> for late binding with <c>dynamic</c>.
+        /// </summary>
+        /// <param name="clsid">The class identifier.</param>
+        /// <param name="context">The context in which the code that manages the newly created object will run.</param>
+        /// <exception cref="InvalidCastException">The object does not implement <c>IDispatch</c>.</exception>
+        [RequiresDynamicCode(RequiresDynamicCodeMessage)]
+        public static dynamic CreateDynamicInstance(Guid clsid, ClassContext context = ComActivator.DefaultContext)
+        {
+            return DynamicDispatchObject.GetOrCreate(ComActivator.CreateInstance<IDispatch>(clsid, context));
+        }
+
+        /// <summary>
+        /// Creates an instance of the COM class identified by <paramref name="progId"/> for late binding with <c>dynamic</c>.
+        /// </summary>
+        /// <param name="progId">The programmatic identifier of the class, e.g. <c>Excel.Application</c>.</param>
+        /// <param name="context">The context in which the code that manages the newly created object will run.</param>
+        /// <exception cref="InvalidCastException">The object does not implement <c>IDispatch</c>.</exception>
+        [RequiresDynamicCode(RequiresDynamicCodeMessage)]
+        public static dynamic CreateDynamicInstance(string progId, ClassContext context = ComActivator.DefaultContext)
+        {
+            return DynamicDispatchObject.GetOrCreate(ComActivator.CreateInstance<IDispatch>(progId, context));
+        }
+
+        /// <summary>
+        /// Gets the running instance of the COM class identified by <paramref name="clsid"/> for late binding with <c>dynamic</c>.
+        /// </summary>
+        /// <param name="clsid">The class identifier.</param>
+        /// <exception cref="COMException">No instance of the class is registered (<c>MK_E_UNAVAILABLE</c>).</exception>
+        /// <exception cref="InvalidCastException">The object does not implement <c>IDispatch</c>.</exception>
+        [RequiresDynamicCode(RequiresDynamicCodeMessage)]
+        public static dynamic GetActiveDynamicInstance(Guid clsid)
+        {
+            return DynamicDispatchObject.GetOrCreate(ComActivator.GetActiveInstance<IDispatch>(clsid));
+        }
+
+        /// <summary>
+        /// Gets the running instance of the COM class identified by <paramref name="progId"/> for late binding with <c>dynamic</c>.
+        /// </summary>
+        /// <param name="progId">The programmatic identifier of the class, e.g. <c>Excel.Application</c>.</param>
+        /// <exception cref="COMException">No instance of the class is registered (<c>MK_E_UNAVAILABLE</c>).</exception>
+        /// <exception cref="InvalidCastException">The object does not implement <c>IDispatch</c>.</exception>
+        [RequiresDynamicCode(RequiresDynamicCodeMessage)]
+        public static dynamic GetActiveDynamicInstance(string progId)
+        {
+            return DynamicDispatchObject.GetOrCreate(ComActivator.GetActiveInstance<IDispatch>(progId));
+        }
+
+        /// <summary>
+        /// Gets the running instance of the COM class identified by <paramref name="clsid"/>, if one is registered in the running
+        /// object table, for late binding with <c>dynamic</c>.
+        /// </summary>
+        /// <param name="clsid">The class identifier.</param>
+        /// <param name="instance">The running instance, or <see langword="null"/>.</param>
+        /// <returns><see langword="true"/> if an instance is running; <see langword="false"/> otherwise.</returns>
+        /// <exception cref="InvalidCastException">The object does not implement <c>IDispatch</c>.</exception>
+        [RequiresDynamicCode(RequiresDynamicCodeMessage)]
+        public static bool TryGetActiveDynamicInstance(Guid clsid, [NotNullWhen(true)] out dynamic? instance)
+        {
+            instance = ComActivator.TryGetActiveInstance(clsid, out IDispatch? dispatch) ? DynamicDispatchObject.GetOrCreate(dispatch) : null;
+            return instance is not null;
+        }
+
+        /// <summary>
+        /// Gets the running instance of the COM class identified by <paramref name="progId"/>, if one is registered in the running
+        /// object table, for late binding with <c>dynamic</c>.
+        /// </summary>
+        /// <param name="progId">The programmatic identifier of the class, e.g. <c>Excel.Application</c>.</param>
+        /// <param name="instance">The running instance, or <see langword="null"/>.</param>
+        /// <returns><see langword="true"/> if an instance is running; <see langword="false"/> otherwise, also if the ProgID is not registered.</returns>
+        /// <exception cref="InvalidCastException">The object does not implement <c>IDispatch</c>.</exception>
+        [RequiresDynamicCode(RequiresDynamicCodeMessage)]
+        public static bool TryGetActiveDynamicInstance(string progId, [NotNullWhen(true)] out dynamic? instance)
+        {
+            instance = ComActivator.TryGetActiveInstance(progId, out IDispatch? dispatch) ? DynamicDispatchObject.GetOrCreate(dispatch) : null;
+            return instance is not null;
+        }
+
+        /// <summary>
+        /// Gets the object identified by a moniker display name for late binding with <c>dynamic</c>, like VB's <c>GetObject</c>.
+        /// </summary>
+        /// <param name="name">The display name of the moniker, e.g. the path of a document or <c>winmgmts:</c>.</param>
+        /// <exception cref="COMException">The name is not a valid moniker or the object cannot be bound.</exception>
+        /// <exception cref="InvalidCastException">The object does not implement <c>IDispatch</c>.</exception>
+        [RequiresDynamicCode(RequiresDynamicCodeMessage)]
+        public static dynamic BindToDynamicMoniker(string name)
+        {
+            return DynamicDispatchObject.GetOrCreate(ComActivator.BindToMoniker<IDispatch>(name));
+        }
+    }
+
+    /// <summary>
     /// Returns the COM object for late binding with <c>dynamic</c>.
     /// </summary>
     /// <param name="dispatch">The <see cref="IDispatch"/> interface of the object, or a dual interface derived from it.</param>
@@ -733,7 +834,7 @@ public static class ComDynamic
             _ => throw new InvalidCastException($"The object of type {comObject.GetType()} does not implement IDispatch."),
         };
 
-        return ComTypeInfo.GetTypeInfo(dispatch) is { } typeInfo ? ComTypeInfo.GetTypeName(typeInfo) : null;
+        return ComDispatch.GetTypeName(dispatch);
     }
 
     /// <summary>

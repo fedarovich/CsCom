@@ -23,6 +23,11 @@
     <!-- auto or never. -->
     <CsComStructProperties Condition="'$(CsComStructProperties)' == ''">auto</CsComStructProperties>
     <CsComOverloadsForDefaultValues Condition="'$(CsComOverloadsForDefaultValues)' == ''">false</CsComOverloadsForDefaultValues>
+    <!--
+      Generates the late binding with C# dynamic: the CreateDynamic methods of the coclasses, and the support code of
+      CsCom.Runtime.Dynamic. With the package support code, the project must reference the CsCom.Runtime.Dynamic package.
+    -->
+    <CsComDynamic Condition="'$(CsComDynamic)' == ''">false</CsComDynamic>
     <!-- bcl, none or wrapper. -->
     <CsComDateMarshalling Condition="'$(CsComDateMarshalling)' == ''">bcl</CsComDateMarshalling>
     <CsComCurrencyMarshalling Condition="'$(CsComCurrencyMarshalling)' == ''">bcl</CsComCurrencyMarshalling>

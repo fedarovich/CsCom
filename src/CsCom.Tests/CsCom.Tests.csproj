@@ -21,6 +21,7 @@
 
     <!-- Tested directly, and their packages are restored from the local feed by the integration tests. -->
     <ProjectReference Include="..\CsCom.Runtime\CsCom.Runtime.csproj" />
+    <ProjectReference Include="..\CsCom.Runtime.Dynamic\CsCom.Runtime.Dynamic.csproj" />
     <ProjectReference Include="..\CsCom.Build\CsCom.Build.csproj" />
   </ItemGroup>
 

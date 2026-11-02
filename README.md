@@ -4,6 +4,7 @@
 [![CsCom](https://img.shields.io/nuget/v/CsCom.svg?label=CsCom)](https://www.nuget.org/packages/CsCom)
 [![CsCom.Build](https://img.shields.io/nuget/v/CsCom.Build.svg?label=CsCom.Build)](https://www.nuget.org/packages/CsCom.Build)
 [![CsCom.Runtime](https://img.shields.io/nuget/v/CsCom.Runtime.svg?label=CsCom.Runtime)](https://www.nuget.org/packages/CsCom.Runtime)
+[![CsCom.Runtime.Dynamic](https://img.shields.io/nuget/v/CsCom.Runtime.Dynamic.svg?label=CsCom.Runtime.Dynamic)](https://www.nuget.org/packages/CsCom.Runtime.Dynamic)
 
 CsCom is a command line tool that produces COM interop code from type libraries or existing .NET interop assemblies, similar to
 TlbImp, and an MSBuild package (CsCom.Build) that generates it during the build of a project, see [MSBuild integration](#msbuild-integration).
@@ -92,6 +93,7 @@ into nested namespaces (`<Namespace>.<Library>`), are converted by `project upda
 | `--safearray-marshalling <array\|sysarray\|wrapper\|none>` | How typed `SAFEARRAY(T)` parameters and return values are represented: `array` (default, `T[]`), `sysarray`, `wrapper` or `none`, see [SAFEARRAYs](#safearrays). |
 | `-e`, `--event-style <events\|observable\|interface\|none>` | The code generated for the events of coclasses: `events` (default), `observable`, `interface` or `none`, see [Events](#events). |
 | `--overloads-for-default-values` | Generates overloads for the methods whose optional parameters have default values that C# cannot express, see [Optional parameters](#optional-parameters). |
+| `--dynamic`, `-d` | Generates the late binding with C# `dynamic`: `CreateDynamic()` of the coclasses and the support of CsCom.Runtime.Dynamic, see [Late binding with `dynamic`](#late-binding-with-dynamic). |
 | `-c`, `--config <[LIBRARY=]PATH>` | An XML file that adds and configures the model and syntax transformers of a library, e.g. `Excel=excel.cscom.xml`; can be specified multiple times. Without a library name, the file of a single source. See [Configuration file](#configuration-file). |
 | `--reference-path <PATH>` | For interop assemblies: an assembly they reference, or a directory of such assemblies; can be specified multiple times, see [Interop assemblies](#interop-assemblies). |
 | `--package-source <PATH>` | An additional NuGet source with the CsCom.Runtime package. |
@@ -105,7 +107,7 @@ files into the `Generated` folder, in a folder per namespace. `project update` r
 the sources and the options recorded in `cscom.json`; `Source` arguments replace the recorded sources. It accepts `--namespace` and
 `--config`, which change the recorded values of the libraries they name (`LIBRARY=` removes one, and `--config ""` removes all the
 configuration files), `--csharp-version`, `--single-file [true|false]`, the marshalling options, `--event-style`, `--struct-properties`,
-`--overloads-for-default-values [true|false]` and `--reference-path` (an empty value removes the paths) to change them. Code outside of
+`--overloads-for-default-values [true|false]`, `--dynamic [true|false]` and `--reference-path` (an empty value removes the paths) to change them. Code outside of
 the `Generated` folder, e.g. partial classes, is not touched.
 
 `assembly build` generates the project in a temporary directory, builds it with `dotnet build` once per runtime identifier and copies
@@ -235,6 +237,7 @@ of the items override them for a reference:
 | `EventStyle` | `CsComEventStyle` | `events` (default), `observable`, `interface` or `none`, see [Events](#events). |
 | `StructProperties` | `CsComStructProperties` | `auto` (default) or `never`, see [Structures](#structures). |
 | `OverloadsForDefaultValues` | `CsComOverloadsForDefaultValues` | `false` (default) or `true`, see [Optional parameters](#optional-parameters). |
+| | `CsComDynamic` | `false` (default) or `true`: the late binding with `dynamic` for all the libraries. With the `package` support code, the project must reference the CsCom.Runtime.Dynamic package, which `cscom reference add --dynamic` adds; the build fails otherwise. See [Late binding with `dynamic`](#late-binding-with-dynamic). |
 | `DateMarshalling`, `CurrencyMarshalling`, `BoolMarshalling` | `CsComDateMarshalling`, `CsComCurrencyMarshalling`, `CsComBoolMarshalling` | `bcl` (default), `none` or `wrapper`, see [Marshalling options](#marshalling-options). |
 | `BstrMarshalling` | `CsComBstrMarshalling` | `string` (default), `wrapper` or `none`. |
 | `SafeArrayMarshalling` | `CsComSafeArrayMarshalling` | `array` (default), `sysarray`, `wrapper` or `none`. |
@@ -299,6 +302,7 @@ cscom reference remove Excel.Application
     code (`--event-style`, `--struct-properties`, `--overloads-for-default-values` and the `--*-marshalling` options) are
     written as the metadata of the table above. The options that are not specified are not written, so the `CsCom*`
     properties of the project apply to them.
+  - **`--dynamic` (`-d`):** sets the `CsComDynamic` property of the project and adds a reference to CsCom.Runtime.Dynamic.
   - **Sources:** files are written relative to the project, except those that share only the drive with it, such as system
     files, which keep their full paths. LIBIDs are normalized, and ProgIDs are written as is. A source that is not found on
     this machine gives a warning but is added, e.g. a library that is only registered on the build machines.
@@ -443,7 +447,7 @@ foreach (object? key in dictionary)                 // _NewEnum via IEnumVARIANT
 - **Dispinterfaces** can only be called through `IDispatch::Invoke`, so they become late-bound wrapper classes with methods,
   properties and indexers that invoke the members by their DISPIDs.
 - **Coclasses** become static classes with the `Clsid` and a `Create()` method that returns the default interface.
-  Coclasses whose default interface supports `IDispatch` also get `CreateDynamic()`, see [Late binding with `dynamic`](#late-binding-with-dynamic).
+  With `--dynamic`, coclasses whose default interface supports `IDispatch` also get `CreateDynamic()`, see [Late binding with `dynamic`](#late-binding-with-dynamic).
   Their event (`[source]`) interfaces get a handler interface and a sink class, see [Events](#events).
 - **Enums** become enums and **structs and unions** become structs with the layout of the COM structures, whose `DATE`,
   `CURRENCY` and `VARIANT_BOOL` members are converted by properties, see [Structures](#structures).
@@ -656,12 +660,20 @@ finally { record.Name.Free(); }
 
 ### Late binding with `dynamic`
 
-The COM objects created by source-generated COM interop do not support `dynamic` by themselves. CsCom.Runtime provides
-`DynamicDispatchObject`, which resolves members by name with `IDispatch::GetIDsOfNames` and invokes them with `IDispatch::Invoke`:
+The COM objects created by source-generated COM interop do not support `dynamic` by themselves. The **CsCom.Runtime.Dynamic**
+package provides `DynamicDispatchObject`, which resolves members by name with `IDispatch::GetIDsOfNames` and invokes them with
+`IDispatch::Invoke`. It is a separate package, because the C# runtime binder needs dynamic code generation, which the typed
+interop of CsCom.Runtime avoids:
+
+- **Opting in:** `--dynamic` (`-d`), or the `CsComDynamic` property of [CsCom.Build](#msbuild-integration), generates
+  `CreateDynamic()` for the coclasses. With `--support-code package` the generated project references CsCom.Runtime.Dynamic,
+  and with `public` or `internal` its code is emitted into the project. Without the option, neither is.
+- **Using it directly:** the package can also be referenced on its own, e.g. by a project that only automates Office with
+  `dynamic`. The activation methods are static extension members of `ComActivator` (C# 14), in `ComDynamic`:
 
 ```csharp
 dynamic fso = ComActivator.CreateDynamicInstance("Scripting.FileSystemObject"); // by ProgID or CLSID, no interop types needed
-dynamic dictionary = Dictionary.CreateDynamic();   // generated for coclasses that support IDispatch
+dynamic dictionary = Dictionary.CreateDynamic();   // generated with --dynamic for coclasses that support IDispatch
 dynamic shape = typedShape.AsDynamic();            // any IDispatch-based interface or late-bound wrapper
 dynamic tag = ComDynamic.ToDynamic(typedShape.Tag); // an object returned in a VARIANT
 dynamic excel = ComActivator.GetActiveDynamicInstance("Excel.Application"); // a running instance
@@ -777,8 +789,8 @@ and most sources ignore it.
 ### Support code
 
 The generated code depends on a few support types: `IDispatch`, `IEnumVARIANT`, `ComActivator`, the `VARIANT`, `SAFEARRAY`, `BSTR`, `DATE` and `CURRENCY` marshallers, the
-base class of the late-bound wrappers, the event sinks and the `dynamic` support. With `--support-code package`, the generated project references the **CsCom.Runtime**
-NuGet package. With `public` or `internal`, the support code is emitted into the project, in the `<Namespace>.ComSupport` namespace.
+base class of the late-bound wrappers and the event sinks; with `--dynamic`, also the `dynamic` support. With `--support-code package`, the generated project references the **CsCom.Runtime**
+NuGet package, and **CsCom.Runtime.Dynamic** with `--dynamic`. With `public` or `internal`, the support code is emitted into the project, in the `<Namespace>.ComSupport` namespace.
 In the `internal` mode all generated types are internal, because a public interface cannot derive from an internal `IDispatch`.
 
 The generated projects disable runtime marshalling, which source-generated COM interop requires to marshal `VARIANT`s and `DECIMAL`s.
@@ -827,6 +839,7 @@ of the MSBuild task, which the task passes to the hidden `build-generate` comman
 | `src/CsCom.Build` | The CsCom.Build package: the MSBuild props, targets and task (netstandard2.0), which runs the cscom tool bundled in its `tools` folder. |
 | `src/CsCom.Core` | The pipeline. |
 | `src/CsCom.Runtime` | The support code used by the generated code. Its sources are also embedded into CsCom.Core for the `public` and `internal` modes. |
+| `src/CsCom.Runtime.Dynamic` | The late binding with `dynamic`, which only uses the public API of CsCom.Runtime (e.g. `ComDispatch`). Its sources are embedded like those of CsCom.Runtime, for `--dynamic`. |
 | `src/CsCom.Tests` | MSTest and Verify tests. |
 
 ## Development
@@ -850,13 +863,13 @@ dotnet test src/CsCom.slnx --filter "TestCategory!=Integration"  # without the t
 ### CI and releases
 
 The [CI workflow](.github/workflows/ci.yml) builds the solution in Release on Windows, runs the unit tests (without the
-`Integration` category) and packs the three packages for every push and pull request; the packages are kept as the `packages`
+`Integration` category) and packs the four packages for every push and pull request; the packages are kept as the `packages`
 artifact of the run.
 
 - **Releasing:** push a tag with a semantic version, e.g. `1.2.3` or `1.2.3-beta.1`. The tag sets the version of CsCom,
-  CsCom.Runtime and CsCom.Build (instead of the `VersionPrefix` of `src/Directory.Build.props`), and the `publish` job pushes
+  CsCom.Runtime, CsCom.Runtime.Dynamic and CsCom.Build (instead of the `VersionPrefix` of `src/Directory.Build.props`), and the `publish` job pushes
   them to nuget.org. A tag that is not a semantic version fails the build.
-- **Symbols:** CsCom.Runtime also has a symbols package (`.snupkg`), which `dotnet nuget push` publishes to the symbol server
+- **Symbols:** CsCom.Runtime and CsCom.Runtime.Dynamic also have symbols packages (`.snupkg`), which `dotnet nuget push` publishes to the symbol server
   of nuget.org together with the package. With Source Link, debuggers get the sources of the exact commit from GitHub.
 - **Reproducible builds:** the builds are deterministic, and on GitHub Actions `ContinuousIntegrationBuild` maps the source
   paths to `/_/`, so the same commit and SDK produce identical assemblies. The packages record the commit they were built from.

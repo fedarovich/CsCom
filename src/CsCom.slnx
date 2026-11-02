@@ -8,5 +8,6 @@
   <Project Path="CsCom.Build/CsCom.Build.csproj" />
   <Project Path="CsCom.Core/CsCom.Core.csproj" />
   <Project Path="CsCom.Runtime/CsCom.Runtime.csproj" />
+  <Project Path="CsCom.Runtime.Dynamic/CsCom.Runtime.Dynamic.csproj" />
   <Project Path="CsCom.Tests/CsCom.Tests.csproj" />
 </Solution>

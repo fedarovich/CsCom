@@ -213,7 +213,7 @@ public sealed class IntegrationTests
     public void ConsumerOfScriptingRuntimeRuns()
     {
         string root = TestEnvironment.CreateDirectory("consumer");
-        string interop = CreateProject(TestEnvironment.ScriptingRuntime, Path.Combine(root, "Interop"), SupportCodeMode.Package, singleFile: false);
+        string interop = CreateProject(TestEnvironment.ScriptingRuntime, Path.Combine(root, "Interop"), SupportCodeMode.Package, singleFile: false, dynamic: true);
 
         var output = RunConsumer(root, interop, """
             using CsCom.Runtime;
@@ -1540,7 +1540,8 @@ public sealed class IntegrationTests
         bool singleFile,
         MarshallingOptions? marshalling = null,
         EventStyle eventStyle = EventStyle.Events,
-        StructProperties structProperties = StructProperties.Auto) =>
+        StructProperties structProperties = StructProperties.Auto,
+        bool dynamic = false) =>
         new ProjectGenerator(_pipeline).CreateProject(new CreateProjectRequest
         {
             Sources = [typeLibrary],
@@ -1550,6 +1551,7 @@ public sealed class IntegrationTests
             Marshalling = marshalling ?? new MarshallingOptions(),
             EventStyle = eventStyle,
             StructProperties = structProperties,
+            Dynamic = dynamic,
             PackageSource = TestEnvironment.LocalPackages,
             GlobalPackagesFolder = TestEnvironment.GlobalPackagesFolder,
         });

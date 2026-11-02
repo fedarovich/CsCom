@@ -110,6 +110,7 @@ public sealed partial class ProjectGenerator
             EventStyle = request.EventStyle ?? manifest.EventStyle,
             StructProperties = request.StructProperties ?? manifest.StructProperties,
             OverloadsForDefaultValues = request.OverloadsForDefaultValues ?? manifest.OverloadsForDefaultValues,
+            Dynamic = request.Dynamic ?? manifest.IsDynamic,
             ReferencePaths = referencePaths,
         };
         var generated = Generate(settings, CreateReferences(sources, referencePaths ?? [], @namespace, configuration), namespaces, configurations, manifest.Name);
@@ -120,7 +121,7 @@ public sealed partial class ProjectGenerator
         {
             LogProjectFileNotFound(directory);
         }
-        else if (ProjectFile.Update(projectPath, languageVersion, ToolInfo.Version))
+        else if (ProjectFile.Update(projectPath, languageVersion, ToolInfo.Version, settings.IsDynamic))
         {
             LogProjectFileUpdated(projectPath);
         }
@@ -170,6 +171,10 @@ public sealed partial class ProjectGenerator
         {
             runtimePackageVersion = null;
             LogCentralPackageManagement(packagesProps, ProjectFile.RuntimePackageId, ToolInfo.Version);
+            if (manifest.IsDynamic)
+            {
+                LogCentralPackageManagement(packagesProps, ProjectFile.DynamicPackageId, ToolInfo.Version);
+            }
         }
 
         string projectPath = Path.Combine(directory, manifest.Name + ".csproj");
@@ -238,6 +243,7 @@ public sealed partial class ProjectGenerator
             EventStyle = request.EventStyle,
             StructProperties = request.StructProperties,
             OverloadsForDefaultValues = request.OverloadsForDefaultValues,
+            Dynamic = request.Dynamic,
             ReferencePaths = request.ReferencePaths.Count > 0 ? [.. request.ReferencePaths.Select(Path.GetFullPath)] : null,
         };
     }
@@ -259,6 +265,7 @@ public sealed partial class ProjectGenerator
             EventStyle = settings.EventStyle,
             StructProperties = settings.StructProperties,
             OverloadsForDefaultValues = settings.OverloadsForDefaultValues,
+            Dynamic = settings.IsDynamic,
             Namespaces = namespaces,
             ConfigurationPaths = configurations,
             SingleFile = settings.SingleFile,

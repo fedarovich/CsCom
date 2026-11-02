@@ -88,6 +88,7 @@ public sealed partial class LibrarySetBuild
             EventStyle = ParseEnum<EventStyle>(request.EventStyle, "CsComEventStyle") ?? EventStyle.Events,
             StructProperties = ParseEnum<StructProperties>(request.StructProperties, "CsComStructProperties") ?? StructProperties.Auto,
             OverloadsForDefaultValues = ParseBoolean(request.OverloadsForDefaultValues, "CsComOverloadsForDefaultValues") ?? false,
+            Dynamic = ParseBoolean(request.Dynamic, "CsComDynamic") ?? false,
             DisableRuntimeMarshalling = ParseBoolean(request.DisableRuntimeMarshalling, "CsComDisableRuntimeMarshalling") ?? true,
 
             // The code of the libraries is not documented, and with CsCom.Runtime the interfaces derive from its IDispatch.

@@ -61,6 +61,12 @@ public abstract class OutputRequest
     public bool OverloadsForDefaultValues { get; init; }
 
     /// <summary>
+    /// Whether the late binding with <c>dynamic</c> is generated: <c>CreateDynamic</c> methods, and the CsCom.Runtime.Dynamic
+    /// package or its code, see <see cref="CodeGeneration.CodeGenerationOptions.Dynamic"/>.
+    /// </summary>
+    public bool Dynamic { get; init; }
+
+    /// <summary>
     /// The configuration file with the transformers of a single source, relative to the current directory; none when
     /// <see langword="null"/>. See <see cref="ConfigurationPaths"/> for several sources.
     /// </summary>
@@ -171,6 +177,9 @@ public sealed class UpdateProjectRequest
     /// <summary>Whether overloads are generated for the default values that C# cannot express.</summary>
     public bool? OverloadsForDefaultValues { get; init; }
 
+    /// <summary>Whether the late binding with <c>dynamic</c> is generated.</summary>
+    public bool? Dynamic { get; init; }
+
     /// <summary>
     /// The new configuration file with the transformers of a single source, relative to the current directory. The recorded
     /// files are kept when <see langword="null"/>, and all of them are removed when empty.
@@ -229,4 +238,10 @@ public sealed class AddReferencesRequest
 
     /// <summary>Whether overloads are generated for the default values that C# cannot express.</summary>
     public bool? OverloadsForDefaultValues { get; init; }
+
+    /// <summary>
+    /// Whether the project generates the late binding with <c>dynamic</c>: sets the <c>CsComDynamic</c> property and adds a
+    /// reference to the CsCom.Runtime.Dynamic package.
+    /// </summary>
+    public bool Dynamic { get; init; }
 }

@@ -62,6 +62,33 @@ public sealed class BuildPackageTests
     }
 
     [TestMethod]
+    public void GeneratesTheLateBindingWithDynamicWithItsPackage()
+    {
+        string project = CreateConsumer(
+            "build-package-dynamic",
+            """<CsComReference Include="Scripting.Dictionary" />""",
+            program: """
+                using Interop.Scripting;
+
+                dynamic dictionary = Dictionary.CreateDynamic();
+                dictionary.Add("a", "one");
+                Console.WriteLine($"Count={dictionary.Count}");
+                """,
+            properties: "<CsComDynamic>true</CsComDynamic>");
+        string directory = Path.GetDirectoryName(project)!;
+
+        // The late binding of the package support code is in CsCom.Runtime.Dynamic, which the project must reference.
+        var (exitCode, output) = DotNetCli.Run(["build", project], directory, NullLogger.Instance);
+        Assert.AreNotEqual(0, exitCode);
+        Assert.IsTrue(
+            output.Any(static line => line.Contains("error CSCOM1000: CsComDynamic requires a reference to the CsCom.Runtime.Dynamic package", StringComparison.Ordinal)),
+            string.Join(Environment.NewLine, output));
+
+        Assert.AreEqual(0, RunCommand("reference", "add", "Scripting.Dictionary", "--project", project, "--dynamic"));
+        Assert.AreEqual("Count=1", Run(project).Last());
+    }
+
+    [TestMethod]
     public void GeneratesIntoAFolderOfTheProject()
     {
         // E.g. to commit the generated files, which Solution Explorer then shows in place.

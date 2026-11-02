@@ -78,6 +78,9 @@ public sealed class CsComGenerate : ToolTask
     /// <summary>Gets or sets whether overloads are generated for default values by default.</summary>
     public string OverloadsForDefaultValues { get; set; } = string.Empty;
 
+    /// <summary>Gets or sets whether the late binding with <c>dynamic</c> is generated.</summary>
+    public string Dynamic { get; set; } = string.Empty;
+
     /// <summary>Gets or sets the default representation of <c>DATE</c> values.</summary>
     public string DateMarshalling { get; set; } = string.Empty;
 
@@ -193,6 +196,7 @@ public sealed class CsComGenerate : ToolTask
         json.Property("eventStyle", EventStyle);
         json.Property("structProperties", StructProperties);
         json.Property("overloadsForDefaultValues", OverloadsForDefaultValues);
+        json.Property("dynamic", Dynamic);
         json.Property("dateMarshalling", DateMarshalling);
         json.Property("currencyMarshalling", CurrencyMarshalling);
         json.Property("boolMarshalling", BoolMarshalling);

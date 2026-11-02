@@ -31,8 +31,12 @@
   <ItemGroup>
     <ProjectReference Include="..\CsCom.Core\CsCom.Core.csproj" />
 
-    <!-- Builds the CsCom.Runtime package, which is bundled with the tool and used to build interop assemblies. -->
+    <!--
+      Builds the CsCom.Runtime and CsCom.Runtime.Dynamic packages, which are bundled with the tool and used to build interop
+      assemblies.
+    -->
     <ProjectReference Include="..\CsCom.Runtime\CsCom.Runtime.csproj" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="..\CsCom.Runtime.Dynamic\CsCom.Runtime.Dynamic.csproj" ReferenceOutputAssembly="false" />
   </ItemGroup>
 
   <ItemGroup>
@@ -42,6 +46,11 @@
   <ItemGroup>
     <None Include="$(CsComLocalPackagesDir)CsCom.Runtime.$(Version).nupkg"
           Link="packages\CsCom.Runtime.$(Version).nupkg"
+          CopyToOutputDirectory="PreserveNewest"
+          CopyToPublishDirectory="PreserveNewest"
+          Visible="false" />
+    <None Include="$(CsComLocalPackagesDir)CsCom.Runtime.Dynamic.$(Version).nupkg"
+          Link="packages\CsCom.Runtime.Dynamic.$(Version).nupkg"
           CopyToOutputDirectory="PreserveNewest"
           CopyToPublishDirectory="PreserveNewest"
           Visible="false" />

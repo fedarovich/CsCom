@@ -29,6 +29,9 @@ public sealed partial class CsComReferenceEditor
     /// <summary>The ID of the package that generates the code of the items.</summary>
     public const string BuildPackageId = "CsCom.Build";
 
+    /// <summary>The ID of the package of the late binding with <c>dynamic</c>, which projects with <c>CsComDynamic</c> reference.</summary>
+    public const string DynamicPackageId = "CsCom.Runtime.Dynamic";
+
     // The attributes of items that are not metadata.
     private static readonly HashSet<string> ItemAttributes = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -120,7 +123,13 @@ public sealed partial class CsComReferenceEditor
         var includes = request.Sources.Select(source => ToInclude(source, directory)).ToList();
         var document = ProjectFile.Load(path);
         var project = document.Root!;
-        bool changed = AddPackageReference(project, path);
+        bool changed = AddPackageReference(project, path, BuildPackageId);
+        if (request.Dynamic)
+        {
+            changed |= SetProperty(project, path, "CsComDynamic", "true");
+            changed |= AddPackageReference(project, path, DynamicPackageId);
+        }
+
         foreach (string include in includes)
         {
             string key = GetKey(include, directory);
@@ -341,23 +350,23 @@ public sealed partial class CsComReferenceEditor
         source.IndexOfAny(['\\', '/']) >= 0
         || FileExtensions.Contains(Path.GetExtension(TypeLibrarySource.GetFilePath(source)), StringComparer.OrdinalIgnoreCase);
 
-    // Adds a reference to CsCom.Build unless the project file has one. With central package management, the version belongs
-    // to Directory.Packages.props.
-    private bool AddPackageReference(XElement project, string path)
+    // Adds a reference to a package of CsCom unless the project file has one. With central package management, the version
+    // belongs to Directory.Packages.props.
+    private bool AddPackageReference(XElement project, string path, string packageId)
     {
-        if (project.Descendants().Any(static e => e.Name.LocalName == "PackageReference"
-            && string.Equals(e.Attribute("Include")?.Value.Trim(), BuildPackageId, StringComparison.OrdinalIgnoreCase)
+        if (project.Descendants().Any(e => e.Name.LocalName == "PackageReference"
+            && string.Equals(e.Attribute("Include")?.Value.Trim(), packageId, StringComparison.OrdinalIgnoreCase)
             && !IsInTarget(e)))
         {
             return false;
         }
 
-        var reference = new XElement(project.Name.Namespace + "PackageReference", new XAttribute("Include", BuildPackageId));
+        var reference = new XElement(project.Name.Namespace + "PackageReference", new XAttribute("Include", packageId));
         if (ProjectFile.FindCentralPackageManagement(Path.GetDirectoryName(path)!) is { } packagesProps)
         {
-            if (!DeclaresPackageVersion(packagesProps))
+            if (!DeclaresPackageVersion(packagesProps, packageId))
             {
-                LogCentralPackageManagement(packagesProps, BuildPackageId, ToolInfo.Version);
+                LogCentralPackageManagement(packagesProps, packageId, ToolInfo.Version);
             }
         }
         else
@@ -366,21 +375,50 @@ public sealed partial class CsComReferenceEditor
         }
 
         AddItem(project, reference);
-        LogPackageAdded(BuildPackageId, path);
+        LogPackageAdded(packageId, path);
         return true;
     }
 
-    private static bool DeclaresPackageVersion(string packagesProps)
+    private static bool DeclaresPackageVersion(string packagesProps, string packageId)
     {
         try
         {
-            return XDocument.Load(packagesProps).Descendants().Any(static e => e.Name.LocalName == "PackageVersion"
-                && string.Equals(e.Attribute("Include")?.Value.Trim(), BuildPackageId, StringComparison.OrdinalIgnoreCase));
+            return XDocument.Load(packagesProps).Descendants().Any(e => e.Name.LocalName == "PackageVersion"
+                && string.Equals(e.Attribute("Include")?.Value.Trim(), packageId, StringComparison.OrdinalIgnoreCase));
         }
         catch (XmlException)
         {
             return false;
         }
+    }
+
+    // Sets a property where the project file has it outside targets, or else adds it to the first unconditional property group
+    // of the project, or to a new one.
+    private bool SetProperty(XElement project, string path, string name, string value)
+    {
+        if (project.Descendants().LastOrDefault(e => e.Name.LocalName == name && e.Parent?.Name.LocalName == "PropertyGroup" && !IsInTarget(e)) is { } existing)
+        {
+            if (string.Equals(existing.Value.Trim(), value, StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            existing.Value = value;
+        }
+        else
+        {
+            var group = project.Elements().FirstOrDefault(static e => e.Name.LocalName == "PropertyGroup" && e.Attribute("Condition") is null);
+            if (group is null)
+            {
+                group = new XElement(project.Name.Namespace + "PropertyGroup");
+                AppendChild(project, group);
+            }
+
+            AppendChild(group, new XElement(project.Name.Namespace + name, value));
+        }
+
+        LogPropertySet(name, value, path);
+        return true;
     }
 
     // Sets metadata where the item has it, as a child element or an attribute, or else as a new attribute.
@@ -523,6 +561,9 @@ public sealed partial class CsComReferenceEditor
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Added a reference to the {Package} package to '{Project}'")]
     private partial void LogPackageAdded(string package, string project);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Set {Name} to {Value} in '{Project}'")]
+    private partial void LogPropertySet(string name, string value, string project);
 
     [LoggerMessage(Level = LogLevel.Information, Message = "'{Project}' has no CsComReference items")]
     private partial void LogNoItems(string project);

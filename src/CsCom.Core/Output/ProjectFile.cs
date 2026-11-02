@@ -14,6 +14,8 @@ internal static partial class ProjectFile
 {
     public const string RuntimePackageId = "CsCom.Runtime";
 
+    public const string DynamicPackageId = "CsCom.Runtime.Dynamic";
+
     /// <summary>
     /// Creates the text of a project file.
     /// </summary>
@@ -77,9 +79,12 @@ internal static partial class ProjectFile
         {
             builder.AppendLine();
             builder.AppendLine("  <ItemGroup>");
-            builder.AppendLine(runtimePackageVersion is null
-                ? $"    <PackageReference Include=\"{RuntimePackageId}\" />"
-                : $"    <PackageReference Include=\"{RuntimePackageId}\" Version=\"{SecurityElement.Escape(runtimePackageVersion)}\" />");
+            AppendPackageReference(builder, RuntimePackageId, runtimePackageVersion);
+            if (manifest.IsDynamic)
+            {
+                AppendPackageReference(builder, DynamicPackageId, runtimePackageVersion);
+            }
+
             builder.AppendLine("  </ItemGroup>");
         }
 
@@ -89,10 +94,12 @@ internal static partial class ProjectFile
     }
 
     /// <summary>
-    /// Updates the C# version and the version of the CsCom.Runtime package in an existing project file.
+    /// Updates the C# version and the versions of the CsCom.Runtime packages in an existing project file, and adds or removes
+    /// the reference to CsCom.Runtime.Dynamic. Projects without a reference to CsCom.Runtime, whose support code is emitted
+    /// into them, get no package references.
     /// </summary>
     /// <returns>Whether the file was changed.</returns>
-    public static bool Update(string path, int languageVersion, string runtimePackageVersion)
+    public static bool Update(string path, int languageVersion, string runtimePackageVersion, bool dynamic)
     {
         var document = Load(path);
         bool changed = false;
@@ -106,13 +113,39 @@ internal static partial class ProjectFile
             }
         }
 
-        foreach (var reference in document.Descendants().Where(static e => e.Name.LocalName == "PackageReference" && (string?)e.Attribute("Include") == RuntimePackageId))
+        var runtimeReferences = GetPackageReferences(document, RuntimePackageId);
+        var dynamicReferences = GetPackageReferences(document, DynamicPackageId);
+        foreach (var reference in runtimeReferences.Concat(dynamicReferences))
         {
             if (reference.Attribute("Version") is { } attribute && attribute.Value != runtimePackageVersion)
             {
                 attribute.Value = runtimePackageVersion;
                 changed = true;
             }
+        }
+
+        if (dynamic && dynamicReferences.Count == 0 && runtimeReferences.FirstOrDefault() is { } runtimeReference)
+        {
+            // A copy of the reference to CsCom.Runtime, with its version or without it for central package management.
+            var dynamicReference = new XElement(runtimeReference);
+            dynamicReference.SetAttributeValue("Include", DynamicPackageId);
+            string indentation = runtimeReference.PreviousNode is XText { Value: var whitespace } && string.IsNullOrWhiteSpace(whitespace) ? whitespace : "\n    ";
+            runtimeReference.AddAfterSelf(new XText(indentation), dynamicReference);
+            changed = true;
+        }
+        else if (!dynamic && dynamicReferences.Count > 0)
+        {
+            foreach (var reference in dynamicReferences)
+            {
+                if (reference.PreviousNode is XText { Value: var whitespace } text && string.IsNullOrWhiteSpace(whitespace))
+                {
+                    text.Remove();
+                }
+
+                reference.Remove();
+            }
+
+            changed = true;
         }
 
         if (changed)
@@ -217,6 +250,14 @@ internal static partial class ProjectFile
         builder.AppendLine("</configuration>");
         return builder.ToString();
     }
+
+    private static List<XElement> GetPackageReferences(XDocument document, string id) =>
+        [.. document.Descendants().Where(e => e.Name.LocalName == "PackageReference" && string.Equals((string?)e.Attribute("Include"), id, StringComparison.OrdinalIgnoreCase))];
+
+    private static void AppendPackageReference(StringBuilder builder, string id, string? version) =>
+        builder.AppendLine(version is null
+            ? $"    <PackageReference Include=\"{id}\" />"
+            : $"    <PackageReference Include=\"{id}\" Version=\"{SecurityElement.Escape(version)}\" />");
 
     private static void AppendProperty(StringBuilder builder, string name, string value) =>
         builder.Append("    <").Append(name).Append('>').Append(SecurityElement.Escape(value)).Append("</").Append(name).AppendLine(">");

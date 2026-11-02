@@ -22,11 +22,4 @@ public static partial class Canvas
     /// </summary>
     /// <param name="context">The context in which the code that manages the newly created object will run.</param>
     public static ICanvas Create(global::CsCom.Runtime.ClassContext context = global::CsCom.Runtime.ComActivator.DefaultContext) => global::CsCom.Runtime.ComActivator.CreateInstance<ICanvas>(Clsid, context);
-
-    /// <summary>
-    /// Creates an instance of the Canvas class for late binding with dynamic.
-    /// </summary>
-    /// <param name="context">The context in which the code that manages the newly created object will run.</param>
-    [global::System.Diagnostics.CodeAnalysis.RequiresDynamicCode("Late binding with dynamic requires dynamic code generation and is not compatible with Native AOT.")]
-    public static dynamic CreateDynamic(global::CsCom.Runtime.ClassContext context = global::CsCom.Runtime.ComActivator.DefaultContext) => global::CsCom.Runtime.ComActivator.CreateDynamicInstance(Clsid, context);
 }

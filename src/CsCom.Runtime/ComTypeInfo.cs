@@ -8,22 +8,22 @@ using System.Runtime.InteropServices.Marshalling;
 namespace CsCom.Runtime;
 
 /// <summary>
-/// An event (a method of a source dispinterface) of a COM object.
+/// An event (a method of a source dispinterface) of a COM object, see <see cref="ComDispatch.GetEventInterfaces"/>.
 /// </summary>
 /// <param name="Name">The name of the event.</param>
 /// <param name="DispId">The dispatch identifier of the event.</param>
 /// <param name="ParameterCount">The number of parameters.</param>
-internal readonly record struct EventMember(string Name, int DispId, int ParameterCount);
+public readonly record struct EventMember(string Name, int DispId, int ParameterCount);
 
 /// <summary>
-/// A source dispinterface of a coclass, through which its objects raise events.
+/// A source dispinterface of a coclass, through which its objects raise events, see <see cref="ComDispatch.GetEventInterfaces"/>.
 /// </summary>
 /// <param name="Iid">The interface identifier.</param>
 /// <param name="Events">The events by name, ignoring case.</param>
-internal sealed record EventInterface(Guid Iid, IReadOnlyDictionary<string, EventMember> Events)
+public sealed record EventInterface(Guid Iid, IReadOnlyDictionary<string, EventMember> Events)
 {
     /// <summary>Gets the dispatch identifiers of the events.</summary>
-    public HashSet<int> DispIds { get; } = [.. Events.Values.Select(static e => e.DispId)];
+    public IReadOnlySet<int> DispIds { get; } = Events.Values.Select(static e => e.DispId).ToHashSet();
 }
 
 /// <summary>

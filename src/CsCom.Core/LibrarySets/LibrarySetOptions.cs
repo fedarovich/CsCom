@@ -47,6 +47,9 @@ public sealed class LibrarySetOptions
     /// <summary>Whether overloads are generated for the default values that C# cannot express.</summary>
     public bool OverloadsForDefaultValues { get; init; }
 
+    /// <summary>Whether the late binding with <c>dynamic</c> is generated for all the libraries, see <see cref="CodeGenerationOptions.Dynamic"/>.</summary>
+    public bool Dynamic { get; init; }
+
     /// <summary>The warnings disabled in the generated files, see <see cref="CodeGenerationOptions.SuppressedWarnings"/>.</summary>
     public IReadOnlyList<string> SuppressedWarnings { get; init; } = [];
 
