@@ -262,7 +262,7 @@ internal static class CommandLine
 
     private static readonly Option<string?> PackageSourceOption = new("--package-source")
     {
-        Description = "An additional NuGet package source that provides the CsCom.Runtime package.",
+        Description = "An additional NuGet package source that provides the CsCom.Runtime and CsCom.Runtime.Dynamic packages, e.g. when they are not available on nuget.org.",
         HelpName = "PATH",
     };
 
@@ -348,7 +348,7 @@ internal static class CommandLine
                 ConfigurationPath = GetLibraryValues(result, ConfigOption, "configuration file").Single,
                 ConfigurationPaths = GetLibraryValues(result, ConfigOption, "configuration file").ByLibrary,
                 ReferencePaths = result.GetValue(ReferencePathOption) ?? [],
-                PackageSource = result.GetValue(PackageSourceOption) ?? GetBundledPackageSource(),
+                PackageSource = result.GetValue(PackageSourceOption),
                 KeepTemporaryFiles = result.GetValue(KeepTempOption),
                 Properties = GetProperties(result),
             })));
@@ -378,7 +378,7 @@ internal static class CommandLine
                 ConfigurationPath = GetLibraryValues(result, ConfigOption, "configuration file").Single,
                 ConfigurationPaths = GetLibraryValues(result, ConfigOption, "configuration file").ByLibrary,
                 ReferencePaths = result.GetValue(ReferencePathOption) ?? [],
-                PackageSource = result.GetValue(PackageSourceOption) ?? GetBundledPackageSource(),
+                PackageSource = result.GetValue(PackageSourceOption),
                 KeepTemporaryFiles = result.GetValue(KeepTempOption),
                 PackageVersion = result.GetValue(PackageVersionOption),
                 Properties = GetProperties(result),
@@ -727,15 +727,6 @@ internal static class CommandLine
             options.LogToStandardErrorThreshold = LogLevel.Warning;
         })
         .AddConsoleFormatter<CompactConsoleFormatter, ConsoleFormatterOptions>());
-
-    /// <summary>
-    /// Gets the folder of the CsCom.Runtime package bundled with the tool, if any.
-    /// </summary>
-    private static string? GetBundledPackageSource()
-    {
-        string directory = Path.Combine(AppContext.BaseDirectory, "packages");
-        return File.Exists(Path.Combine(directory, $"CsCom.Runtime.{ToolInfo.Version}.nupkg")) ? directory : null;
-    }
 
     /// <summary>
     /// The options that select how DATE, CURRENCY and VARIANT_BOOL values and typed SAFEARRAYs are represented. The options

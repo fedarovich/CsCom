@@ -12,8 +12,6 @@
 
   <PropertyGroup>
     <IsPackable>true</IsPackable>
-    <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
-    <PackageOutputPath>$(CsComLocalPackagesDir)</PackageOutputPath>
     <Description>Generates source-generated COM interop code from type libraries and interop assemblies during the build: add the type libraries, ProgIDs, LIBIDs or interop assemblies as CsComReference items.</Description>
     <PackageTags>COM;interop;tlbimp;ComWrappers;NativeAOT;MSBuild</PackageTags>
     <!-- The layout (build, tasks and tools folders) and the dependency on CsCom.Runtime are described by the nuspec, because the

@@ -18,8 +18,6 @@
 
   <PropertyGroup>
     <IsPackable>true</IsPackable>
-    <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
-    <PackageOutputPath>$(CsComLocalPackagesDir)</PackageOutputPath>
     <!-- The symbols package, which nuget.org serves from its symbol server, so that the users can step into the late binding. -->
     <IncludeSymbols>true</IncludeSymbols>
     <SymbolPackageFormat>snupkg</SymbolPackageFormat>

@@ -96,7 +96,7 @@ into nested namespaces (`<Namespace>.<Library>`), are converted by `project upda
 | `--dynamic`, `-d` | Generates the late binding with C# `dynamic`: `CreateDynamic()` of the coclasses and the support of CsCom.Runtime.Dynamic, see [Late binding with `dynamic`](#late-binding-with-dynamic). |
 | `-c`, `--config <[LIBRARY=]PATH>` | An XML file that adds and configures the model and syntax transformers of a library, e.g. `Excel=excel.cscom.xml`; can be specified multiple times. Without a library name, the file of a single source. See [Configuration file](#configuration-file). |
 | `--reference-path <PATH>` | For interop assemblies: an assembly they reference, or a directory of such assemblies; can be specified multiple times, see [Interop assemblies](#interop-assemblies). |
-| `--package-source <PATH>` | An additional NuGet source with the CsCom.Runtime package. |
+| `--package-source <PATH>` | An additional NuGet source with the CsCom.Runtime and CsCom.Runtime.Dynamic packages, e.g. when they are not available on nuget.org. |
 | `--keep-temp` | `assembly build` and `assembly pack` only: keeps the temporary project used to build the assembly. |
 | `--package-version <VERSION>` | `assembly pack` only: the version of the package and the assembly. `<major>.<minor>.0` of the type library by default with a single source, `1.0.0` with several sources. |
 | `-p`, `--property <NAME=VALUE>` | `assembly build` and `assembly pack` only: an MSBuild property of the temporary project, e.g. `Version=1.2.3`, `Company=Contoso` or `PackageLicenseExpression=MIT`; can be specified multiple times. |
@@ -835,7 +835,7 @@ of the MSBuild task, which the task passes to the hidden `build-generate` comman
 
 | Project | Description |
 | --- | --- |
-| `src/CsCom` | The command line tool (`cscom`), packed as a .NET tool together with the CsCom.Runtime package. |
+| `src/CsCom` | The command line tool (`cscom`), packed as a .NET tool. |
 | `src/CsCom.Build` | The CsCom.Build package: the MSBuild props, targets and task (netstandard2.0), which runs the cscom tool bundled in its `tools` folder. |
 | `src/CsCom.Core` | The pipeline. |
 | `src/CsCom.Runtime` | The support code used by the generated code. Its sources are also embedded into CsCom.Core for the `public` and `internal` modes. |
@@ -846,15 +846,21 @@ of the MSBuild task, which the task passes to the hidden `build-generate` comman
 
 ```powershell
 dotnet build src/CsCom.slnx
-dotnet test src/CsCom.slnx                                       # all tests
-dotnet test src/CsCom.slnx --filter "TestCategory!=Integration"  # without the tests that build generated projects
+dotnet test src/CsCom.slnx --no-build --filter "TestCategory!=Integration"  # without the tests that build generated projects
+dotnet pack src/CsCom.slnx --no-build                                       # the packages, in artifacts/packages
+dotnet test src/CsCom.slnx --no-build                                       # all tests, which need the packages
 ```
 
 - The projects use central package management: the package versions are in `src/Directory.Packages.props`.
-- Building CsCom.Runtime and CsCom.Build creates their packages in `artifacts/packages`, which the tool bundles (CsCom.Runtime)
-  and the integration tests use. The integration tests restore them into a temporary global packages folder; the tests of
-  CsCom.Build also build with the 32-bit and 64-bit MSBuild of Visual Studio when it is installed. When using the packages from
-  source, clear `%USERPROFILE%\.nuget\packages\cscom.runtime` and `cscom.build` after changing them without changing the version.
+- The integration tests restore CsCom.Runtime, CsCom.Runtime.Dynamic and CsCom.Build from `artifacts/packages`, which only
+  `dotnet pack` updates: pack again after changing them (or the tool, which CsCom.Build bundles). The tests restore them into a
+  temporary global packages folder; the tests of CsCom.Build also build with the 32-bit and 64-bit MSBuild of Visual Studio
+  when it is installed. When using the packages from source, clear `%USERPROFILE%\.nuget\packages\cscom.runtime`,
+  `cscom.runtime.dynamic` and `cscom.build` after changing them without changing the version.
+- `assembly build` and `assembly pack` build with CsCom.Runtime (and CsCom.Runtime.Dynamic with `--dynamic`) of the version of
+  the tool, and fail rather than use a later version when that one is not available (NU1603 is an error in their temporary
+  project). When running the tool from source, pass `--package-source artifacts\packages`, since the version built from source
+  is usually not on nuget.org.
 - The test type libraries `src/CsCom.Tests/TestAssets/CsComTest.tlb` and `CsComDrawing.tlb` are built from their `.idl` files
   with `build-tlb.ps1`, which requires Visual Studio with the C++ tools. The `.tlb` files are committed.
 - The snapshots of the generated code are in `src/CsCom.Tests/Snapshots`. Verify.MSTest is pinned to 32.0.0, the last version
@@ -863,7 +869,7 @@ dotnet test src/CsCom.slnx --filter "TestCategory!=Integration"  # without the t
 ### CI and releases
 
 The [CI workflow](.github/workflows/ci.yml) builds the solution in Release on Windows, runs the unit tests (without the
-`Integration` category) and packs the four packages for every push and pull request; the packages are kept as the `packages`
+`Integration` category) and then packs the four packages from the build output for every push and pull request; the packages are kept as the `packages`
 artifact of the run.
 
 - **Releasing:** push a tag with a semantic version, e.g. `1.2.3` or `1.2.3-beta.1`. The tag sets the version of CsCom,
