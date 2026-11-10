@@ -809,8 +809,6 @@ The generated projects disable runtime marshalling, which source-generated COM i
   other interop assemblies that contain them is not supported yet.
 - Interop assemblies lack the documentation, the functions of modules and some type information of their type libraries, see
   [Interop assemblies](#interop-assemblies).
-- CsCom.Runtime only targets `net10.0` for now. Source-generated COM expects a base interface from another assembly (`IDispatch`)
-  to be compiled for the same target framework, so a `net11.0` build of CsCom.Runtime should be added together with .NET 11 support.
 
 ## Architecture
 
@@ -838,9 +836,9 @@ of the MSBuild task, which the task passes to the hidden `build-generate` comman
 | `src/CsCom` | The command line tool (`cscom`), packed as a .NET tool. |
 | `src/CsCom.Build` | The CsCom.Build package: the MSBuild props, targets and task (netstandard2.0), which runs the cscom tool bundled in its `tools` folder. |
 | `src/CsCom.Core` | The pipeline. |
-| `src/CsCom.Runtime` | The support code used by the generated code. Its sources are also embedded into CsCom.Core for the `public` and `internal` modes. |
-| `src/CsCom.Runtime.Dynamic` | The late binding with `dynamic`, which only uses the public API of CsCom.Runtime (e.g. `ComDispatch`). Its sources are embedded like those of CsCom.Runtime, for `--dynamic`. |
-| `src/CsCom.Tests` | MSTest and Verify tests. |
+| `src/CsCom.Runtime` | The support code used by the generated code, built for `net10.0` and `net11.0`: source-generated COM expects a base interface from another assembly (`IDispatch`) to be compiled for the same target framework (SYSLIB1230). Its sources are also embedded into CsCom.Core for the `public` and `internal` modes. |
+| `src/CsCom.Runtime.Dynamic` | The late binding with `dynamic`, which only uses the public API of CsCom.Runtime (e.g. `ComDispatch`), for the same target frameworks. Its sources are embedded like those of CsCom.Runtime, for `--dynamic`. |
+| `src/CsCom.Tests` | MSTest and Verify tests, for `net10.0-windows` and `net11.0-windows`. |
 
 ## Development
 
@@ -852,6 +850,9 @@ dotnet test src/CsCom.slnx --no-build                                       # al
 ```
 
 - The projects use central package management: the package versions are in `src/Directory.Packages.props`.
+- Building requires the .NET 11 SDK, and the tests also need the .NET 10 runtime. The tests run on .NET 10 and .NET 11, and
+  the integration tests generate, build and run the projects for the version they run on; `-f net11.0-windows` runs the tests
+  for one version.
 - The integration tests restore CsCom.Runtime, CsCom.Runtime.Dynamic and CsCom.Build from `artifacts/packages`, which only
   `dotnet pack` updates: pack again after changing them (or the tool, which CsCom.Build bundles). The tests restore them into a
   temporary global packages folder; the tests of CsCom.Build also build with the 32-bit and 64-bit MSBuild of Visual Studio
@@ -869,8 +870,8 @@ dotnet test src/CsCom.slnx --no-build                                       # al
 ### CI and releases
 
 The [CI workflow](.github/workflows/ci.yml) builds the solution in Release on Windows, runs the unit tests (without the
-`Integration` category) and then packs the four packages from the build output for every push and pull request; the packages are kept as the `packages`
-artifact of the run.
+`Integration` category) on .NET 10 and .NET 11 and then packs the four packages from the build output for every push and pull
+request; the packages are kept as the `packages` artifact of the run.
 
 - **Releasing:** push a tag with a semantic version, e.g. `1.2.3` or `1.2.3-beta.1`. The tag sets the version of CsCom,
   CsCom.Runtime, CsCom.Runtime.Dynamic and CsCom.Build (instead of the `VersionPrefix` of `src/Directory.Build.props`), and the `publish` job pushes

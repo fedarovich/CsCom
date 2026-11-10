@@ -35,9 +35,12 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      # The .NET 11 SDK builds the net10.0 and net11.0 targets, and the .NET 10 runtime runs the tool and the net10.0 tests.
       - uses: actions/setup-dotnet@v6
         with:
-          dotnet-version: 10.0.x
+          dotnet-version: |
+            10.0.x
+            11.0.x
 
       # The glob patterns of the trigger also match tags like 01.2.3, which are not semantic versions.
       - name: Get the version from the tag
@@ -57,8 +60,9 @@ jobs:
           if ($env:CSCOM_VERSION) { $properties += "-p:Version=$env:CSCOM_VERSION" }
           dotnet build src/CsCom.slnx -c Release @properties
 
+      # The tests run on .NET 10 and .NET 11; with a prefix, the name of each results file includes the target framework.
       - name: Run the unit tests
-        run: dotnet test src/CsCom.slnx -c Release --no-build --filter "TestCategory!=Integration" --logger trx --results-directory TestResults
+        run: dotnet test src/CsCom.slnx -c Release --no-build --filter "TestCategory!=Integration" --logger "trx;LogFilePrefix=unit-tests" --results-directory TestResults
 
       # Packs the output of the build into artifacts/packages: CsCom.Runtime and CsCom.Runtime.Dynamic (with their symbols),
       # CsCom.Build and the tool.

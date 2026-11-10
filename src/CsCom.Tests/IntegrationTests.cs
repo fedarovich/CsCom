@@ -173,6 +173,7 @@ public sealed class IntegrationTests
             Sources = [TestEnvironment.TestTypeLibrary],
             OutputDirectory = directory,
             ConfigurationPath = configuration,
+            TargetFrameworks = [TestEnvironment.TargetFramework],
             PackageSource = TestEnvironment.LocalPackages,
             GlobalPackagesFolder = TestEnvironment.GlobalPackagesFolder,
         });
@@ -189,23 +190,22 @@ public sealed class IntegrationTests
     }
 
     [TestMethod]
-    public void GeneratedProjectCanBeUsedFromCSharp15()
+    public void MultiTargetedProjectBuildsWithoutWarnings()
     {
-        if (!HasSdk(11))
-        {
-            Assert.Inconclusive("The .NET 11 SDK is not installed.");
-        }
-
-        string directory = TestEnvironment.CreateDirectory("build-csharp15");
+        // Each target framework compiles against the builds of CsCom.Runtime and CsCom.Runtime.Dynamic for its .NET version,
+        // with C# 14, the version that all of them support.
+        string directory = TestEnvironment.CreateDirectory("build-multi-target");
         string project = new ProjectGenerator(_pipeline).CreateProject(new CreateProjectRequest
         {
-            Sources = [TestEnvironment.TestTypeLibrary],
+            Sources = [TestEnvironment.ScriptingRuntime],
             OutputDirectory = directory,
-            TargetFrameworks = ["net11.0-windows"],
+            Dynamic = true,
+            TargetFrameworks = SupportedTargetFrameworks,
             PackageSource = TestEnvironment.LocalPackages,
             GlobalPackagesFolder = TestEnvironment.GlobalPackagesFolder,
         });
 
+        StringAssert.Contains(File.ReadAllText(project), "<LangVersion>14</LangVersion>");
         Build(project);
     }
 
@@ -216,8 +216,14 @@ public sealed class IntegrationTests
         string interop = CreateProject(TestEnvironment.ScriptingRuntime, Path.Combine(root, "Interop"), SupportCodeMode.Package, singleFile: false, dynamic: true);
 
         var output = RunConsumer(root, interop, """
+            using System.Reflection;
+            using System.Runtime.Versioning;
             using CsCom.Runtime;
             using Interop.Scripting;
+
+            // The packages resolve to the builds of the runtime for the target framework of the consumer.
+            Console.WriteLine($"Runtime={typeof(ComActivator).Assembly.GetCustomAttribute<TargetFrameworkAttribute>()?.FrameworkName}");
+            Console.WriteLine($"DynamicRuntime={typeof(ComDynamic).Assembly.GetCustomAttribute<TargetFrameworkAttribute>()?.FrameworkName}");
 
             IDictionary dictionary = Dictionary.Create();
             dictionary.CompareMode = CompareMethod.TextCompare;
@@ -252,7 +258,11 @@ public sealed class IntegrationTests
             """);
 
         CollectionAssert.IsSubsetOf(
-            new[] { "Count=2", "Exists=True", "Item=two", "Keys=a,b", "Key=a", "Key=b", "Line=Hello", "Exists=False", "Created=True", "Dynamic=42|1", "AsDynamic=2|True" },
+            new[]
+            {
+                $"Runtime={TestEnvironment.FrameworkName}", $"DynamicRuntime={TestEnvironment.FrameworkName}",
+                "Count=2", "Exists=True", "Item=two", "Keys=a,b", "Key=a", "Key=b", "Line=Hello", "Exists=False", "Created=True", "Dynamic=42|1", "AsDynamic=2|True",
+            },
             output.ToArray(),
             string.Join(Environment.NewLine, output));
     }
@@ -269,6 +279,7 @@ public sealed class IntegrationTests
         {
             Sources = [TestEnvironment.ScriptingRuntime],
             OutputDirectory = Path.Combine(root, "Interop"),
+            TargetFrameworks = [TestEnvironment.TargetFramework],
             PackageSource = TestEnvironment.LocalPackages,
             GlobalPackagesFolder = TestEnvironment.GlobalPackagesFolder,
         });
@@ -716,6 +727,7 @@ public sealed class IntegrationTests
             OutputDirectory = Path.Combine(root, "Interop"),
             Marshalling = AllWrappers with { Bstrs = BstrMarshalling.Wrapper },
             OverloadsForDefaultValues = true,
+            TargetFrameworks = [TestEnvironment.TargetFramework],
             PackageSource = TestEnvironment.LocalPackages,
             GlobalPackagesFolder = TestEnvironment.GlobalPackagesFolder,
         });
@@ -765,6 +777,7 @@ public sealed class IntegrationTests
             Sources = [TestEnvironment.TestTypeLibrary],
             OutputDirectory = Path.Combine(root, "Interop"),
             ConfigurationPath = configuration,
+            TargetFrameworks = [TestEnvironment.TargetFramework],
             PackageSource = TestEnvironment.LocalPackages,
             GlobalPackagesFolder = TestEnvironment.GlobalPackagesFolder,
         });
@@ -1289,7 +1302,7 @@ public sealed class IntegrationTests
         File.WriteAllText(project, $"""
             <Project Sdk="Microsoft.NET.Sdk">
               <PropertyGroup>
-                <TargetFramework>net10.0-windows</TargetFramework>
+                <TargetFramework>{TestEnvironment.TargetFramework}</TargetFramework>
                 <ImplicitUsings>enable</ImplicitUsings>
                 <Nullable>enable</Nullable>
                 <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
@@ -1327,13 +1340,14 @@ public sealed class IntegrationTests
             Sources = [TestEnvironment.TestTypeLibrary],
             OutputDirectory = output,
             RuntimeIdentifiers = ["win-x64", "win-arm64"],
+            TargetFrameworks = [TestEnvironment.TargetFramework],
             PackageSource = TestEnvironment.LocalPackages,
             GlobalPackagesFolder = TestEnvironment.GlobalPackagesFolder,
         });
 
         foreach (string runtime in new[] { "win-x64", "win-arm64" })
         {
-            string directory = Path.Combine(output, "net10.0-windows", runtime);
+            string directory = Path.Combine(output, TestEnvironment.TargetFramework, runtime);
             Assert.IsTrue(File.Exists(Path.Combine(directory, "Interop.CsComTest.dll")), directory);
             Assert.IsTrue(File.Exists(Path.Combine(directory, "Interop.CsComTest.xml")), directory);
             Assert.IsTrue(File.Exists(Path.Combine(directory, "CsCom.Runtime.dll")), directory);
@@ -1354,6 +1368,7 @@ public sealed class IntegrationTests
             SupportCode = SupportCodeMode.Internal,
             Name = "Flat.Interop",
             Properties = new Dictionary<string, string> { ["Version"] = "3.4.5", ["company"] = "CsCom Tests" },
+            TargetFrameworks = [TestEnvironment.TargetFramework],
         });
 
         CollectionAssert.AreEquivalent(
@@ -1377,6 +1392,7 @@ public sealed class IntegrationTests
             OutputDirectory = output,
             PackageVersion = "2.3.4-test",
             Properties = new Dictionary<string, string> { ["Authors"] = "CsCom Tests", ["PackageLicenseExpression"] = "MIT" },
+            TargetFrameworks = [TestEnvironment.TargetFramework],
             PackageSource = TestEnvironment.LocalPackages,
             GlobalPackagesFolder = TestEnvironment.GlobalPackagesFolder,
         });
@@ -1387,8 +1403,9 @@ public sealed class IntegrationTests
         CollectionAssert.AreEquivalent(files.ToArray(), Directory.GetFiles(output));
 
         var (entries, nuspec) = ReadPackage(Path.Combine(output, "Interop.CsComTest.2.3.4-test.nupkg"));
-        Assert.IsTrue(entries.Any(static e => e.StartsWith("lib/net10.0-windows", StringComparison.Ordinal) && e.EndsWith("/Interop.CsComTest.dll", StringComparison.Ordinal)), string.Join(", ", entries));
-        Assert.IsTrue(entries.Any(static e => e.StartsWith("lib/net10.0-windows", StringComparison.Ordinal) && e.EndsWith("/Interop.CsComTest.xml", StringComparison.Ordinal)), string.Join(", ", entries));
+        string lib = $"lib/{TestEnvironment.TargetFramework}";
+        Assert.IsTrue(entries.Any(e => e.StartsWith(lib, StringComparison.Ordinal) && e.EndsWith("/Interop.CsComTest.dll", StringComparison.Ordinal)), string.Join(", ", entries));
+        Assert.IsTrue(entries.Any(e => e.StartsWith(lib, StringComparison.Ordinal) && e.EndsWith("/Interop.CsComTest.xml", StringComparison.Ordinal)), string.Join(", ", entries));
         Assert.IsFalse(entries.Any(static e => e.EndsWith(".pdb", StringComparison.Ordinal)), string.Join(", ", entries));
         Assert.AreEqual("2.3.4-test", NuspecValue(nuspec, "version"));
         Assert.AreEqual("CsCom Tests", NuspecValue(nuspec, "authors"));
@@ -1412,6 +1429,7 @@ public sealed class IntegrationTests
             Sources = [TestEnvironment.TestTypeLibrary],
             OutputDirectory = output,
             SupportCode = SupportCodeMode.Internal,
+            TargetFrameworks = [TestEnvironment.TargetFramework],
         });
 
         CollectionAssert.AreEquivalent(
@@ -1440,12 +1458,65 @@ public sealed class IntegrationTests
             OutputDirectory = output,
             SupportCode = SupportCodeMode.Internal,
             Name = "Set.Interop",
+            TargetFrameworks = [TestEnvironment.TargetFramework],
         });
 
         Assert.AreEqual("The name of the project or assembly must be specified when there are several sources.", exception.Message);
         CollectionAssert.AreEquivalent(new[] { "Set.Interop.1.0.0.nupkg", "Set.Interop.1.0.0.snupkg" }, files.Select(Path.GetFileName).ToArray());
         var (_, nuspec) = ReadPackage(files.Single(static f => f.EndsWith(".nupkg", StringComparison.Ordinal)));
         Assert.AreEqual("CsComTest, CsComDrawing: COM interop types generated by CsCom.", NuspecValue(nuspec, "description"));
+    }
+
+    [TestMethod]
+    public void PackAssemblyForSeveralTargetFrameworks()
+    {
+        string output = TestEnvironment.CreateDirectory("pack-multi-target");
+
+        var files = new AssemblyGenerator(_pipeline).PackAssembly(new PackAssemblyRequest
+        {
+            Sources = [TestEnvironment.TestTypeLibrary],
+            OutputDirectory = output,
+            TargetFrameworks = SupportedTargetFrameworks,
+            PackageSource = TestEnvironment.LocalPackages,
+            GlobalPackagesFolder = TestEnvironment.GlobalPackagesFolder,
+        });
+
+        // The package has an assembly and a dependency on CsCom.Runtime for each target framework, e.g. net11.0-windows7.0.
+        var (entries, nuspec) = ReadPackage(files.Single(static f => f.EndsWith(".nupkg", StringComparison.Ordinal)));
+        var groups = nuspec.Descendants().Where(static e => e.Name.LocalName == "group").ToList();
+        foreach (string targetFramework in SupportedTargetFrameworks)
+        {
+            Assert.IsTrue(entries.Any(e => e.StartsWith($"lib/{targetFramework}", StringComparison.Ordinal) && e.EndsWith("/Interop.CsComTest.dll", StringComparison.Ordinal)), string.Join(", ", entries));
+            var group = groups.Single(g => ((string?)g.Attribute("targetFramework"))?.StartsWith(targetFramework, StringComparison.OrdinalIgnoreCase) == true);
+            Assert.AreEqual("CsCom.Runtime", (string?)group.Elements().Single().Attribute("id"));
+        }
+    }
+
+    [TestMethod]
+    [DataRow("CsCom.Runtime")]
+    [DataRow("CsCom.Runtime.Dynamic")]
+    public void RuntimePackagesHaveABuildForEachTargetFramework(string id)
+    {
+        // Generated interfaces that derive from IDispatch need CsCom.Runtime built for their target framework (SYSLIB1230).
+        string[] targetFrameworks = ["net10.0", "net11.0"];
+        string package = Path.Combine(TestEnvironment.LocalPackages, $"{id}.{ToolInfo.Version}");
+
+        var (entries, nuspec) = ReadPackage(package + ".nupkg");
+        var (symbols, _) = ReadPackage(package + ".snupkg");
+
+        foreach (string targetFramework in targetFrameworks)
+        {
+            CollectionAssert.IsSubsetOf(new[] { $"lib/{targetFramework}/{id}.dll", $"lib/{targetFramework}/{id}.xml" }, entries, string.Join(", ", entries));
+            CollectionAssert.Contains(symbols, $"lib/{targetFramework}/{id}.pdb", string.Join(", ", symbols));
+        }
+
+        var groups = nuspec.Descendants().Where(static e => e.Name.LocalName == "group").ToList();
+        CollectionAssert.AreEquivalent(targetFrameworks, groups.Select(static g => (string?)g.Attribute("targetFramework")).ToArray());
+        string[] dependencies = id == "CsCom.Runtime" ? [] : ["CsCom.Runtime"];
+        foreach (var group in groups)
+        {
+            CollectionAssert.AreEqual(dependencies, group.Elements().Select(static d => (string?)d.Attribute("id")).ToArray());
+        }
     }
 
     [TestMethod]
@@ -1461,6 +1532,7 @@ public sealed class IntegrationTests
             Name = "Set.Interop",
             Namespaces = new Dictionary<string, string> { ["CsComDrawing"] = "Drawing.Interop" },
             SingleFile = singleFile,
+            TargetFrameworks = [TestEnvironment.TargetFramework],
             PackageSource = TestEnvironment.LocalPackages,
             GlobalPackagesFolder = TestEnvironment.GlobalPackagesFolder,
         });
@@ -1507,7 +1579,7 @@ public sealed class IntegrationTests
             <Project Sdk="Microsoft.NET.Sdk">
               <PropertyGroup>
                 <OutputType>Exe</OutputType>
-                <TargetFramework>net10.0-windows</TargetFramework>
+                <TargetFramework>{TestEnvironment.TargetFramework}</TargetFramework>
                 <ImplicitUsings>enable</ImplicitUsings>
                 <Nullable>enable</Nullable>
                 <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
@@ -1525,6 +1597,9 @@ public sealed class IntegrationTests
         Assert.AreEqual(0, exitCode, string.Join(Environment.NewLine, output));
         return output.Select(static line => line.Trim()).ToList();
     }
+
+    // The supported .NET versions, which projects can target together.
+    private static readonly string[] SupportedTargetFrameworks = ["net10.0-windows", "net11.0-windows"];
 
     private static readonly MarshallingOptions AllWrappers = new()
     {
@@ -1552,6 +1627,7 @@ public sealed class IntegrationTests
             EventStyle = eventStyle,
             StructProperties = structProperties,
             Dynamic = dynamic,
+            TargetFrameworks = [TestEnvironment.TargetFramework],
             PackageSource = TestEnvironment.LocalPackages,
             GlobalPackagesFolder = TestEnvironment.GlobalPackagesFolder,
         });
@@ -1564,12 +1640,6 @@ public sealed class IntegrationTests
         Assert.AreEqual(0, exitCode, text);
         var warnings = output.Where(static line => line.Contains(": warning ", StringComparison.Ordinal)).ToList();
         Assert.IsEmpty(warnings, text);
-    }
-
-    private static bool HasSdk(int major)
-    {
-        var (exitCode, output) = DotNetCli.Run(["--list-sdks"], Environment.CurrentDirectory, NullLogger.Instance);
-        return exitCode == 0 && output.Any(line => line.StartsWith($"{major}.", StringComparison.Ordinal));
     }
 }
 

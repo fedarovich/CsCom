@@ -7,8 +7,13 @@
   -->
 
   <PropertyGroup>
-    <!-- Generated interfaces that derive from IDispatch must target the same framework as this assembly (SYSLIB1230). -->
-    <TargetFrameworks>net10.0</TargetFrameworks>
+    <!--
+      A build for each supported .NET version: generated interfaces that derive from IDispatch must target the same framework
+      as this assembly (SYSLIB1230). Each build uses the default C# version of its framework, so that the net10.0 build keeps
+      the sources, which generated projects compile with C# 14 or later, compatible with C# 14.
+    -->
+    <TargetFrameworks>net10.0;net11.0</TargetFrameworks>
+    <LangVersion>default</LangVersion>
     <ImplicitUsings>disable</ImplicitUsings>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <IsAotCompatible>true</IsAotCompatible>
