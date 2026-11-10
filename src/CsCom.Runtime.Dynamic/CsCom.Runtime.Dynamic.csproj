@@ -12,6 +12,11 @@
     <!-- The types of CsCom.Runtime are extended, so they share its namespace. -->
     <RootNamespace>CsCom.Runtime</RootNamespace>
     <ImplicitUsings>disable</ImplicitUsings>
+    <!--
+      dynamic is not supported by Native AOT, but the AOT analyzers ensure that the API that requires dynamic code is annotated
+      with [RequiresDynamicCode], so that AOT apps get warnings where they use it. The same applies to generated projects that
+      embed these sources.
+    -->
     <IsAotCompatible>true</IsAotCompatible>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
   </PropertyGroup>
