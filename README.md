@@ -443,7 +443,8 @@ foreach (object? key in dictionary)                 // _NewEnum via IEnumVARIANT
 - **Properties** cannot be declared by source-generated COM interfaces, so they are generated as `get_X`, `set_X` (`propput`) and
   `putref_X` (`propputref`) methods. A static `<Interface>Extensions` class adds C# 14 extension properties for them and a
   `GetEnumerator` extension for collections. With C# 15, the default parameterized property (`DISPID_VALUE`, usually `Item`)
-  becomes an extension indexer.
+  becomes an extension indexer. The extensions of a derived interface also use the accessors of its base interfaces, e.g. the
+  getter of a read-only property of `IMyInterface` and the setter that `IMyInterface2` adds to it.
 - **Dispinterfaces** can only be called through `IDispatch::Invoke`, so they become late-bound wrapper classes with methods,
   properties and indexers that invoke the members by their DISPIDs.
 - **Coclasses** become static classes with the `Clsid` and a `Create()` method that returns the default interface.

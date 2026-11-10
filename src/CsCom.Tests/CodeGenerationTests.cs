@@ -456,6 +456,34 @@ public sealed class CodeGenerationTests : VerifyBase
         return Verify(ToTargets(documents.Where(static d => d.RelativePath is "ICircle.cs")));
     }
 
+    [TestMethod]
+    [DataRow(14)]
+    [DataRow(15)]
+    public void ExtensionsOfDerivedInterfacesTakeTheInheritedAccessors(int languageVersion)
+    {
+        // ICircle adds setters to the read-only Name and Item of IShape. Its extension block wins for ICircle receivers, so it
+        // has the getters of IShape too; the extension block of IShape keeps the getters only.
+        var pipeline = new InteropPipeline();
+        pipeline.ModelTransformers.Add(new AccessorsInDerivedInterfaceTransformer());
+        var documents = pipeline.GenerateCode(
+            pipeline.ReadTypeLibrary(TestEnvironment.TestTypeLibrary),
+            new CodeGenerationOptions { Namespace = "Interop.CsComTest", LanguageVersion = languageVersion, ToolVersion = TestEnvironment.ToolVersion });
+
+        string circle = documents.Single(static d => d.RelativePath == "ICircle.cs").GetText();
+        string shape = documents.Single(static d => d.RelativePath == "IShape.cs").GetText();
+        StringAssert.Contains(circle, "public string? Name { get => @this.get_Name(); set => @this.set_Name(value); }");
+        StringAssert.Contains(shape, "public string? Name => @this.get_Name();");
+        if (languageVersion >= 15)
+        {
+            StringAssert.Contains(circle, "public object? this[object? index] { get => @this.get_Item(index); set => @this.set_Item(index, value); }");
+            StringAssert.Contains(shape, "public object? this[object? index] => @this.get_Item(index);");
+        }
+        else
+        {
+            Assert.IsFalse(circle.Contains("this[", StringComparison.Ordinal));
+        }
+    }
+
     private static IReadOnlyList<GeneratedDocument> Generate(CodeGenerationOptions options, string? configuration = null)
     {
         var pipeline = new InteropPipeline();

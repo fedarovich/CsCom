@@ -130,16 +130,32 @@ internal sealed partial class InterfaceEmitter
 
         foreach (var group in definition.Methods.Where(static m => m.IsProperty && m.MemberId != DispIdNewEnum).GroupBy(static m => m.Name))
         {
-            var getter = group.FirstOrDefault(static m => m.InvokeKind == InvokeKind.PropertyGet);
+            // An interface can add accessors to a property of its base interfaces, e.g. a later version a setter to a read-only
+            // property. Its extension block wins for receivers of its type, so it also takes the accessors it inherits.
+            var getter = group.FirstOrDefault(static m => m.InvokeKind == InvokeKind.PropertyGet)
+                ?? FindInheritedAccessor(definition, group.Key, InvokeKind.PropertyGet);
             var put = group.FirstOrDefault(static m => m.InvokeKind == InvokeKind.PropertyPut);
             var putRef = group.FirstOrDefault(static m => m.InvokeKind == InvokeKind.PropertyPutRef);
+            if (put is null && putRef is null)
+            {
+                put = FindInheritedAccessor(definition, group.Key, InvokeKind.PropertyPut);
+                putRef = FindInheritedAccessor(definition, group.Key, InvokeKind.PropertyPutRef);
+            }
 
             var getterSignature = getter is null ? null : AnalyzeGetter(getter, signatures);
             var setterMethod = put ?? putRef;
             var setterSignature = setterMethod is null ? null : AnalyzeSetter(setterMethod, signatures);
             if (getterSignature is not null && setterSignature is not null && !getterSignature.Matches(setterSignature))
             {
-                setterSignature = null;
+                // The accessors of the interface win over those of a different property of a base interface.
+                if (group.Contains(getter!))
+                {
+                    setterSignature = null;
+                }
+                else
+                {
+                    getterSignature = null;
+                }
             }
 
             var property = getterSignature ?? setterSignature;
@@ -162,7 +178,7 @@ internal sealed partial class InterfaceEmitter
 
                 members.Add(AnnotateAccessors(Property(property.Type, group.Key, getExpression, setExpression, documentation), accessors));
             }
-            else if (_context.Options.SupportsExtensionIndexers && !hasIndexer && IsDefaultMember(definition, group))
+            else if (_context.Options.SupportsExtensionIndexers && !hasIndexer && IsDefaultMember(definition, group.Key, accessors))
             {
                 members.Add(AnnotateAccessors(Indexer(property.Type, property.Index, getExpression, setExpression, documentation), accessors));
                 hasIndexer = true;
@@ -232,9 +248,26 @@ internal sealed partial class InterfaceEmitter
         where TNode : SyntaxNode =>
         node.WithAdditionalAnnotations(accessors.OfType<MethodDefinition>().Select(a => _context.Annotations.GetAnnotation(a, SyntaxRole.Property)));
 
-    private static bool IsDefaultMember(InterfaceDefinition definition, IGrouping<string, MethodDefinition> group) =>
-        group.Any(static m => m.MemberId == DispIdValue)
-        || (group.Key == "Item" && !definition.Methods.Any(static m => m.IsProperty && m.MemberId == DispIdValue && m.Parameters.Count > 1));
+    private static bool IsDefaultMember(InterfaceDefinition definition, string name, IEnumerable<MethodDefinition?> accessors) =>
+        accessors.Any(static m => m?.MemberId == DispIdValue)
+        || (name == "Item" && !definition.Methods.Any(static m => m.IsProperty && m.MemberId == DispIdValue && m.Parameters.Count > 1));
+
+    // The accessor of a property with the specified invoke kind that the nearest base interface declares.
+    private static MethodDefinition? FindInheritedAccessor(InterfaceDefinition definition, string name, InvokeKind invokeKind)
+    {
+        for (var current = BaseInterfaceOf(definition); current is not null; current = BaseInterfaceOf(current))
+        {
+            if (current.Methods.FirstOrDefault(m => m.IsProperty && m.InvokeKind == invokeKind && string.Equals(m.Name, name, StringComparison.Ordinal)) is { } accessor)
+            {
+                return accessor;
+            }
+        }
+
+        return null;
+    }
+
+    private static InterfaceDefinition? BaseInterfaceOf(InterfaceDefinition definition) =>
+        (definition.BaseInterface as UserDefinedTypeReference)?.Definition as InterfaceDefinition;
 
     private static HashSet<string> GetMethodNamesInHierarchy(InterfaceDefinition definition)
     {

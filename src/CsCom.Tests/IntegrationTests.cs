@@ -759,6 +759,49 @@ public sealed class IntegrationTests
     }
 
     [TestMethod]
+    public void PropertiesOfDerivedInterfacesHaveTheInheritedAccessors()
+    {
+        // ICircle adds the setters of the read-only Name and Item (the extension indexer of C# 15) of IShape. Its extension block
+        // wins for ICircle receivers, so it must have the getters of IShape too. The moved setters no longer match the vtable of
+        // a real object, so the code is only compiled.
+        var pipeline = new InteropPipeline();
+        pipeline.ModelTransformers.Add(new AccessorsInDerivedInterfaceTransformer());
+        string root = TestEnvironment.CreateDirectory("derived-accessors");
+        string interop = new ProjectGenerator(pipeline).CreateProject(new CreateProjectRequest
+        {
+            Sources = [TestEnvironment.TestTypeLibrary],
+            OutputDirectory = Path.Combine(root, "Interop"),
+            TargetFrameworks = [TestEnvironment.TargetFramework],
+            PackageSource = TestEnvironment.LocalPackages,
+            GlobalPackagesFolder = TestEnvironment.GlobalPackagesFolder,
+        });
+
+        var output = RunConsumer(root, interop, """
+            using Interop.CsComTest;
+
+            if (args.Length > 100)
+            {
+                Use(null!);
+            }
+
+            Console.WriteLine("Compiled");
+
+            static void Use(ICircle circle)
+            {
+                circle.Name = circle.Name + "!";
+                IShape shape = circle;
+                Console.WriteLine(shape.Name);
+            #if NET11_0_OR_GREATER
+                circle[0] = circle[1];
+                Console.WriteLine(shape[0]);
+            #endif
+            }
+            """);
+
+        CollectionAssert.Contains(output.ToArray(), "Compiled");
+    }
+
+    [TestMethod]
     public void RankedSafeArraysRoundTripThroughComWrappers()
     {
         // The ranks of IArrays.Matrix and IArrays.Names are set by the configuration, so they are marshalled as T[,] by the
@@ -1640,6 +1683,30 @@ public sealed class IntegrationTests
         Assert.AreEqual(0, exitCode, text);
         var warnings = output.Where(static line => line.Contains(": warning ", StringComparison.Ordinal)).ToList();
         Assert.IsEmpty(warnings, text);
+    }
+}
+
+/// <summary>
+/// Moves the setters of <c>IShape.Name</c> and of its default member <c>Item</c> into <c>ICircle</c>, which derives from it, as
+/// if a later version of the interface had added them to the read-only properties.
+/// </summary>
+internal sealed class AccessorsInDerivedInterfaceTransformer : IModelTransformer
+{
+    public void Transform(TypeLibrary library, TransformationContext context)
+    {
+        // The transformers also run on the libraries whose types are imported, e.g. stdole.
+        var interfaces = library.Types.OfType<InterfaceDefinition>().ToList();
+        if (interfaces.SingleOrDefault(static i => i.Name == "IShape") is not { } shape
+            || interfaces.SingleOrDefault(static i => i.Name == "ICircle") is not { } circle)
+        {
+            return;
+        }
+
+        foreach (var setter in shape.Methods.Where(static m => m.InvokeKind == InvokeKind.PropertyPut && m.Name is "Name" or "Item").ToList())
+        {
+            shape.Methods.Remove(setter);
+            circle.Methods.Add(setter);
+        }
     }
 }
 
