@@ -34,4 +34,7 @@ public sealed class LibrarySetReference
 
     /// <summary>Whether overloads are generated for the default values that C# cannot express.</summary>
     public bool? OverloadsForDefaultValues { get; init; }
+
+    /// <summary>How the parameterized properties other than the indexer get indexer syntax through proxies.</summary>
+    public NamedIndexers? NamedIndexers { get; init; }
 }

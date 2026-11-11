@@ -88,6 +88,8 @@ public sealed partial class LibrarySetBuild
             EventStyle = ParseEnum<EventStyle>(request.EventStyle, "CsComEventStyle") ?? EventStyle.Events,
             StructProperties = ParseEnum<StructProperties>(request.StructProperties, "CsComStructProperties") ?? StructProperties.Auto,
             OverloadsForDefaultValues = ParseBoolean(request.OverloadsForDefaultValues, "CsComOverloadsForDefaultValues") ?? false,
+            NamedIndexers = ParseEnum<NamedIndexers>(request.NamedIndexers, "CsComNamedIndexers") ?? NamedIndexers.None,
+            Dynamic = ParseBoolean(request.Dynamic, "CsComDynamic") ?? false,
             DisableRuntimeMarshalling = ParseBoolean(request.DisableRuntimeMarshalling, "CsComDisableRuntimeMarshalling") ?? true,
 
             // The code of the libraries is not documented, and with CsCom.Runtime the interfaces derive from its IDispatch.
@@ -170,6 +172,7 @@ public sealed partial class LibrarySetBuild
             EventStyle = ParseEnum<EventStyle>(reference.EventStyle, "EventStyle", item),
             StructProperties = ParseEnum<StructProperties>(reference.StructProperties, "StructProperties", item),
             OverloadsForDefaultValues = ParseBoolean(reference.OverloadsForDefaultValues, "OverloadsForDefaultValues", item),
+            NamedIndexers = ParseEnum<NamedIndexers>(reference.NamedIndexers, "NamedIndexers", item),
         };
     }
 

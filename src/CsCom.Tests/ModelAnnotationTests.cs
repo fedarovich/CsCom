@@ -158,6 +158,26 @@ public sealed class ModelAnnotationTests
     }
 
     [TestMethod]
+    [DataRow(NamedIndexers.ClassProperty)]
+    [DataRow(NamedIndexers.StructMethod)]
+    public void AnnotatesNamedIndexers(NamedIndexers mode)
+    {
+        var (library, documents, annotations) = Generate(new CodeGenerationOptions { Namespace = "Test", NamedIndexers = mode });
+        var getter = Get<InterfaceDefinition>(library, "IShape").Methods.Single(static m => m.Name == "Coordinate");
+        var root = Root(documents, "IShape.cs");
+
+        var proxy = annotations.GetNodes(root, getter, SyntaxRole.NamedIndexer).ToList();
+        var member = annotations.GetNodes(root, getter, SyntaxRole.Property).Single();
+
+        // The proxy type and its indexer, and the member of the extension block that returns the proxy.
+        Assert.HasCount(2, proxy);
+        Assert.AreEqual("CoordinateIndexer", ((TypeDeclarationSyntax)proxy[0]).Identifier.Text);
+        Assert.IsInstanceOfType<IndexerDeclarationSyntax>(proxy[1]);
+        Assert.AreEqual("Coordinate", member is PropertyDeclarationSyntax property ? property.Identifier.Text : ((MethodDeclarationSyntax)member).Identifier.Text);
+        Assert.AreEqual(mode == NamedIndexers.ClassProperty, member is PropertyDeclarationSyntax);
+    }
+
+    [TestMethod]
     [DataRow(false)]
     [DataRow(true)]
     public void EveryTypeHasOneDeclaration(bool singleFile)

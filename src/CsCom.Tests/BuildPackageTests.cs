@@ -44,7 +44,7 @@ public sealed class BuildPackageTests
         CollectionAssert.AreEqual(
             new[] { "Count=2", "Drawing.Interop.ICanvas", "Ole.Interop.Font", "Interop.CsComTest.IShape" },
             output.TakeLast(4).ToArray());
-        string generated = Path.Combine(Path.GetDirectoryName(project)!, "obj", "Debug", "net10.0-windows", "CsCom");
+        string generated = Path.Combine(Path.GetDirectoryName(project)!, "obj", "Debug", TestEnvironment.TargetFramework, "CsCom");
         CollectionAssert.AreEquivalent(
             new[] { "Drawing.Interop", "Interop.CsComTest", "Interop.Scripting", "Ole.Interop" },
             Directory.GetDirectories(generated).Select(Path.GetFileName).ToArray());
@@ -58,7 +58,34 @@ public sealed class BuildPackageTests
         // Solution Explorer shows the files of the intermediate output under the CsCom folder.
         CollectionAssert.Contains(
             GetItems(project, "Compile"),
-            (@"obj\Debug\net10.0-windows\CsCom\Interop.Scripting\Dictionary.cs", @"CsCom\Interop.Scripting\Dictionary.cs"));
+            ($@"obj\Debug\{TestEnvironment.TargetFramework}\CsCom\Interop.Scripting\Dictionary.cs", @"CsCom\Interop.Scripting\Dictionary.cs"));
+    }
+
+    [TestMethod]
+    public void GeneratesTheLateBindingWithDynamicWithItsPackage()
+    {
+        string project = CreateConsumer(
+            "build-package-dynamic",
+            """<CsComReference Include="Scripting.Dictionary" />""",
+            program: """
+                using Interop.Scripting;
+
+                dynamic dictionary = Dictionary.CreateDynamic();
+                dictionary.Add("a", "one");
+                Console.WriteLine($"Count={dictionary.Count}");
+                """,
+            properties: "<CsComDynamic>true</CsComDynamic>");
+        string directory = Path.GetDirectoryName(project)!;
+
+        // The late binding of the package support code is in CsCom.Runtime.Dynamic, which the project must reference.
+        var (exitCode, output) = DotNetCli.Run(["build", project], directory, NullLogger.Instance);
+        Assert.AreNotEqual(0, exitCode);
+        Assert.IsTrue(
+            output.Any(static line => line.Contains("error CSCOM1000: CsComDynamic requires a reference to the CsCom.Runtime.Dynamic package", StringComparison.Ordinal)),
+            string.Join(Environment.NewLine, output));
+
+        Assert.AreEqual(0, RunCommand("reference", "add", "Scripting.Dictionary", "--project", project, "--dynamic"));
+        Assert.AreEqual("Count=1", Run(project).Last());
     }
 
     [TestMethod]
@@ -135,7 +162,7 @@ public sealed class BuildPackageTests
         var output = Run(project);
 
         Assert.AreEqual("Count=2", output[^4]);
-        string support = Path.Combine(Path.GetDirectoryName(project)!, "obj", "Debug", "net10.0-windows", "CsCom", "Consumer.ComSupport", "IDispatch.cs");
+        string support = Path.Combine(Path.GetDirectoryName(project)!, "obj", "Debug", TestEnvironment.TargetFramework, "CsCom", "Consumer.ComSupport", "IDispatch.cs");
         StringAssert.Contains(File.ReadAllText(support), "internal unsafe partial interface IDispatch");
     }
 
@@ -188,7 +215,7 @@ public sealed class BuildPackageTests
         string text = string.Join(Environment.NewLine, output);
         Assert.AreEqual(0, exitCode, text);
         Assert.IsFalse(output.Any(static line => line.Contains(": warning ", StringComparison.Ordinal)), text);
-        Assert.IsTrue(File.Exists(Path.Combine(Path.GetDirectoryName(project)!, "bin", "Debug", "net10.0-windows", "Consumer.dll")), text);
+        Assert.IsTrue(File.Exists(Path.Combine(Path.GetDirectoryName(project)!, "bin", "Debug", TestEnvironment.TargetFramework, "Consumer.dll")), text);
     }
 
     // A console application in an isolated directory, which restores CsCom.Build and CsCom.Runtime from the local feed. It
@@ -206,7 +233,7 @@ public sealed class BuildPackageTests
             <Project Sdk="Microsoft.NET.Sdk">
               <PropertyGroup>
                 <OutputType>Exe</OutputType>
-                <TargetFramework>net10.0-windows</TargetFramework>
+                <TargetFramework>{TestEnvironment.TargetFramework}</TargetFramework>
                 <ImplicitUsings>enable</ImplicitUsings>
                 <Nullable>enable</Nullable>
                 <GenerateDocumentationFile>true</GenerateDocumentationFile>

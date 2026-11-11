@@ -1,7 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>net10.0-windows</TargetFramework>
+    <!-- The tests run on each supported .NET version, and the integration tests build projects for the version they run on. -->
+    <TargetFrameworks>net10.0-windows;net11.0-windows</TargetFrameworks>
     <IsTestProject>true</IsTestProject>
     <!-- The event tests build DISPPARAMS by hand. -->
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
@@ -21,6 +22,7 @@
 
     <!-- Tested directly, and their packages are restored from the local feed by the integration tests. -->
     <ProjectReference Include="..\CsCom.Runtime\CsCom.Runtime.csproj" />
+    <ProjectReference Include="..\CsCom.Runtime.Dynamic\CsCom.Runtime.Dynamic.csproj" />
     <ProjectReference Include="..\CsCom.Build\CsCom.Build.csproj" />
   </ItemGroup>
 
@@ -38,6 +40,10 @@
     <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
       <_Parameter1>CsComLocalPackagesDir</_Parameter1>
       <_Parameter2>$(CsComLocalPackagesDir)</_Parameter2>
+    </AssemblyAttribute>
+    <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
+      <_Parameter1>CsComTargetFramework</_Parameter1>
+      <_Parameter2>$(TargetFramework)</_Parameter2>
     </AssemblyAttribute>
   </ItemGroup>
 

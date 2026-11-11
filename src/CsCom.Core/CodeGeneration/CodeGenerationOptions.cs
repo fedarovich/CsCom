@@ -60,6 +60,18 @@ public sealed class CodeGenerationOptions
     /// </summary>
     public bool OverloadsForDefaultValues { get; init; }
 
+    /// <summary>
+    /// How the parameterized properties other than the indexer get indexer syntax through proxies, e.g. <c>sheet.Range["A1"]</c>.
+    /// </summary>
+    public NamedIndexers NamedIndexers { get; init; }
+
+    /// <summary>
+    /// Whether the late binding with C# <c>dynamic</c> is generated: the <c>CreateDynamic</c> methods of the coclasses and,
+    /// with <see cref="SupportCodeMode.Public"/> and <see cref="SupportCodeMode.Internal"/>, the support code of
+    /// CsCom.Runtime.Dynamic. With <see cref="SupportCodeMode.Package"/>, the project references the CsCom.Runtime.Dynamic package.
+    /// </summary>
+    public bool Dynamic { get; init; }
+
     /// <summary>The version of the tool written into the file headers.</summary>
     public string ToolVersion { get; init; } = ToolInfo.Version;
 

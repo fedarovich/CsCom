@@ -19,6 +19,18 @@ public sealed partial class AssemblyGenerator
 
         """;
 
+    // The generated code is built with the CsCom.Runtime packages of the version of the tool: NuGet must not silently resolve
+    // a later version (NU1603) when that one is not available from the package sources.
+    private const string IsolationBuildProps = """
+        <Project>
+          <!-- Isolates the temporary project from the MSBuild files of the parent directories. -->
+          <PropertyGroup>
+            <WarningsAsErrors>$(WarningsAsErrors);NU1603</WarningsAsErrors>
+          </PropertyGroup>
+        </Project>
+
+        """;
+
     private const string IsolationPackagesProps = """
         <Project>
           <PropertyGroup>
@@ -178,7 +190,7 @@ public sealed partial class AssemblyGenerator
         string temp = Path.Combine(Path.GetTempPath(), "cscom", Guid.NewGuid().ToString("N"));
 
         Directory.CreateDirectory(temp);
-        File.WriteAllText(Path.Combine(temp, "Directory.Build.props"), IsolationProps);
+        File.WriteAllText(Path.Combine(temp, "Directory.Build.props"), IsolationBuildProps);
         File.WriteAllText(Path.Combine(temp, "Directory.Build.targets"), IsolationProps);
         File.WriteAllText(Path.Combine(temp, "Directory.Packages.props"), IsolationPackagesProps);
         string projectPath = _projectGenerator.WriteProject(
@@ -217,9 +229,15 @@ public sealed partial class AssemblyGenerator
         var (exitCode, output) = DotNetCli.Run(arguments, workingDirectory, _logger);
         if (exitCode != 0)
         {
-            foreach (string line in output.Where(static l => ErrorPattern().IsMatch(l)).Distinct())
+            var errors = output.Where(static l => ErrorPattern().IsMatch(l)).Select(static l => l.Trim()).Distinct().ToList();
+            foreach (string line in errors)
             {
-                LogBuildError(line.Trim());
+                LogBuildError(line);
+            }
+
+            if (IsRuntimePackageMissing(errors))
+            {
+                LogRuntimePackageMissing(ToolInfo.Version);
             }
 
             string action = command == "pack" ? "Packing" : "Building";
@@ -275,8 +293,18 @@ public sealed partial class AssemblyGenerator
         }
     }
 
+    /// <summary>
+    /// Gets whether the errors of the build include a CsCom.Runtime or CsCom.Runtime.Dynamic package that NuGet did not find:
+    /// no package with the ID (NU1101), no matching version (NU1102), or only a later version (NU1603).
+    /// </summary>
+    internal static bool IsRuntimePackageMissing(IEnumerable<string> errors) =>
+        errors.Any(static e => MissingRuntimePackagePattern().IsMatch(e));
+
     [GeneratedRegex(@":\s*error\s+\w+\d+\s*:", RegexOptions.CultureInvariant)]
     private static partial Regex ErrorPattern();
+
+    [GeneratedRegex(@"error\s+NU1(101|102|603)\s*:.*\bCsCom\.Runtime\b", RegexOptions.CultureInvariant | RegexOptions.IgnoreCase)]
+    private static partial Regex MissingRuntimePackagePattern();
 
     // A NuGet version: 2 to 4 numbers, with optional prerelease labels and build metadata.
     [GeneratedRegex(@"^\d+(\.\d+){1,3}(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$", RegexOptions.CultureInvariant)]
@@ -287,6 +315,9 @@ public sealed partial class AssemblyGenerator
 
     [LoggerMessage(Level = LogLevel.Error, Message = "{Line}")]
     private partial void LogBuildError(string line);
+
+    [LoggerMessage(Level = LogLevel.Error, Message = "The CsCom.Runtime packages {Version}, the version of the tool, are not available from the package sources: specify a folder or a feed that has them with --package-source.")]
+    private partial void LogRuntimePackageMissing(string version);
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Created {Name} in '{Directory}'")]
     private partial void LogAssemblyCreated(string name, string directory);

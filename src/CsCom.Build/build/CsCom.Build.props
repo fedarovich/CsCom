@@ -8,7 +8,7 @@
 
     The properties below are the defaults of all the libraries, including those whose types the references only use; the
     metadata of the items (Namespace, ReferencePath, Config, EventStyle, StructProperties, OverloadsForDefaultValues,
-    DateMarshalling, CurrencyMarshalling, BoolMarshalling, BstrMarshalling, SafeArrayMarshalling) override them.
+    NamedIndexers, DateMarshalling, CurrencyMarshalling, BoolMarshalling, BstrMarshalling, SafeArrayMarshalling) override them.
 
     CsComLibrary items set the namespace and the configuration file of a library by its name, whether it is a reference or its
     types are only used by them; the Namespace metadata of a CsComReference wins:
@@ -23,6 +23,16 @@
     <!-- auto or never. -->
     <CsComStructProperties Condition="'$(CsComStructProperties)' == ''">auto</CsComStructProperties>
     <CsComOverloadsForDefaultValues Condition="'$(CsComOverloadsForDefaultValues)' == ''">false</CsComOverloadsForDefaultValues>
+    <!--
+      none, classproperty (sheet.Range["A1"], through a property that returns a proxy class) or structmethod (sheet.Range()["A1"],
+      through a method that returns a proxy struct): the indexer syntax of the parameterized properties other than the indexer.
+    -->
+    <CsComNamedIndexers Condition="'$(CsComNamedIndexers)' == ''">none</CsComNamedIndexers>
+    <!--
+      Generates the late binding with C# dynamic: the CreateDynamic methods of the coclasses, and the support code of
+      CsCom.Runtime.Dynamic. With the package support code, the project must reference the CsCom.Runtime.Dynamic package.
+    -->
+    <CsComDynamic Condition="'$(CsComDynamic)' == ''">false</CsComDynamic>
     <!-- bcl, none or wrapper. -->
     <CsComDateMarshalling Condition="'$(CsComDateMarshalling)' == ''">bcl</CsComDateMarshalling>
     <CsComCurrencyMarshalling Condition="'$(CsComCurrencyMarshalling)' == ''">bcl</CsComCurrencyMarshalling>

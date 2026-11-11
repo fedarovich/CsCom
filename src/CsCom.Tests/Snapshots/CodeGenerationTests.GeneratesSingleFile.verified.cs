@@ -252,9 +252,9 @@ namespace Interop.CsComTest
 
         public object? this[int index] => InvokeGet(0, index);
 
-        public int get_Cell(int row, int column) => global::System.Convert.ToInt32(InvokeMethod(14, row, column));
+        public int get_Cell(int row, int column) => global::System.Convert.ToInt32(InvokeGet(14, row, column));
 
-        public void set_Cell(int row, int column, int value) => InvokeMethod(14, row, column, value);
+        public void set_Cell(int row, int column, int value) => InvokePut(14, value, row, column);
 
         /// <summary>
         /// Returns an enumerator that iterates through the collection, so that it can be used in foreach loops.
@@ -1282,13 +1282,6 @@ namespace Interop.CsComTest
         /// </summary>
         /// <param name="context">The context in which the code that manages the newly created object will run.</param>
         public static IShape Create(global::CsCom.Runtime.ClassContext context = global::CsCom.Runtime.ComActivator.DefaultContext) => global::CsCom.Runtime.ComActivator.CreateInstance<IShape>(Clsid, context);
-
-        /// <summary>
-        /// Creates an instance of the Shape class for late binding with dynamic.
-        /// </summary>
-        /// <param name="context">The context in which the code that manages the newly created object will run.</param>
-        [global::System.Diagnostics.CodeAnalysis.RequiresDynamicCode("Late binding with dynamic requires dynamic code generation and is not compatible with Native AOT.")]
-        public static dynamic CreateDynamic(global::CsCom.Runtime.ClassContext context = global::CsCom.Runtime.ComActivator.DefaultContext) => global::CsCom.Runtime.ComActivator.CreateDynamicInstance(Clsid, context);
     }
 
     /// <summary>
@@ -1317,13 +1310,6 @@ namespace Interop.CsComTest
         /// </summary>
         /// <param name="context">The context in which the code that manages the newly created object will run.</param>
         public static DShapeEvents Create(global::CsCom.Runtime.ClassContext context = global::CsCom.Runtime.ComActivator.DefaultContext) => global::CsCom.Runtime.ComActivator.CreateDispatchInstance<DShapeEvents>(Clsid, context);
-
-        /// <summary>
-        /// Creates an instance of the ShapeEvents class for late binding with dynamic.
-        /// </summary>
-        /// <param name="context">The context in which the code that manages the newly created object will run.</param>
-        [global::System.Diagnostics.CodeAnalysis.RequiresDynamicCode("Late binding with dynamic requires dynamic code generation and is not compatible with Native AOT.")]
-        public static dynamic CreateDynamic(global::CsCom.Runtime.ClassContext context = global::CsCom.Runtime.ComActivator.DefaultContext) => global::CsCom.Runtime.ComActivator.CreateDynamicInstance(Clsid, context);
     }
 
     /// <summary>

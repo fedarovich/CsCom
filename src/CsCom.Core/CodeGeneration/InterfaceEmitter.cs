@@ -126,20 +126,37 @@ internal sealed partial class InterfaceEmitter
     {
         var methodNames = GetMethodNamesInHierarchy(definition);
         var members = new List<MemberDeclarationSyntax>();
+        var namedIndexers = new List<NamedIndexer>();
         bool hasIndexer = false;
 
         foreach (var group in definition.Methods.Where(static m => m.IsProperty && m.MemberId != DispIdNewEnum).GroupBy(static m => m.Name))
         {
-            var getter = group.FirstOrDefault(static m => m.InvokeKind == InvokeKind.PropertyGet);
+            // An interface can add accessors to a property of its base interfaces, e.g. a later version a setter to a read-only
+            // property. Its extension block wins for receivers of its type, so it also takes the accessors it inherits.
+            var getter = group.FirstOrDefault(static m => m.InvokeKind == InvokeKind.PropertyGet)
+                ?? FindInheritedAccessor(definition, group.Key, InvokeKind.PropertyGet);
             var put = group.FirstOrDefault(static m => m.InvokeKind == InvokeKind.PropertyPut);
             var putRef = group.FirstOrDefault(static m => m.InvokeKind == InvokeKind.PropertyPutRef);
+            if (put is null && putRef is null)
+            {
+                put = FindInheritedAccessor(definition, group.Key, InvokeKind.PropertyPut);
+                putRef = FindInheritedAccessor(definition, group.Key, InvokeKind.PropertyPutRef);
+            }
 
             var getterSignature = getter is null ? null : AnalyzeGetter(getter, signatures);
             var setterMethod = put ?? putRef;
             var setterSignature = setterMethod is null ? null : AnalyzeSetter(setterMethod, signatures);
             if (getterSignature is not null && setterSignature is not null && !getterSignature.Matches(setterSignature))
             {
-                setterSignature = null;
+                // The accessors of the interface win over those of a different property of a base interface.
+                if (group.Contains(getter!))
+                {
+                    setterSignature = null;
+                }
+                else
+                {
+                    getterSignature = null;
+                }
             }
 
             var property = getterSignature ?? setterSignature;
@@ -162,11 +179,38 @@ internal sealed partial class InterfaceEmitter
 
                 members.Add(AnnotateAccessors(Property(property.Type, group.Key, getExpression, setExpression, documentation), accessors));
             }
-            else if (_context.Options.SupportsExtensionIndexers && !hasIndexer && IsDefaultMember(definition, group))
+            else if (_context.Options.SupportsExtensionIndexers && !hasIndexer && IsDefaultMember(definition, group.Key, accessors))
             {
                 members.Add(AnnotateAccessors(Indexer(property.Type, property.Index, getExpression, setExpression, documentation), accessors));
                 hasIndexer = true;
             }
+            else if (_context.Options.NamedIndexers != NamedIndexers.None && !methodNames.Contains(group.Key))
+            {
+                namedIndexers.Add(new NamedIndexer(group.Key, property, getterSignature is null ? null : getter, setterSignature is null ? null : setterMethod, documentation));
+            }
+        }
+
+        // The proxies of the other parameterized properties, except one named Item next to the extension indexer, which is
+        // compiled into a property named Item as well.
+        var proxyTypes = new List<MemberDeclarationSyntax>();
+        var takenNames = new HashSet<string>(methodNames.Concat(definition.Methods.Select(static m => m.Name)), StringComparer.Ordinal);
+        foreach (var namedIndexer in namedIndexers.Where(n => !(hasIndexer && n.Name == "Item")))
+        {
+            var (member, type) = NamedIndexerEmitter.Create(
+                _context,
+                namedIndexer.Name,
+                NamedIndexerEmitter.GetTypeName(namedIndexer.Name, takenNames),
+                definition.Name,
+                _context.GetTypeName(definition, @namespace),
+                "@this",
+                namedIndexer.Property.Type,
+                namedIndexer.Property.Index,
+                namedIndexer.Getter is { } getter ? SignatureBuilder.GetMethodName(getter) : null,
+                namedIndexer.Setter is { } setter ? SignatureBuilder.GetMethodName(setter) : null,
+                namedIndexer.Documentation,
+                [.. new[] { namedIndexer.Getter, namedIndexer.Setter }.OfType<MethodDefinition>()]);
+            members.Add(member);
+            proxyTypes.Add(type);
         }
 
         var newEnum = definition.Methods.FirstOrDefault(static m =>
@@ -221,7 +265,7 @@ internal sealed partial class InterfaceEmitter
         return _context.Annotations.Annotate(
             ClassDeclaration(Syntax.Identifier(EmitContext.GetExtensionsClassName(definition)))
                 .WithModifiers(Syntax.Modifiers(_context.Accessibility, SyntaxKind.StaticKeyword, SyntaxKind.PartialKeyword))
-                .WithMembers(SingletonList<MemberDeclarationSyntax>(extension))
+                .WithMembers(List<MemberDeclarationSyntax>([extension, .. proxyTypes]))
                 .WithDocumentation($"Provides the properties of the {definition.Name} interface."),
             definition,
             SyntaxRole.Extensions);
@@ -232,9 +276,26 @@ internal sealed partial class InterfaceEmitter
         where TNode : SyntaxNode =>
         node.WithAdditionalAnnotations(accessors.OfType<MethodDefinition>().Select(a => _context.Annotations.GetAnnotation(a, SyntaxRole.Property)));
 
-    private static bool IsDefaultMember(InterfaceDefinition definition, IGrouping<string, MethodDefinition> group) =>
-        group.Any(static m => m.MemberId == DispIdValue)
-        || (group.Key == "Item" && !definition.Methods.Any(static m => m.IsProperty && m.MemberId == DispIdValue && m.Parameters.Count > 1));
+    private static bool IsDefaultMember(InterfaceDefinition definition, string name, IEnumerable<MethodDefinition?> accessors) =>
+        accessors.Any(static m => m?.MemberId == DispIdValue)
+        || (name == "Item" && !definition.Methods.Any(static m => m.IsProperty && m.MemberId == DispIdValue && m.Parameters.Count > 1));
+
+    // The accessor of a property with the specified invoke kind that the nearest base interface declares.
+    private static MethodDefinition? FindInheritedAccessor(InterfaceDefinition definition, string name, InvokeKind invokeKind)
+    {
+        for (var current = BaseInterfaceOf(definition); current is not null; current = BaseInterfaceOf(current))
+        {
+            if (current.Methods.FirstOrDefault(m => m.IsProperty && m.InvokeKind == invokeKind && string.Equals(m.Name, name, StringComparison.Ordinal)) is { } accessor)
+            {
+                return accessor;
+            }
+        }
+
+        return null;
+    }
+
+    private static InterfaceDefinition? BaseInterfaceOf(InterfaceDefinition definition) =>
+        (definition.BaseInterface as UserDefinedTypeReference)?.Definition as InterfaceDefinition;
 
     private static HashSet<string> GetMethodNamesInHierarchy(InterfaceDefinition definition)
     {
@@ -350,6 +411,9 @@ internal sealed partial class InterfaceEmitter
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Skipping the interface '{Name}', which has no GUID")]
     private static partial void LogMissingGuid(ILogger logger, string name);
+
+    // A parameterized property that gets a proxy, with the accessors that the proxy calls.
+    private sealed record NamedIndexer(string Name, PropertySignature Property, MethodDefinition? Getter, MethodDefinition? Setter, string? Documentation);
 
     private sealed record PropertySignature(string Type, IReadOnlyList<SignatureParameter> Index)
     {

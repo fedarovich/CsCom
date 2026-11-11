@@ -78,6 +78,7 @@ public sealed class CsComReferenceEditorTests
             EventStyle = EventStyle.Observable,
             StructProperties = StructProperties.Never,
             OverloadsForDefaultValues = true,
+            NamedIndexers = NamedIndexers.ClassProperty,
             Marshalling = new MarshallingOverrides
             {
                 Dates = ValueMarshalling.Wrapper,
@@ -91,7 +92,7 @@ public sealed class CsComReferenceEditorTests
         StringAssert.Contains(
             File.ReadAllText(project),
             """<CsComReference Include="lib\CsComDrawing.tlb" Namespace="Drawing.Interop" Config="drawing.cscom.xml" ReferencePath="lib;refs\Office.dll" """ +
-            """EventStyle="observable" StructProperties="never" OverloadsForDefaultValues="true" DateMarshalling="wrapper" CurrencyMarshalling="none" """ +
+            """EventStyle="observable" StructProperties="never" OverloadsForDefaultValues="true" NamedIndexers="classproperty" DateMarshalling="wrapper" CurrencyMarshalling="none" """ +
             """BoolMarshalling="bcl" BstrMarshalling="wrapper" SafeArrayMarshalling="sysarray" />""");
     }
 

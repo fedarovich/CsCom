@@ -1,4 +1,5 @@
 using CsCom.Build;
+using CsCom.CodeGeneration;
 using CsCom.LibrarySets;
 using CsCom.Output;
 
@@ -287,6 +288,29 @@ public sealed class CommandLineTests
     }
 
     [TestMethod]
+    public void NamedIndexersAreRecordedAndCanBeChanged()
+    {
+        string directory = TestEnvironment.CreateDirectory("cli-named-indexers");
+        string shape = Path.Combine(directory, "Generated", "Interop.CsComTest", "IShape.cs");
+
+        Assert.AreEqual(0, Run("project", "create", TestEnvironment.TestTypeLibrary, "-o", directory, "--ni", "structmethod", "-v", "quiet"));
+        Assert.AreEqual(NamedIndexers.StructMethod, CsComManifest.Read(directory).NamedIndexers);
+        StringAssert.Contains(File.ReadAllText(Path.Combine(directory, CsComManifest.FileName)), "\"namedIndexers\": \"structMethod\"");
+        StringAssert.Contains(File.ReadAllText(shape), "public CoordinateIndexer Coordinate() => new(@this);");
+
+        Assert.AreEqual(0, Run("project", "update", "-o", directory, "-v", "quiet"));
+        Assert.AreEqual(NamedIndexers.StructMethod, CsComManifest.Read(directory).NamedIndexers);
+
+        Assert.AreEqual(0, Run("project", "update", "-o", directory, "--named-indexers", "ClassProperty", "-v", "quiet"));
+        Assert.AreEqual(NamedIndexers.ClassProperty, CsComManifest.Read(directory).NamedIndexers);
+        StringAssert.Contains(File.ReadAllText(shape), "public sealed class CoordinateIndexer");
+
+        Assert.AreEqual(0, Run("project", "update", "-o", directory, "--named-indexers", "none", "-v", "quiet"));
+        Assert.AreEqual(NamedIndexers.None, CsComManifest.Read(directory).NamedIndexers);
+        Assert.IsFalse(File.ReadAllText(shape).Contains("CoordinateIndexer", StringComparison.Ordinal));
+    }
+
+    [TestMethod]
     public void ConfigCreateWritesTheStarterFiles()
     {
         string directory = TestEnvironment.CreateDirectory("cli-new-config");
@@ -390,6 +414,35 @@ public sealed class CommandLineTests
         Assert.AreNotEqual(0, Run("update", "project"));
         Assert.AreNotEqual(0, Run("new", "assembly", TestEnvironment.TestTypeLibrary));
         Assert.AreNotEqual(0, Run("new", "config"));
+    }
+
+    [TestMethod]
+    public void GeneratesTheLateBindingWithDynamicOnRequest()
+    {
+        string directory = TestEnvironment.CreateDirectory("cli-dynamic");
+        string shape = Path.Combine(directory, "Generated", "Interop.CsComTest", "Shape.cs");
+
+        Assert.AreEqual(0, Run("project", "create", TestEnvironment.TestTypeLibrary, "-o", directory, "-d", "-v", "quiet"));
+        Assert.IsTrue(CsComManifest.Read(directory).Dynamic);
+        StringAssert.Contains(File.ReadAllText(shape), "CreateDynamic");
+
+        // The recorded value is kept, and can be changed.
+        Assert.AreEqual(0, Run("project", "update", "-o", directory, "-v", "quiet"));
+        StringAssert.Contains(File.ReadAllText(shape), "CreateDynamic");
+        Assert.AreEqual(0, Run("project", "update", "-o", directory, "--dynamic", "false", "-v", "quiet"));
+        Assert.IsFalse(File.ReadAllText(shape).Contains("CreateDynamic", StringComparison.Ordinal));
+        Assert.AreEqual(0, Run("project", "update", "-o", directory, "--dynamic", "-v", "quiet"));
+        StringAssert.Contains(File.ReadAllText(shape), "CreateDynamic");
+
+        // 'reference add --dynamic' sets the property of CsCom.Build and references the package.
+        string consumer = TestEnvironment.CreateDirectory("cli-dynamic-reference");
+        File.WriteAllText(Path.Combine(consumer, "Directory.Packages.props"), "<Project />");
+        string project = Path.Combine(consumer, "App.csproj");
+        File.WriteAllText(project, "<Project Sdk=\"Microsoft.NET.Sdk\">\n  <PropertyGroup>\n    <OutputType>Exe</OutputType>\n  </PropertyGroup>\n</Project>\n");
+        Assert.AreEqual(0, Run("reference", "add", "Scripting.Dictionary", "--project", project, "-d", "-v", "quiet"));
+        string text = File.ReadAllText(project);
+        StringAssert.Contains(text, "    <OutputType>Exe</OutputType>\n    <CsComDynamic>true</CsComDynamic>\n");
+        StringAssert.Contains(text, $"<PackageReference Include=\"CsCom.Build\" Version=\"{ToolInfo.Version}\" />\n    <PackageReference Include=\"CsCom.Runtime.Dynamic\" Version=\"{ToolInfo.Version}\" />");
     }
 
     [TestMethod]

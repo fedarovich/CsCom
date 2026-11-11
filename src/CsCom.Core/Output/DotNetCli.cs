@@ -40,6 +40,10 @@ internal static partial class DotNetCli
         startInfo.Environment["DOTNET_NOLOGO"] = "1";
         startInfo.Environment["DOTNET_CLI_UI_LANGUAGE"] = "en";
 
+        // The worker nodes of a build that uses several, e.g. for several target frameworks, inherit the redirected output, and
+        // MSBuild keeps them running for later builds: the output would only end, and WaitForExit return, minutes after the build.
+        startInfo.Environment["MSBUILDDISABLENODEREUSE"] = "1";
+
         LogRunning(logger, string.Join(' ', arguments));
         var output = new List<string>();
         using var process = new Process { StartInfo = startInfo };

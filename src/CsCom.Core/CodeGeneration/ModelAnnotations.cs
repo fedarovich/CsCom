@@ -53,6 +53,12 @@ public enum SyntaxRole
     /// <c>OverloadsForDefaultValues</c> option.
     /// </summary>
     Overload,
+
+    /// <summary>
+    /// The proxy type of a parameterized property, generated with the <c>NamedIndexers</c> option, and its indexer, which calls
+    /// the accessor methods. The member that returns the proxy has the <see cref="Property"/> role.
+    /// </summary>
+    NamedIndexer,
 }
 
 /// <summary>

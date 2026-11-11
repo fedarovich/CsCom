@@ -45,6 +45,7 @@ public sealed class LibrarySetBuildTests
     [DataRow("SupportCode", "nuget", "'nuget' is not a valid value of CsComSupportCode: one of package, public, internal is expected.")]
     [DataRow("SafeArrayMarshalling", "1", "'1' is not a valid value of CsComSafeArrayMarshalling: one of array, sysarray, wrapper, none is expected.")]
     [DataRow("OverloadsForDefaultValues", "yes", "'yes' is not a valid value of CsComOverloadsForDefaultValues: true or false is expected.")]
+    [DataRow("NamedIndexers", "methods", "'methods' is not a valid value of CsComNamedIndexers: one of none, classproperty, structmethod is expected.")]
     [DataRow("LanguageVersion", "13", "The generated code requires C# 14 or later, but C# 13 is specified.")]
     [DataRow("TargetFramework", "net8.0-windows", "The target framework 'net8.0-windows' is not supported: .NET 10 or later is required.")]
     public void RejectsInvalidProperties(string property, string value, string message)
@@ -58,6 +59,7 @@ public sealed class LibrarySetBuildTests
             SupportCode = property == "SupportCode" ? value : string.Empty,
             SafeArrayMarshalling = property == "SafeArrayMarshalling" ? value : string.Empty,
             OverloadsForDefaultValues = property == "OverloadsForDefaultValues" ? value : string.Empty,
+            NamedIndexers = property == "NamedIndexers" ? value : string.Empty,
             LanguageVersion = property == "LanguageVersion" ? value : string.Empty,
             TargetFramework = property == "TargetFramework" ? value : "net10.0-windows",
             References = [new BuildReference { Source = TestEnvironment.TestTypeLibrary }],

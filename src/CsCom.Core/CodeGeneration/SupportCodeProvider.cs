@@ -6,11 +6,13 @@ using static Microsoft.CodeAnalysis.CSharp.SyntaxFactory;
 namespace CsCom.CodeGeneration;
 
 /// <summary>
-/// Provides the sources of CsCom.Runtime, adapted to be emitted into a generated project.
+/// Provides the sources of CsCom.Runtime and, with <see cref="CodeGenerationOptions.Dynamic"/>, of CsCom.Runtime.Dynamic, adapted
+/// to be emitted into a generated project. Both use the <c>CsCom.Runtime</c> namespace.
 /// </summary>
 internal static class SupportCodeProvider
 {
-    private const string ResourcePrefix = "CsCom.Runtime/";
+    private const string RuntimePrefix = "CsCom.Runtime/";
+    private const string DynamicPrefix = "CsCom.Runtime.Dynamic/";
     private const string RuntimeNamespace = "CsCom.Runtime";
 
     /// <summary>
@@ -21,7 +23,12 @@ internal static class SupportCodeProvider
         var assembly = typeof(SupportCodeProvider).Assembly;
         var rewriter = new Rewriter(options);
         var files = new List<(string, CompilationUnitSyntax)>();
-        foreach (string resource in assembly.GetManifestResourceNames().Where(static n => n.StartsWith(ResourcePrefix, StringComparison.Ordinal)).Order(StringComparer.Ordinal))
+        string[] prefixes = options.Dynamic ? [RuntimePrefix, DynamicPrefix] : [RuntimePrefix];
+        var resources = assembly.GetManifestResourceNames()
+            .Select(name => (Name: name, Prefix: prefixes.FirstOrDefault(p => name.StartsWith(p, StringComparison.Ordinal))))
+            .Where(static r => r.Prefix is not null)
+            .OrderBy(static r => r.Name[r.Prefix!.Length..], StringComparer.Ordinal);
+        foreach (var (resource, prefix) in resources)
         {
             using var stream = assembly.GetManifestResourceStream(resource)!;
             using var reader = new StreamReader(stream);
@@ -29,7 +36,7 @@ internal static class SupportCodeProvider
             // The line breaks of the embedded sources depend on how they were checked out.
             string text = reader.ReadToEnd().ReplaceLineEndings(SyntaxFormatter.EndOfLine);
             var root = (CompilationUnitSyntax)CSharpSyntaxTree.ParseText(text, Syntax.ParseOptions).GetRoot();
-            files.Add((resource[ResourcePrefix.Length..], (CompilationUnitSyntax)rewriter.Visit(root)));
+            files.Add((resource[prefix!.Length..], (CompilationUnitSyntax)rewriter.Visit(root)));
         }
 
         return files;

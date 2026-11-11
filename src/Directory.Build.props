@@ -28,8 +28,9 @@
   </PropertyGroup>
 
   <PropertyGroup>
-    <!-- Local feed that receives the CsCom.Runtime package on every build. -->
+    <!-- Local feed that receives the packages of dotnet pack, from which the integration tests restore them. -->
     <CsComLocalPackagesDir>$([MSBuild]::NormalizeDirectory('$(MSBuildThisFileDirectory)', '..', 'artifacts', 'packages'))</CsComLocalPackagesDir>
+    <PackageOutputPath>$(CsComLocalPackagesDir)</PackageOutputPath>
   </PropertyGroup>
 
 </Project>

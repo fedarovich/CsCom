@@ -29,9 +29,16 @@ public static class TestEnvironment
     public static string StdOle { get; } = Path.Combine(Environment.SystemDirectory, "stdole2.tlb");
 
     /// <summary>The local feed with the CsCom.Runtime package built with the tests.</summary>
-    public static string LocalPackages { get; } = typeof(TestEnvironment).Assembly
-        .GetCustomAttributes<AssemblyMetadataAttribute>()
-        .Single(static a => a.Key == "CsComLocalPackagesDir").Value!;
+    public static string LocalPackages { get; } = GetMetadata("CsComLocalPackagesDir");
+
+    /// <summary>
+    /// The target framework of the tests, e.g. <c>net11.0-windows</c>, for which the integration tests generate and build the
+    /// projects.
+    /// </summary>
+    public static string TargetFramework { get; } = GetMetadata("CsComTargetFramework");
+
+    /// <summary>The name of the target framework of the tests, e.g. <c>.NETCoreApp,Version=v11.0</c>.</summary>
+    public static string FrameworkName { get; } = typeof(TestEnvironment).Assembly.GetCustomAttribute<System.Runtime.Versioning.TargetFrameworkAttribute>()!.FrameworkName;
 
     /// <summary>
     /// The NuGet global packages folder used by the projects built by the tests, so that a CsCom.Runtime package
@@ -55,6 +62,9 @@ public static class TestEnvironment
         Directory.CreateDirectory(path);
         return path;
     }
+
+    private static string GetMetadata(string key) =>
+        typeof(TestEnvironment).Assembly.GetCustomAttributes<AssemblyMetadataAttribute>().Single(a => a.Key == key).Value!;
 
     [AssemblyCleanup]
     public static void Cleanup()

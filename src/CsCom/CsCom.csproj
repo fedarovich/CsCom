@@ -18,8 +18,6 @@
     <PackageId>CsCom</PackageId>
     <Description>Generates COM interop assemblies and projects from type libraries using source-generated COM interop, so that they can be used with Native AOT.</Description>
     <PackageTags>COM;interop;tlbimp;ComWrappers;NativeAOT</PackageTags>
-    <!-- The bundled CsCom.Runtime package would be excluded by default. -->
-    <NoDefaultExcludes>true</NoDefaultExcludes>
   </PropertyGroup>
 
   <ItemGroup>
@@ -30,21 +28,10 @@
 
   <ItemGroup>
     <ProjectReference Include="..\CsCom.Core\CsCom.Core.csproj" />
-
-    <!-- Builds the CsCom.Runtime package, which is bundled with the tool and used to build interop assemblies. -->
-    <ProjectReference Include="..\CsCom.Runtime\CsCom.Runtime.csproj" ReferenceOutputAssembly="false" />
   </ItemGroup>
 
   <ItemGroup>
     <InternalsVisibleTo Include="CsCom.Tests" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <None Include="$(CsComLocalPackagesDir)CsCom.Runtime.$(Version).nupkg"
-          Link="packages\CsCom.Runtime.$(Version).nupkg"
-          CopyToOutputDirectory="PreserveNewest"
-          CopyToPublishDirectory="PreserveNewest"
-          Visible="false" />
   </ItemGroup>
 
   <ItemGroup>

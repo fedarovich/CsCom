@@ -58,9 +58,9 @@ public sealed partial class DShapeEvents : global::CsCom.Runtime.DispatchObject,
 
     public object? this[int index] => InvokeGet(0, index);
 
-    public int get_Cell(int row, int column) => global::System.Convert.ToInt32(InvokeMethod(14, row, column));
+    public int get_Cell(int row, int column) => global::System.Convert.ToInt32(InvokeGet(14, row, column));
 
-    public void set_Cell(int row, int column, int value) => InvokeMethod(14, row, column, value);
+    public void set_Cell(int row, int column, int value) => InvokePut(14, value, row, column);
 
     /// <summary>
     /// Returns an enumerator that iterates through the collection, so that it can be used in foreach loops.

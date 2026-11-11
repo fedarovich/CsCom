@@ -437,6 +437,46 @@ public sealed class ProjectGeneratorTests
         Assert.IsFalse(json.Contains("\"typeLibrary\"", StringComparison.Ordinal));
         Assert.IsFalse(json.Contains("\"namespace\"", StringComparison.Ordinal));
         Assert.IsFalse(json.Contains("\"configuration\"", StringComparison.Ordinal));
+
+        // Earlier versions always generated the late binding with dynamic, which the update keeps and records.
+        Assert.IsTrue(manifest.Dynamic);
+        StringAssert.Contains(File.ReadAllText(Path.Combine(directory, "Generated", "Legacy.Interop", "Shape.cs")), "CreateDynamic");
+    }
+
+    [TestMethod]
+    public void AddsAndRemovesTheDynamicPackage()
+    {
+        string directory = TestEnvironment.CreateDirectory("dynamic-package");
+        string project = _generator.CreateProject(new CreateProjectRequest { Sources = [TestEnvironment.TestTypeLibrary], OutputDirectory = directory, Dynamic = true });
+        string shape = Path.Combine(directory, "Generated", "Interop.CsComTest", "Shape.cs");
+
+        string text = File.ReadAllText(project);
+        StringAssert.Contains(text, $"    <PackageReference Include=\"CsCom.Runtime\" Version=\"{ToolInfo.Version}\" />\r\n    <PackageReference Include=\"CsCom.Runtime.Dynamic\" Version=\"{ToolInfo.Version}\" />".ReplaceLineEndings());
+        Assert.IsTrue(CsComManifest.Read(directory).Dynamic);
+        StringAssert.Contains(File.ReadAllText(shape), "CreateDynamic");
+
+        // The recorded value is kept unless it is changed; turning it off removes the package reference.
+        _generator.UpdateProject(new UpdateProjectRequest { ProjectDirectory = directory });
+        Assert.AreEqual(text, File.ReadAllText(project));
+        _generator.UpdateProject(new UpdateProjectRequest { ProjectDirectory = directory, Dynamic = false });
+        Assert.IsFalse(File.ReadAllText(project).Contains("CsCom.Runtime.Dynamic", StringComparison.Ordinal));
+        Assert.IsFalse(File.ReadAllText(shape).Contains("CreateDynamic", StringComparison.Ordinal));
+        Assert.IsFalse(CsComManifest.Read(directory).Dynamic);
+
+        _generator.UpdateProject(new UpdateProjectRequest { ProjectDirectory = directory, Dynamic = true });
+        Assert.AreEqual(text, File.ReadAllText(project));
+
+        // A project with the support code emitted into it gets no package reference, but the code of CsCom.Runtime.Dynamic.
+        string inline = TestEnvironment.CreateDirectory("dynamic-inline");
+        string inlineProject = _generator.CreateProject(new CreateProjectRequest
+        {
+            Sources = [TestEnvironment.TestTypeLibrary],
+            OutputDirectory = inline,
+            SupportCode = SupportCodeMode.Internal,
+            Dynamic = true,
+        });
+        Assert.IsFalse(File.ReadAllText(inlineProject).Contains("PackageReference", StringComparison.Ordinal));
+        Assert.IsTrue(File.Exists(Path.Combine(inline, "Generated", "Interop.CsComTest.ComSupport", "DynamicDispatchObject.cs")));
     }
 
     [TestMethod]
