@@ -61,11 +61,65 @@ internal static class SyntaxFormatter
             return visited.WithMembers(Separate(visited.Members, includeFirst: false));
         }
 
+        public override SyntaxNode? VisitRecordDeclaration(RecordDeclarationSyntax node)
+        {
+            var visited = (RecordDeclarationSyntax)base.VisitRecordDeclaration(node)!;
+            return visited.WithMembers(Separate(visited.Members, includeFirst: false));
+        }
+
         public override SyntaxNode? VisitInterfaceDeclaration(InterfaceDeclarationSyntax node)
         {
             var visited = (InterfaceDeclarationSyntax)base.VisitInterfaceDeclaration(node)!;
             return visited.WithMembers(Separate(visited.Members, includeFirst: false));
         }
+
+        public override SyntaxNode? VisitPropertyDeclaration(PropertyDeclarationSyntax node)
+        {
+            var visited = (PropertyDeclarationSyntax)base.VisitPropertyDeclaration(node)!;
+            return visited.AccessorList is { } accessors && HasAttributes(accessors)
+                ? visited.WithIdentifier(visited.Identifier.WithTrailingTrivia(CarriageReturnLineFeed)).WithAccessorList(BreakLines(accessors, GetIndentation(visited)))
+                : visited;
+        }
+
+        public override SyntaxNode? VisitIndexerDeclaration(IndexerDeclarationSyntax node)
+        {
+            var visited = (IndexerDeclarationSyntax)base.VisitIndexerDeclaration(node)!;
+            if (visited.AccessorList is not { } accessors || !HasAttributes(accessors))
+            {
+                return visited;
+            }
+
+            var parameters = visited.ParameterList;
+            return visited
+                .WithParameterList(parameters.WithCloseBracketToken(parameters.CloseBracketToken.WithTrailingTrivia(CarriageReturnLineFeed)))
+                .WithAccessorList(BreakLines(accessors, GetIndentation(visited)));
+        }
+
+        private static bool HasAttributes(AccessorListSyntax accessors) => accessors.Accessors.Any(static a => a.AttributeLists.Count > 0);
+
+        // NormalizeWhitespace keeps the accessors with expression bodies on the line of the declaration, also when they have
+        // attributes, e.g. [MethodImpl(...)]. They are put on lines of their own, like the accessors with block bodies.
+        private static AccessorListSyntax BreakLines(AccessorListSyntax list, string indentation)
+        {
+            var inner = Whitespace(indentation + "    ");
+            var accessors = list.Accessors.Select(accessor =>
+            {
+                var attributes = accessor.AttributeLists.Select(a => a.WithLeadingTrivia(inner).WithTrailingTrivia(CarriageReturnLineFeed));
+                return accessor
+                    .WithAttributeLists(List(attributes))
+                    .WithKeyword(accessor.Keyword.WithLeadingTrivia(inner))
+                    .WithSemicolonToken(accessor.SemicolonToken.WithTrailingTrivia(CarriageReturnLineFeed));
+            });
+
+            return list
+                .WithOpenBraceToken(list.OpenBraceToken.WithLeadingTrivia(Whitespace(indentation)).WithTrailingTrivia(CarriageReturnLineFeed))
+                .WithAccessors(List(accessors))
+                .WithCloseBraceToken(list.CloseBraceToken.WithLeadingTrivia(Whitespace(indentation)));
+        }
+
+        // The indentation of a member: the whitespace before its first token, after its documentation.
+        private static string GetIndentation(SyntaxNode node) =>
+            node.GetLeadingTrivia().LastOrDefault(static t => t.IsKind(SyntaxKind.WhitespaceTrivia)).ToString();
 
         public override SyntaxNode? VisitExtensionBlockDeclaration(ExtensionBlockDeclarationSyntax node)
         {

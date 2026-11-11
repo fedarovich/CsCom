@@ -66,10 +66,19 @@ internal sealed class DispatchWrapperEmitter
             }
         }
 
-        // _NewEnum is exposed via GetEnumerator.
+        // _NewEnum is exposed via GetEnumerator. The parameterized properties that are not the indexer can get proxies.
+        var proxyTypes = new List<MemberDeclarationSyntax>();
+        var takenNames = new HashSet<string>(memberNames.Append(definition.Name).Concat(definition.Methods.Select(static m => m.Name)), StringComparer.Ordinal);
         foreach (var group in definition.Methods.Where(static m => m.IsProperty && m.MemberId != DispIdNewEnum).GroupBy(static m => m.Name))
         {
-            EmitProperty(group, signatures, members, ref hasIndexer);
+            if (!EmitProperty(group, signatures, members, ref hasIndexer)
+                && _context.Options.NamedIndexers != NamedIndexers.None
+                && !memberNames.Contains(group.Key)
+                && EmitNamedIndexer(group, signatures, definition.Name, self, takenNames) is { } proxy)
+            {
+                members.Add(proxy.Member);
+                proxyTypes.Add(proxy.Type);
+            }
         }
 
         NameIndexer(definition, members);
@@ -85,6 +94,7 @@ internal sealed class DispatchWrapperEmitter
                 SyntaxRole.Enumerator));
         }
 
+        members.AddRange(proxyTypes);
         return _context.Annotations.Annotate(
             ClassDeclaration(Syntax.Identifier(definition.Name))
                 .WithModifiers(Syntax.Modifiers(_context.Accessibility, SyntaxKind.SealedKeyword, SyntaxKind.PartialKeyword))
@@ -112,7 +122,15 @@ internal sealed class DispatchWrapperEmitter
 
         if (!parameters.Any(static p => p.IsByRef))
         {
-            string call = $"InvokeMethod({string.Join(", ", [id, .. parameters.Select(Argument)])})";
+            // The accessors of properties that are not properties or the indexer of the wrapper are invoked with the flags of
+            // properties, since objects reject DISPATCH_METHOD for them. The value of a setter is passed first.
+            string call = method.InvokeKind switch
+            {
+                InvokeKind.PropertyGet => $"InvokeGet({string.Join(", ", [id, .. parameters.Select(Argument)])})",
+                InvokeKind.PropertyPut or InvokeKind.PropertyPutRef when parameters.Count > 0 =>
+                    $"{(method.InvokeKind == InvokeKind.PropertyPut ? "InvokePut" : "InvokePutRef")}({string.Join(", ", [id, Argument(parameters[^1]), .. parameters.SkipLast(1).Select(Argument)])})",
+                _ => $"InvokeMethod({string.Join(", ", [id, .. parameters.Select(Argument)])})",
+            };
             return _context.Annotations.Annotate(
                 declaration
                     .WithExpressionBody(Syntax.Arrow(returnType.IsVoid ? call : returnType.FromObject(call)))
@@ -146,7 +164,9 @@ internal sealed class DispatchWrapperEmitter
         return _context.Annotations.Annotate(declaration.WithBody(Block(statements)).WithDocumentation(method.Documentation), method);
     }
 
-    private void EmitProperty(IGrouping<string, MethodDefinition> group, SignatureBuilder signatures, List<MemberDeclarationSyntax> members, ref bool hasIndexer)
+    // Emits a property or the indexer, and the accessors that they do not cover as methods. Returns whether a property or the
+    // indexer was emitted.
+    private bool EmitProperty(IGrouping<string, MethodDefinition> group, SignatureBuilder signatures, List<MemberDeclarationSyntax> members, ref bool hasIndexer)
     {
         var getter = group.FirstOrDefault(static m => m.InvokeKind == InvokeKind.PropertyGet);
         var put = group.FirstOrDefault(static m => m.InvokeKind == InvokeKind.PropertyPut);
@@ -204,6 +224,65 @@ internal sealed class DispatchWrapperEmitter
                 members.Add(Method(accessor, signatures));
             }
         }
+
+        return emitted;
+    }
+
+    // The proxy of a parameterized property that is not the indexer, whose indexer calls the accessor methods emitted by
+    // EmitProperty. It has their signatures, so optional parameters keep their default values, which the methods replace with
+    // Missing.Value.
+    private (MemberDeclarationSyntax Member, TypeDeclarationSyntax Type)? EmitNamedIndexer(
+        IGrouping<string, MethodDefinition> group, SignatureBuilder signatures, string owner, string self, ISet<string> takenNames)
+    {
+        var getter = group.FirstOrDefault(static m => m.InvokeKind == InvokeKind.PropertyGet);
+        var setter = group.FirstOrDefault(static m => m.InvokeKind == InvokeKind.PropertyPut) ?? group.FirstOrDefault(static m => m.InvokeKind == InvokeKind.PropertyPutRef);
+
+        LateBoundType? valueType = null;
+        List<SignatureParameter>? index = null;
+        if (getter is not null && signatures.MapLateBoundSignature(getter) is var (returnType, getterParameters)
+            && !returnType.IsVoid && getterParameters.Count > 0 && !getterParameters.Any(static p => p.IsByRef))
+        {
+            valueType = returnType;
+            index = getterParameters;
+        }
+        else
+        {
+            getter = null;
+        }
+
+        if (setter is not null && signatures.MapLateBoundSignature(setter).Parameters is var setterParameters
+            && setterParameters.Count > 1 && !setterParameters.Any(static p => p.IsByRef)
+            && (index is null || (setterParameters[^1].TypeName == valueType!.Name && SameTypes(index, setterParameters[..^1]))))
+        {
+            index ??= setterParameters[..^1];
+            valueType ??= new LateBoundType(setterParameters[^1].TypeName, static x => x);
+        }
+        else
+        {
+            setter = null;
+        }
+
+        if (index is null)
+        {
+            return null;
+        }
+
+        return NamedIndexerEmitter.Create(
+            _context,
+            group.Key,
+            NamedIndexerEmitter.GetTypeName(group.Key, takenNames),
+            owner,
+            self,
+            "this",
+            valueType!.Name,
+            index,
+            getter is null ? null : SignatureBuilder.GetMethodName(getter),
+            setter is null ? null : SignatureBuilder.GetMethodName(setter),
+            (getter ?? setter)!.Documentation,
+            [.. new[] { getter, setter }.OfType<MethodDefinition>()]);
+
+        static bool SameTypes(IReadOnlyList<SignatureParameter> first, IReadOnlyList<SignatureParameter> second) =>
+            first.Count == second.Count && first.Zip(second).All(static pair => pair.First.TypeName == pair.Second.TypeName);
     }
 
     // An indexer is compiled into a property named Item, which conflicts with the members named Item, get_Item or set_Item,

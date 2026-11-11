@@ -110,6 +110,7 @@ public sealed partial class ProjectGenerator
             EventStyle = request.EventStyle ?? manifest.EventStyle,
             StructProperties = request.StructProperties ?? manifest.StructProperties,
             OverloadsForDefaultValues = request.OverloadsForDefaultValues ?? manifest.OverloadsForDefaultValues,
+            NamedIndexers = request.NamedIndexers ?? manifest.NamedIndexers,
             Dynamic = request.Dynamic ?? manifest.IsDynamic,
             ReferencePaths = referencePaths,
         };
@@ -243,6 +244,7 @@ public sealed partial class ProjectGenerator
             EventStyle = request.EventStyle,
             StructProperties = request.StructProperties,
             OverloadsForDefaultValues = request.OverloadsForDefaultValues,
+            NamedIndexers = request.NamedIndexers,
             Dynamic = request.Dynamic,
             ReferencePaths = request.ReferencePaths.Count > 0 ? [.. request.ReferencePaths.Select(Path.GetFullPath)] : null,
         };
@@ -265,6 +267,7 @@ public sealed partial class ProjectGenerator
             EventStyle = settings.EventStyle,
             StructProperties = settings.StructProperties,
             OverloadsForDefaultValues = settings.OverloadsForDefaultValues,
+            NamedIndexers = settings.NamedIndexers,
             Dynamic = settings.IsDynamic,
             Namespaces = namespaces,
             ConfigurationPaths = configurations,

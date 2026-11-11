@@ -26,7 +26,7 @@ public sealed class CsComGenerate : ToolTask
     // The metadata of the CsComReference items passed to the generator.
     private static readonly string[] ReferenceMetadata =
     [
-        "Namespace", "ReferencePath", "Config", "EventStyle", "StructProperties", "OverloadsForDefaultValues",
+        "Namespace", "ReferencePath", "Config", "EventStyle", "StructProperties", "OverloadsForDefaultValues", "NamedIndexers",
         "DateMarshalling", "CurrencyMarshalling", "BoolMarshalling", "BstrMarshalling", "SafeArrayMarshalling",
     ];
 
@@ -77,6 +77,9 @@ public sealed class CsComGenerate : ToolTask
 
     /// <summary>Gets or sets whether overloads are generated for default values by default.</summary>
     public string OverloadsForDefaultValues { get; set; } = string.Empty;
+
+    /// <summary>Gets or sets the default proxies of the parameterized properties: <c>none</c>, <c>classproperty</c> or <c>structmethod</c>.</summary>
+    public string NamedIndexers { get; set; } = string.Empty;
 
     /// <summary>Gets or sets whether the late binding with <c>dynamic</c> is generated.</summary>
     public string Dynamic { get; set; } = string.Empty;
@@ -196,6 +199,7 @@ public sealed class CsComGenerate : ToolTask
         json.Property("eventStyle", EventStyle);
         json.Property("structProperties", StructProperties);
         json.Property("overloadsForDefaultValues", OverloadsForDefaultValues);
+        json.Property("namedIndexers", NamedIndexers);
         json.Property("dynamic", Dynamic);
         json.Property("dateMarshalling", DateMarshalling);
         json.Property("currencyMarshalling", CurrencyMarshalling);

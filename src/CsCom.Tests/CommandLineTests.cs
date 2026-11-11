@@ -1,4 +1,5 @@
 using CsCom.Build;
+using CsCom.CodeGeneration;
 using CsCom.LibrarySets;
 using CsCom.Output;
 
@@ -284,6 +285,29 @@ public sealed class CommandLineTests
         Assert.AreEqual(0, Run("project", "update", "-o", directory, "--overloads-for-default-values", "false", "-v", "quiet"));
         Assert.IsFalse(CsComManifest.Read(directory).OverloadsForDefaultValues);
         Assert.IsFalse(File.ReadAllText(shape).Contains("ComBool.True", StringComparison.Ordinal));
+    }
+
+    [TestMethod]
+    public void NamedIndexersAreRecordedAndCanBeChanged()
+    {
+        string directory = TestEnvironment.CreateDirectory("cli-named-indexers");
+        string shape = Path.Combine(directory, "Generated", "Interop.CsComTest", "IShape.cs");
+
+        Assert.AreEqual(0, Run("project", "create", TestEnvironment.TestTypeLibrary, "-o", directory, "--ni", "structmethod", "-v", "quiet"));
+        Assert.AreEqual(NamedIndexers.StructMethod, CsComManifest.Read(directory).NamedIndexers);
+        StringAssert.Contains(File.ReadAllText(Path.Combine(directory, CsComManifest.FileName)), "\"namedIndexers\": \"structMethod\"");
+        StringAssert.Contains(File.ReadAllText(shape), "public CoordinateIndexer Coordinate() => new(@this);");
+
+        Assert.AreEqual(0, Run("project", "update", "-o", directory, "-v", "quiet"));
+        Assert.AreEqual(NamedIndexers.StructMethod, CsComManifest.Read(directory).NamedIndexers);
+
+        Assert.AreEqual(0, Run("project", "update", "-o", directory, "--named-indexers", "ClassProperty", "-v", "quiet"));
+        Assert.AreEqual(NamedIndexers.ClassProperty, CsComManifest.Read(directory).NamedIndexers);
+        StringAssert.Contains(File.ReadAllText(shape), "public sealed class CoordinateIndexer");
+
+        Assert.AreEqual(0, Run("project", "update", "-o", directory, "--named-indexers", "none", "-v", "quiet"));
+        Assert.AreEqual(NamedIndexers.None, CsComManifest.Read(directory).NamedIndexers);
+        Assert.IsFalse(File.ReadAllText(shape).Contains("CoordinateIndexer", StringComparison.Ordinal));
     }
 
     [TestMethod]

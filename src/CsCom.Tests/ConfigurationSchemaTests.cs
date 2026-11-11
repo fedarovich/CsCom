@@ -22,6 +22,7 @@ public sealed class ConfigurationSchemaTests
                 <AddFlagsAttribute TypeName="Color" />
                 <AddAttribute Type="^IShape$" Kind="interface" Member="^Move$" Role="Declaration" Attribute="System.Obsolete" />
                 <AddAttribute TypeName="IShape" MemberName="Move" Role="EventSink" Attribute="System.Obsolete" />
+                <AddAttribute TypeName="IShape" MemberName="Coordinate" Role="NamedIndexer" Attribute="System.Obsolete" />
               </SyntaxTransformers>
               <ModelTransformers>
                 <RenameType Type="^I(.*)$" Kind="interface | dispinterface" NewName="$1" />
@@ -48,7 +49,7 @@ public sealed class ConfigurationSchemaTests
         CollectionAssert.AreEqual(Array.Empty<string>(), Validate(document).ToArray());
         var configuration = PipelineConfiguration.Parse(document, TransformerRegistry.CreateDefault());
         Assert.HasCount(16, configuration.ModelTransformers);
-        Assert.HasCount(3, configuration.SyntaxTransformers);
+        Assert.HasCount(4, configuration.SyntaxTransformers);
     }
 
     [TestMethod]

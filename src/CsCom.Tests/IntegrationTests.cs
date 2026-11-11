@@ -759,6 +759,65 @@ public sealed class IntegrationTests
     }
 
     [TestMethod]
+    [DataRow(NamedIndexers.ClassProperty, false)]
+    [DataRow(NamedIndexers.StructMethod, false)]
+    [DataRow(NamedIndexers.ClassProperty, true)]
+    [DataRow(NamedIndexers.StructMethod, true)]
+    public void NamedIndexersOfScriptingRuntimeRun(NamedIndexers mode, bool lateBound)
+    {
+        // Key is a named property with a setter only: it renames a key of the dictionary. With lateBound, the dual interfaces
+        // are turned into dispinterfaces, whose wrappers have the proxies as instance members.
+        var pipeline = new InteropPipeline();
+        if (lateBound)
+        {
+            pipeline.ModelTransformers.Add(new LateBindingTransformer());
+        }
+
+        string root = TestEnvironment.CreateDirectory($"named-indexers-{mode}-{lateBound}");
+        string interop = new ProjectGenerator(pipeline).CreateProject(new CreateProjectRequest
+        {
+            Sources = [TestEnvironment.ScriptingRuntime],
+            OutputDirectory = Path.Combine(root, "Interop"),
+            NamedIndexers = mode,
+            TargetFrameworks = [TestEnvironment.TargetFramework],
+            PackageSource = TestEnvironment.LocalPackages,
+            GlobalPackagesFolder = TestEnvironment.GlobalPackagesFolder,
+        });
+
+        // The member that returns the proxy is a property of the extension block or of the wrapper, or a method.
+        bool isClass = mode == NamedIndexers.ClassProperty;
+        string container = lateBound ? "IDictionary" : "IDictionaryExtensions";
+        string member = (isClass, lateBound) switch
+        {
+            (true, false) => """typeof(IDictionaryExtensions).GetMethod("get_Key", [typeof(IDictionary)])!""",
+            (true, true) => """typeof(IDictionary).GetProperty("Key")!.GetMethod!""",
+            (false, false) => """typeof(IDictionaryExtensions).GetMethod("Key", [typeof(IDictionary)])!""",
+            (false, true) => """typeof(IDictionary).GetMethod("Key", Type.EmptyTypes)!""",
+        };
+        var output = RunConsumer(root, interop, $$"""
+            using System.Reflection;
+            using Interop.Scripting;
+
+            IDictionary dictionary = Dictionary.Create();
+            dictionary.Add("a", 1);
+            dictionary.{{(isClass ? "Key" : "Key()")}}["a"] = "z";
+            Console.WriteLine($"Exists={dictionary.Exists("z")}|{dictionary.Exists("a")}");
+
+            // The members of the proxy class are inlined, so that the JIT can allocate it on the stack.
+            var proxy = typeof({{container}}.KeyIndexer);
+            MethodBase[] members = [{{member}}, proxy.GetProperty("Item")!.SetMethod!, proxy.GetConstructors(BindingFlags.NonPublic | BindingFlags.Instance).Single()];
+            Console.WriteLine($"Proxy={(proxy.IsValueType ? "struct" : "class")}");
+            Console.WriteLine($"Inlining={string.Join(",", members.Select(static m => m.MethodImplementationFlags.HasFlag(MethodImplAttributes.AggressiveInlining)))}");
+            """);
+
+        string inlining = isClass ? "True,True,True" : "False,False,False";
+        CollectionAssert.IsSubsetOf(
+            new[] { "Exists=True|False", $"Proxy={(isClass ? "class" : "struct")}", $"Inlining={inlining}" },
+            output.ToArray(),
+            string.Join(Environment.NewLine, output));
+    }
+
+    [TestMethod]
     public void PropertiesOfDerivedInterfacesHaveTheInheritedAccessors()
     {
         // ICircle adds the setters of the read-only Name and Item (the extension indexer of C# 15) of IShape. Its extension block

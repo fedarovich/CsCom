@@ -65,6 +65,7 @@
                    EventStyle="$(CsComEventStyle)"
                    StructProperties="$(CsComStructProperties)"
                    OverloadsForDefaultValues="$(CsComOverloadsForDefaultValues)"
+                   NamedIndexers="$(CsComNamedIndexers)"
                    Dynamic="$(CsComDynamic)"
                    DateMarshalling="$(CsComDateMarshalling)"
                    CurrencyMarshalling="$(CsComCurrencyMarshalling)"

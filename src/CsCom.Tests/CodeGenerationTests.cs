@@ -484,6 +484,68 @@ public sealed class CodeGenerationTests : VerifyBase
         }
     }
 
+    [TestMethod]
+    [DataRow(NamedIndexers.ClassProperty)]
+    [DataRow(NamedIndexers.StructMethod)]
+    public Task GeneratesNamedIndexers(NamedIndexers mode)
+    {
+        // With C# 14, the default member of IShape has no extension indexer, so Item gets a proxy like Coordinate. The default
+        // member of DShapeEvents is the indexer of its wrapper, and Cell gets a proxy.
+        var documents = Generate(new CodeGenerationOptions { Namespace = "Interop.CsComTest", NamedIndexers = mode, ToolVersion = TestEnvironment.ToolVersion });
+
+        return Verify(ToTargets(documents.Where(static d => d.RelativePath is "IShape.cs" or "DShapeEvents.cs")))
+            .UseParameters(mode);
+    }
+
+    [TestMethod]
+    public void NamedIndexersLeaveTheDefaultMemberToTheExtensionIndexer()
+    {
+        var documents = Generate(new CodeGenerationOptions
+        {
+            Namespace = "Interop.CsComTest",
+            LanguageVersion = 15,
+            NamedIndexers = NamedIndexers.ClassProperty,
+            ToolVersion = TestEnvironment.ToolVersion,
+        });
+
+        string shape = documents.Single(static d => d.RelativePath == "IShape.cs").GetText();
+        StringAssert.Contains(shape, "public object? this[object? index] { get => @this.get_Item(index); set => @this.set_Item(index, value); }");
+        StringAssert.Contains(shape, "public CoordinateIndexer Coordinate");
+        Assert.IsFalse(shape.Contains("ItemIndexer", StringComparison.Ordinal));
+    }
+
+    [TestMethod]
+    [DataRow(NamedIndexers.ClassProperty)]
+    [DataRow(NamedIndexers.StructMethod)]
+    public void NamedIndexersHaveTheDefaultValuesOfOptionalIndexParameters(NamedIndexers mode)
+    {
+        var pipeline = new InteropPipeline();
+        pipeline.ModelTransformers.Add(new OptionalCoordinateIndexTransformer());
+        var documents = pipeline.GenerateCode(
+            pipeline.ReadTypeLibrary(TestEnvironment.TestTypeLibrary),
+            new CodeGenerationOptions { Namespace = "Interop.CsComTest", NamedIndexers = mode, ToolVersion = TestEnvironment.ToolVersion });
+
+        StringAssert.Contains(documents.Single(static d => d.RelativePath == "IShape.cs").GetText(), "public int this[int index = 0]");
+    }
+
+    [TestMethod]
+    public void NamedIndexersOfDerivedInterfacesTakeTheInheritedAccessors()
+    {
+        // ICircle adds the setter of the default member Item of IShape, which has no extension indexer with C# 14.
+        var pipeline = new InteropPipeline();
+        pipeline.ModelTransformers.Add(new AccessorsInDerivedInterfaceTransformer());
+        var documents = pipeline.GenerateCode(
+            pipeline.ReadTypeLibrary(TestEnvironment.TestTypeLibrary),
+            new CodeGenerationOptions { Namespace = "Interop.CsComTest", NamedIndexers = NamedIndexers.ClassProperty, ToolVersion = TestEnvironment.ToolVersion });
+
+        string circle = documents.Single(static d => d.RelativePath == "ICircle.cs").GetText();
+        string shape = documents.Single(static d => d.RelativePath == "IShape.cs").GetText();
+        StringAssert.Contains(circle, "get => _target.get_Item(index);");
+        StringAssert.Contains(circle, "set => _target.set_Item(index, value);");
+        StringAssert.Contains(shape, "get => _target.get_Item(index);");
+        Assert.IsFalse(shape.Contains("set_Item(index, value)", StringComparison.Ordinal));
+    }
+
     private static IReadOnlyList<GeneratedDocument> Generate(CodeGenerationOptions options, string? configuration = null)
     {
         var pipeline = new InteropPipeline();
@@ -495,4 +557,22 @@ public sealed class CodeGenerationTests : VerifyBase
 
     private static IEnumerable<Target> ToTargets(IEnumerable<GeneratedDocument> documents) =>
         documents.Select(static d => new Target("cs", d.GetText(), Path.ChangeExtension(d.RelativePath, null).Replace('/', '_')));
+}
+
+/// <summary>
+/// Makes the index of <c>IShape.Coordinate</c> optional with the default value 0.
+/// </summary>
+internal sealed class OptionalCoordinateIndexTransformer : CsCom.Transformations.IModelTransformer
+{
+    public void Transform(TypeLibrary library, CsCom.Transformations.TransformationContext context)
+    {
+        if (library.Types.OfType<InterfaceDefinition>().SingleOrDefault(static i => i.Name == "IShape") is not { } shape)
+        {
+            return;
+        }
+
+        var index = shape.Methods.Single(static m => m.Name == "Coordinate").Parameters[0];
+        index.Flags |= ParameterFlags.Optional | ParameterFlags.HasDefault;
+        index.DefaultValue = 0;
+    }
 }

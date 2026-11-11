@@ -93,6 +93,7 @@ into nested namespaces (`<Namespace>.<Library>`), are converted by `project upda
 | `--safearray-marshalling <array\|sysarray\|wrapper\|none>` | How typed `SAFEARRAY(T)` parameters and return values are represented: `array` (default, `T[]`), `sysarray`, `wrapper` or `none`, see [SAFEARRAYs](#safearrays). |
 | `-e`, `--event-style <events\|observable\|interface\|none>` | The code generated for the events of coclasses: `events` (default), `observable`, `interface` or `none`, see [Events](#events). |
 | `--overloads-for-default-values` | Generates overloads for the methods whose optional parameters have default values that C# cannot express, see [Optional parameters](#optional-parameters). |
+| `--ni`, `--named-indexers <none\|classproperty\|structmethod>` | Gives indexer syntax to the parameterized properties other than the indexer: `none` (default), `classproperty` (`sheet.Range["A1"]`) or `structmethod` (`sheet.Range()["A1"]`), see [Named indexers](#named-indexers). |
 | `--dynamic`, `-d` | Generates the late binding with C# `dynamic`: `CreateDynamic()` of the coclasses and the support of CsCom.Runtime.Dynamic, see [Late binding with `dynamic`](#late-binding-with-dynamic). |
 | `-c`, `--config <[LIBRARY=]PATH>` | An XML file that adds and configures the model and syntax transformers of a library, e.g. `Excel=excel.cscom.xml`; can be specified multiple times. Without a library name, the file of a single source. See [Configuration file](#configuration-file). |
 | `--reference-path <PATH>` | For interop assemblies: an assembly they reference, or a directory of such assemblies; can be specified multiple times, see [Interop assemblies](#interop-assemblies). |
@@ -107,7 +108,7 @@ files into the `Generated` folder, in a folder per namespace. `project update` r
 the sources and the options recorded in `cscom.json`; `Source` arguments replace the recorded sources. It accepts `--namespace` and
 `--config`, which change the recorded values of the libraries they name (`LIBRARY=` removes one, and `--config ""` removes all the
 configuration files), `--csharp-version`, `--single-file [true|false]`, the marshalling options, `--event-style`, `--struct-properties`,
-`--overloads-for-default-values [true|false]`, `--dynamic [true|false]` and `--reference-path` (an empty value removes the paths) to change them. Code outside of
+`--overloads-for-default-values [true|false]`, `--named-indexers`, `--dynamic [true|false]` and `--reference-path` (an empty value removes the paths) to change them. Code outside of
 the `Generated` folder, e.g. partial classes, is not touched.
 
 `assembly build` generates the project in a temporary directory, builds it with `dotnet build` once per runtime identifier and copies
@@ -237,6 +238,7 @@ of the items override them for a reference:
 | `EventStyle` | `CsComEventStyle` | `events` (default), `observable`, `interface` or `none`, see [Events](#events). |
 | `StructProperties` | `CsComStructProperties` | `auto` (default) or `never`, see [Structures](#structures). |
 | `OverloadsForDefaultValues` | `CsComOverloadsForDefaultValues` | `false` (default) or `true`, see [Optional parameters](#optional-parameters). |
+| `NamedIndexers` | `CsComNamedIndexers` | `none` (default), `classproperty` or `structmethod`, see [Named indexers](#named-indexers). |
 | | `CsComDynamic` | `false` (default) or `true`: the late binding with `dynamic` for all the libraries. With the `package` support code, the project must reference the CsCom.Runtime.Dynamic package, which `cscom reference add --dynamic` adds; the build fails otherwise. See [Late binding with `dynamic`](#late-binding-with-dynamic). |
 | `DateMarshalling`, `CurrencyMarshalling`, `BoolMarshalling` | `CsComDateMarshalling`, `CsComCurrencyMarshalling`, `CsComBoolMarshalling` | `bcl` (default), `none` or `wrapper`, see [Marshalling options](#marshalling-options). |
 | `BstrMarshalling` | `CsComBstrMarshalling` | `string` (default), `wrapper` or `none`. |
@@ -299,7 +301,7 @@ cscom reference remove Excel.Application
   - **The CsCom.Build package:** a `PackageReference` to it is added too if the project file has none. With central package
     management, it has no version, and a warning gives the `PackageVersion` to add to `Directory.Packages.props`.
   - **Options:** `--namespace` (only with a single source), `--config`, `--reference-path` and the options of the generated
-    code (`--event-style`, `--struct-properties`, `--overloads-for-default-values` and the `--*-marshalling` options) are
+    code (`--event-style`, `--struct-properties`, `--overloads-for-default-values`, `--named-indexers` and the `--*-marshalling` options) are
     written as the metadata of the table above. The options that are not specified are not written, so the `CsCom*`
     properties of the project apply to them.
   - **`--dynamic` (`-d`):** sets the `CsComDynamic` property of the project and adds a reference to CsCom.Runtime.Dynamic.
@@ -415,7 +417,7 @@ The syntax transformers run after the code is generated, so their selectors matc
 | Element | Attributes | Effect |
 | --- | --- | --- |
 | `AddFlagsAttribute` | `Type` | Adds `[System.Flags]` to the matching enums, which type libraries cannot mark as bit fields. Enums that already have it are not changed. |
-| `AddAttribute` | `Type` and/or `Kind`, `Member` (optional), `Role` (optional), `Attribute` | Adds a C# attribute (without brackets) to the declarations generated for the matching types or members. `Role` selects which declaration: `Declaration` (default), `Extensions` (the extensions class of an interface), `EventHandler`, `EventSink`, `EventDelegate`, `EventArgs`, `Event`, `Property`, `BackingField`, `InlineArray`, `Enumerator` or `Overload` (the [overloads](#optional-parameters) of a method). Declarations that already have the attribute are not changed. |
+| `AddAttribute` | `Type` and/or `Kind`, `Member` (optional), `Role` (optional), `Attribute` | Adds a C# attribute (without brackets) to the declarations generated for the matching types or members. `Role` selects which declaration: `Declaration` (default), `Extensions` (the extensions class of an interface), `EventHandler`, `EventSink`, `EventDelegate`, `EventArgs`, `Event`, `Property`, `BackingField`, `InlineArray`, `Enumerator`, `Overload` (the [overloads](#optional-parameters) of a method) or `NamedIndexer` (the proxy of a [named indexer](#named-indexers) and its indexer). Declarations that already have the attribute are not changed. |
 
 ```xml
 <SyntaxTransformers>
@@ -444,7 +446,8 @@ foreach (object? key in dictionary)                 // _NewEnum via IEnumVARIANT
   `putref_X` (`propputref`) methods. A static `<Interface>Extensions` class adds C# 14 extension properties for them and a
   `GetEnumerator` extension for collections. With C# 15, the default parameterized property (`DISPID_VALUE`, usually `Item`)
   becomes an extension indexer. The extensions of a derived interface also use the accessors of its base interfaces, e.g. the
-  getter of a read-only property of `IMyInterface` and the setter that `IMyInterface2` adds to it.
+  getter of a read-only property of `IMyInterface` and the setter that `IMyInterface2` adds to it. The other parameterized
+  properties can get indexer syntax too, see [Named indexers](#named-indexers).
 - **Dispinterfaces** can only be called through `IDispatch::Invoke`, so they become late-bound wrapper classes with methods,
   properties and indexers that invoke the members by their DISPIDs.
 - **Coclasses** become static classes with the `Clsid` and a `Create()` method that returns the default interface.
@@ -471,6 +474,35 @@ foreach (object? key in dictionary)                 // _NewEnum via IEnumVARIANT
 | `DATE` | `DateTime` (`DateMarshaller`; configurable, see below) |
 | `SAFEARRAY(T)` | `T[]?` (`SafeArrayMarshaller<T>`; configurable, see [SAFEARRAYs](#safearrays)) |
 | `[out] T*`, `[in, out] T*` | `out T`, `ref T` |
+
+### Named indexers
+
+COM properties can have parameters, e.g. Excel's `Worksheet.Range(Cell1, [Cell2])` or Scripting's `Dictionary.Key(Key)`. C#
+has no named indexers, and calls them as indexers only on `[ComImport]` types, so they are generated as accessor methods
+(`get_Range("A1")`, `set_Key("a", "b")`); only the default member is an indexer. `--named-indexers` gives the others indexer
+syntax through a proxy, which a member named after the property returns and whose indexer calls the accessor methods:
+
+```csharp
+// --named-indexers classproperty: a property returns a sealed proxy class
+Range range = sheet.Range["A1"];
+dictionary.Key["a"] = "b";
+
+// --named-indexers structmethod: a method returns a readonly record struct proxy
+Range range = sheet.Range()["A1"];
+dictionary.Key()["a"] = "b";
+```
+
+- **`classproperty`:** C# cannot call a setter on a struct that a property returns (CS1612), so the property returns a class.
+  Its members are `[MethodImpl(MethodImplOptions.AggressiveInlining)]`, so that the JIT can allocate the proxy on the stack
+  instead of the heap. A `structproperty` value can follow when C# allows setter calls on readonly structs that are not
+  variables ([csharplang#9174](https://github.com/dotnet/csharplang/issues/9174)).
+- **`structmethod`:** the proxy is a struct, which never allocates, but it is returned by a method.
+- **The indexer** has the parameters of the getter, including the default values of the optional ones, e.g. `Cell2` above.
+- **Which properties:** those of interfaces and dispinterfaces with parameters, except the indexer: the extension indexer of
+  the default member with C# 15, or the indexer of a dispinterface wrapper. With C# 14, the default member gets a proxy too
+  (`dictionary.Item["a"]`). A property whose name is used by a method is skipped.
+- **The proxy types** are nested in the `<Interface>Extensions` class or the dispinterface wrapper, e.g.
+  `WorksheetExtensions.RangeIndexer`. Use them right away rather than store them.
 
 ### SAFEARRAYs
 
@@ -699,7 +731,8 @@ DShapeEvents events = shape.GetEvents();           // and the late-bound wrapper
   alive.
 - **Properties:** assigning a COM object to a property or an indexer uses `PROPERTYPUTREF` when the property supports it, like
   VB's `Set`. A property that requires arguments, or can only be set, can be indexed with its arguments: `dictionary.Item["a"]`,
-  `dictionary.Key["a"] = "b"`.
+  `dictionary.Key["a"] = "b"`. A property whose parameters are all optional, such as Excel's `Range.Value`, is read at once, so
+  brackets would index its value; pass the arguments in parentheses instead: `range.Value(xlRangeValueMSPersistXML)`.
 - **`ref` and `out` arguments:** they receive the new values. A variable of a COM type is passed as a reference to its type,
   e.g. an `int` as `VT_BYREF | VT_I4`, which typed by-reference parameters such as `long*` require, so its type must match the
   parameter: `int` for `long`, `double` for `double`, `bool` for `VARIANT_BOOL`, `string` for `BSTR`. An `object` or `dynamic`

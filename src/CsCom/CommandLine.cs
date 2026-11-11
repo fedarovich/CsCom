@@ -204,6 +204,31 @@ internal static class CommandLine
         Arity = ArgumentArity.ZeroOrOne,
     };
 
+    private const string NamedIndexersDescription =
+        "Gives indexer syntax to the parameterized properties other than the indexer: a property that returns a proxy class (classproperty), " +
+        "e.g. sheet.Range[\"A1\"], or a method that returns a proxy struct without allocations (structmethod), e.g. sheet.Range()[\"A1\"].";
+
+    private const string NamedIndexersHelpName = "none|classproperty|structmethod";
+
+    private static readonly Option<NamedIndexers> NamedIndexersOption = new("--named-indexers", "--ni")
+    {
+        Description = NamedIndexersDescription,
+        DefaultValueFactory = static _ => NamedIndexers.None,
+        HelpName = NamedIndexersHelpName,
+    };
+
+    private static readonly Option<NamedIndexers?> UpdateNamedIndexersOption = new("--named-indexers", "--ni")
+    {
+        Description = NamedIndexersDescription + " The value recorded in cscom.json by default.",
+        HelpName = NamedIndexersHelpName,
+    };
+
+    private static readonly Option<NamedIndexers?> ReferenceNamedIndexersOption = new("--named-indexers", "--ni")
+    {
+        Description = NamedIndexersDescription,
+        HelpName = NamedIndexersHelpName,
+    };
+
     private const string DynamicDescription =
         "Generates the late binding with C# dynamic: the CreateDynamic methods of the coclasses and the support of CsCom.Runtime.Dynamic, " +
         "a reference to its package or, with '--support-code public' or 'internal', its code.";
@@ -316,6 +341,7 @@ internal static class CommandLine
                 EventStyle = result.GetValue(EventStyleOption),
                 StructProperties = result.GetValue(StructPropertiesOption),
                 OverloadsForDefaultValues = result.GetValue(OverloadsOption),
+                NamedIndexers = result.GetValue(NamedIndexersOption),
                 Dynamic = result.GetValue(DynamicOption),
                 ConfigurationPath = GetLibraryValues(result, ConfigOption, "configuration file").Single,
                 ConfigurationPaths = GetLibraryValues(result, ConfigOption, "configuration file").ByLibrary,
@@ -344,6 +370,7 @@ internal static class CommandLine
                 EventStyle = result.GetValue(EventStyleOption),
                 StructProperties = result.GetValue(StructPropertiesOption),
                 OverloadsForDefaultValues = result.GetValue(OverloadsOption),
+                NamedIndexers = result.GetValue(NamedIndexersOption),
                 Dynamic = result.GetValue(DynamicOption),
                 ConfigurationPath = GetLibraryValues(result, ConfigOption, "configuration file").Single,
                 ConfigurationPaths = GetLibraryValues(result, ConfigOption, "configuration file").ByLibrary,
@@ -374,6 +401,7 @@ internal static class CommandLine
                 EventStyle = result.GetValue(EventStyleOption),
                 StructProperties = result.GetValue(StructPropertiesOption),
                 OverloadsForDefaultValues = result.GetValue(OverloadsOption),
+                NamedIndexers = result.GetValue(NamedIndexersOption),
                 Dynamic = result.GetValue(DynamicOption),
                 ConfigurationPath = GetLibraryValues(result, ConfigOption, "configuration file").Single,
                 ConfigurationPaths = GetLibraryValues(result, ConfigOption, "configuration file").ByLibrary,
@@ -396,6 +424,7 @@ internal static class CommandLine
         updateProject.Options.Add(UpdateEventStyleOption);
         updateProject.Options.Add(UpdateStructPropertiesOption);
         updateProject.Options.Add(UpdateOverloadsOption);
+        updateProject.Options.Add(UpdateNamedIndexersOption);
         updateProject.Options.Add(UpdateDynamicOption);
         updateProject.Options.Add(UpdateConfigOption);
         updateProject.Options.Add(UpdateReferencePathOption);
@@ -412,6 +441,7 @@ internal static class CommandLine
                 EventStyle = result.GetValue(UpdateEventStyleOption),
                 StructProperties = result.GetValue(UpdateStructPropertiesOption),
                 OverloadsForDefaultValues = GetFlag(result, UpdateOverloadsOption),
+                NamedIndexers = result.GetValue(UpdateNamedIndexersOption),
                 Dynamic = GetFlag(result, UpdateDynamicOption),
                 ConfigurationPath = GetLibraryValues(result, UpdateConfigOption, "configuration file").Single,
                 ConfigurationPaths = GetLibraryValues(result, UpdateConfigOption, "configuration file").ByLibrary,
@@ -456,6 +486,7 @@ internal static class CommandLine
         addReference.Options.Add(ReferenceEventStyleOption);
         addReference.Options.Add(ReferenceStructPropertiesOption);
         addReference.Options.Add(ReferenceOverloadsOption);
+        addReference.Options.Add(ReferenceNamedIndexersOption);
         addReference.Options.Add(ReferenceDynamicOption);
         addReference.Options.Add(ReferenceConfigOption);
         addReference.Options.Add(ReferencePathOption);
@@ -471,6 +502,7 @@ internal static class CommandLine
                 EventStyle = result.GetValue(ReferenceEventStyleOption),
                 StructProperties = result.GetValue(ReferenceStructPropertiesOption),
                 OverloadsForDefaultValues = GetFlag(result, ReferenceOverloadsOption),
+                NamedIndexers = result.GetValue(ReferenceNamedIndexersOption),
                 Dynamic = result.GetValue(ReferenceDynamicOption),
             })));
 
@@ -624,6 +656,7 @@ internal static class CommandLine
         command.Options.Add(EventStyleOption);
         command.Options.Add(StructPropertiesOption);
         command.Options.Add(OverloadsOption);
+        command.Options.Add(NamedIndexersOption);
         command.Options.Add(DynamicOption);
         command.Options.Add(ConfigOption);
         command.Options.Add(ReferencePathOption);

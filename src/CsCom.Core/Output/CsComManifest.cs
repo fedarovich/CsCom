@@ -74,6 +74,10 @@ public sealed record CsComManifest
     /// <summary>Whether overloads are generated for the default values that C# cannot express; <see langword="false"/> when missing.</summary>
     public bool OverloadsForDefaultValues { get; init; }
 
+    /// <summary>How the parameterized properties other than the indexer get indexer syntax; <see cref="NamedIndexers.None"/> when missing.</summary>
+    [JsonConverter(typeof(CamelCaseEnumConverter<NamedIndexers>))]
+    public NamedIndexers NamedIndexers { get; init; }
+
     /// <summary>
     /// Whether the late binding with <c>dynamic</c> is generated. It is missing (<see langword="null"/>) in the manifests of
     /// earlier versions, which always generated it, so <see cref="IsDynamic"/> is then <see langword="true"/>.

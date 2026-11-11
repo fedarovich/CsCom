@@ -60,6 +60,9 @@ public abstract class OutputRequest
     /// <summary>Whether overloads are generated for the default values that C# cannot express.</summary>
     public bool OverloadsForDefaultValues { get; init; }
 
+    /// <summary>How the parameterized properties other than the indexer get indexer syntax through proxies.</summary>
+    public NamedIndexers NamedIndexers { get; init; }
+
     /// <summary>
     /// Whether the late binding with <c>dynamic</c> is generated: <c>CreateDynamic</c> methods, and the CsCom.Runtime.Dynamic
     /// package or its code, see <see cref="CodeGeneration.CodeGenerationOptions.Dynamic"/>.
@@ -177,6 +180,9 @@ public sealed class UpdateProjectRequest
     /// <summary>Whether overloads are generated for the default values that C# cannot express.</summary>
     public bool? OverloadsForDefaultValues { get; init; }
 
+    /// <summary>How the parameterized properties other than the indexer get indexer syntax through proxies.</summary>
+    public NamedIndexers? NamedIndexers { get; init; }
+
     /// <summary>Whether the late binding with <c>dynamic</c> is generated.</summary>
     public bool? Dynamic { get; init; }
 
@@ -238,6 +244,9 @@ public sealed class AddReferencesRequest
 
     /// <summary>Whether overloads are generated for the default values that C# cannot express.</summary>
     public bool? OverloadsForDefaultValues { get; init; }
+
+    /// <summary>How the parameterized properties other than the indexer get indexer syntax through proxies.</summary>
+    public NamedIndexers? NamedIndexers { get; init; }
 
     /// <summary>
     /// Whether the project generates the late binding with <c>dynamic</c>: sets the <c>CsComDynamic</c> property and adds a

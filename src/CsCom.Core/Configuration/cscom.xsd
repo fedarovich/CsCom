@@ -283,6 +283,7 @@
       <xs:enumeration value="EventArgs" />
       <xs:enumeration value="Event" />
       <xs:enumeration value="Overload" />
+      <xs:enumeration value="NamedIndexer" />
     </xs:restriction>
   </xs:simpleType>
 

@@ -126,6 +126,7 @@ internal sealed partial class InterfaceEmitter
     {
         var methodNames = GetMethodNamesInHierarchy(definition);
         var members = new List<MemberDeclarationSyntax>();
+        var namedIndexers = new List<NamedIndexer>();
         bool hasIndexer = false;
 
         foreach (var group in definition.Methods.Where(static m => m.IsProperty && m.MemberId != DispIdNewEnum).GroupBy(static m => m.Name))
@@ -183,6 +184,33 @@ internal sealed partial class InterfaceEmitter
                 members.Add(AnnotateAccessors(Indexer(property.Type, property.Index, getExpression, setExpression, documentation), accessors));
                 hasIndexer = true;
             }
+            else if (_context.Options.NamedIndexers != NamedIndexers.None && !methodNames.Contains(group.Key))
+            {
+                namedIndexers.Add(new NamedIndexer(group.Key, property, getterSignature is null ? null : getter, setterSignature is null ? null : setterMethod, documentation));
+            }
+        }
+
+        // The proxies of the other parameterized properties, except one named Item next to the extension indexer, which is
+        // compiled into a property named Item as well.
+        var proxyTypes = new List<MemberDeclarationSyntax>();
+        var takenNames = new HashSet<string>(methodNames.Concat(definition.Methods.Select(static m => m.Name)), StringComparer.Ordinal);
+        foreach (var namedIndexer in namedIndexers.Where(n => !(hasIndexer && n.Name == "Item")))
+        {
+            var (member, type) = NamedIndexerEmitter.Create(
+                _context,
+                namedIndexer.Name,
+                NamedIndexerEmitter.GetTypeName(namedIndexer.Name, takenNames),
+                definition.Name,
+                _context.GetTypeName(definition, @namespace),
+                "@this",
+                namedIndexer.Property.Type,
+                namedIndexer.Property.Index,
+                namedIndexer.Getter is { } getter ? SignatureBuilder.GetMethodName(getter) : null,
+                namedIndexer.Setter is { } setter ? SignatureBuilder.GetMethodName(setter) : null,
+                namedIndexer.Documentation,
+                [.. new[] { namedIndexer.Getter, namedIndexer.Setter }.OfType<MethodDefinition>()]);
+            members.Add(member);
+            proxyTypes.Add(type);
         }
 
         var newEnum = definition.Methods.FirstOrDefault(static m =>
@@ -237,7 +265,7 @@ internal sealed partial class InterfaceEmitter
         return _context.Annotations.Annotate(
             ClassDeclaration(Syntax.Identifier(EmitContext.GetExtensionsClassName(definition)))
                 .WithModifiers(Syntax.Modifiers(_context.Accessibility, SyntaxKind.StaticKeyword, SyntaxKind.PartialKeyword))
-                .WithMembers(SingletonList<MemberDeclarationSyntax>(extension))
+                .WithMembers(List<MemberDeclarationSyntax>([extension, .. proxyTypes]))
                 .WithDocumentation($"Provides the properties of the {definition.Name} interface."),
             definition,
             SyntaxRole.Extensions);
@@ -383,6 +411,9 @@ internal sealed partial class InterfaceEmitter
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Skipping the interface '{Name}', which has no GUID")]
     private static partial void LogMissingGuid(ILogger logger, string name);
+
+    // A parameterized property that gets a proxy, with the accessors that the proxy calls.
+    private sealed record NamedIndexer(string Name, PropertySignature Property, MethodDefinition? Getter, MethodDefinition? Setter, string? Documentation);
 
     private sealed record PropertySignature(string Type, IReadOnlyList<SignatureParameter> Index)
     {

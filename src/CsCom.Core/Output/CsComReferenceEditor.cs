@@ -266,6 +266,7 @@ public sealed partial class CsComReferenceEditor
             ("EventStyle", Format(request.EventStyle)),
             ("StructProperties", Format(request.StructProperties)),
             ("OverloadsForDefaultValues", request.OverloadsForDefaultValues is { } overloads ? (overloads ? "true" : "false") : null),
+            ("NamedIndexers", Format(request.NamedIndexers)),
             ("DateMarshalling", Format(request.Marshalling.Dates)),
             ("CurrencyMarshalling", Format(request.Marshalling.Currencies)),
             ("BoolMarshalling", Format(request.Marshalling.Booleans)),
