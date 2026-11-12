@@ -242,7 +242,7 @@ namespace Interop.CsComTest
 
         public IShape? GetShape() => ToInterface<IShape>(InvokeMethod(15));
 
-        public string?[]? Names() => (string?[]?)InvokeMethod(16);
+        public string?[]? Names() => ToArray<string?>(InvokeMethod(16));
 
         public DShapeEvents? Self() => ToWrapper<DShapeEvents>(InvokeMethod(17));
 

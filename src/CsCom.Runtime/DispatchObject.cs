@@ -67,6 +67,12 @@ public abstract class DispatchObject : IDispatchProvider
         return ComConvert.ToInterface<T>(value);
     }
 
+    /// <summary>Converts an invocation result to a one-dimensional array of <typeparamref name="T"/>.</summary>
+    protected static T[]? ToArray<T>(object? value)
+    {
+        return ComConvert.ToArray<T>(value);
+    }
+
     /// <summary>Converts an invocation result to a zero-based two-dimensional array of <typeparamref name="T"/>.</summary>
     protected static T[,]? ToArray2D<T>(object? value)
     {

@@ -18,12 +18,21 @@ public sealed unsafe partial class DispatchWrapperTests
     private const int SourceId = 6;
     private const int SwapId = 7;
 
+    private static readonly PrimitiveTypeReference Variant = new(VarEnum.VT_VARIANT);
+    private static readonly PrimitiveTypeReference Void = new(VarEnum.VT_VOID);
+
     [TestMethod]
     public void InvokesAccessorsWithByRefParametersAsProperties()
     {
         // Like the properties of VB6 classes, whose parameters are ByRef by default, the accessors are methods of the wrapper.
         // Objects reject DISPATCH_METHOD for them, and setters must pass their value as the DISPID_PROPERTYPUT named argument.
-        var (wrapper, recorder) = CreateWrapper();
+        var byRef = new PointerTypeReference(Variant);
+        var (wrapper, recorder) = CreateWrapper(
+            "Cells",
+            Method("Cell", CellId, InvokeKind.PropertyGet, Variant, Parameter("Row", byRef, isByRef: true), Parameter("Column", Variant)),
+            Method("Cell", CellId, InvokeKind.PropertyPut, Void, Parameter("Row", byRef, isByRef: true), Parameter("Column", Variant), Parameter("value", Variant)),
+            Method("Source", SourceId, InvokeKind.PropertyPutRef, Void, Parameter("Key", byRef, isByRef: true), Parameter("value", Variant)),
+            Method("Swap", SwapId, InvokeKind.Method, Void, Parameter("Value", byRef, isByRef: true)));
 
         recorder.Result = "cell";
         object?[] args = ["A", 2];
@@ -48,6 +57,31 @@ public sealed unsafe partial class DispatchWrapperTests
         Assert.AreEqual("D!", args[0]);
     }
 
+    [TestMethod]
+    public void ConvertsTheElementsOfOneDimensionalArrays()
+    {
+        // VB and script servers return SAFEARRAYs of VARIANTs, whatever the element type that the type library declares.
+        var strings = new SafeArrayTypeReference(new PrimitiveTypeReference(VarEnum.VT_BSTR));
+        var integers = new SafeArrayTypeReference(new PrimitiveTypeReference(VarEnum.VT_I4));
+        var (wrapper, recorder) = CreateWrapper(
+            "Lists",
+            Method("Names", 1, InvokeKind.PropertyGet, strings),
+            Method("Numbers", 2, InvokeKind.Method, integers),
+            Method("Fill", 3, InvokeKind.Method, Void, Parameter("Values", new PointerTypeReference(integers), isByRef: true)));
+
+        recorder.Result = new object?[] { "a", null, "c" };
+        CollectionAssert.AreEqual(new[] { "a", null, "c" }, (string?[])wrapper.GetType().GetProperty("Names")!.GetValue(wrapper)!);
+
+        recorder.Result = new object?[] { 1, (short)2, 3.0 };
+        CollectionAssert.AreEqual(new[] { 1, 2, 3 }, (int[])wrapper.GetType().GetMethod("Numbers")!.Invoke(wrapper, [])!);
+
+        // The new value of a by-reference argument is converted too: the server stores an array of VARIANTs in the int[] variable.
+        recorder.ByRefValue = static _ => new object?[] { 4, "5" };
+        object?[] args = [new[] { 1 }];
+        wrapper.GetType().GetMethod("Fill")!.Invoke(wrapper, args);
+        CollectionAssert.AreEqual(new[] { 4, 5 }, (int[])args[0]!);
+    }
+
     private static void AssertCall(Call call, int dispId, DispatchFlags flags, int[] namedDispIds, params object?[] arguments)
     {
         Assert.AreEqual((dispId, flags), (call.DispId, call.Flags));
@@ -55,54 +89,49 @@ public sealed unsafe partial class DispatchWrapperTests
         CollectionAssert.AreEqual(arguments, call.Arguments);
     }
 
-    // The wrapper of a dispinterface whose property accessors have [in, out] VARIANT* parameters, next to a method that has one.
-    private static (object Wrapper, Recorder Recorder) CreateWrapper()
+    // Generates the wrapper of a dispinterface, compiles it and creates an instance of it for a recorder.
+    private static (object Wrapper, Recorder Recorder) CreateWrapper(string name, params MethodDefinition[] methods)
     {
-        var variant = new PrimitiveTypeReference(VarEnum.VT_VARIANT);
-        var byRef = new PointerTypeReference(variant);
-        var @void = new PrimitiveTypeReference(VarEnum.VT_VOID);
-        var cells = new InterfaceDefinition
+        var definition = new InterfaceDefinition
         {
-            Name = "Cells",
-            OriginalName = "Cells",
+            Name = name,
+            OriginalName = name,
             Guid = Guid.NewGuid(),
             InterfaceKind = InterfaceKind.Dispatch,
             BaseInterface = new PrimitiveTypeReference(VarEnum.VT_DISPATCH),
             BaseVtableSlots = 7,
         };
-        cells.Methods.Add(Method("Cell", CellId, InvokeKind.PropertyGet, variant, Parameter("Row", byRef, isByRef: true), Parameter("Column", variant)));
-        cells.Methods.Add(Method("Cell", CellId, InvokeKind.PropertyPut, @void, Parameter("Row", byRef, isByRef: true), Parameter("Column", variant), Parameter("value", variant)));
-        cells.Methods.Add(Method("Source", SourceId, InvokeKind.PropertyPutRef, @void, Parameter("Key", byRef, isByRef: true), Parameter("value", variant)));
-        cells.Methods.Add(Method("Swap", SwapId, InvokeKind.Method, @void, Parameter("Value", byRef, isByRef: true)));
+        definition.Methods.AddRange(methods);
         var library = new TypeLibrary { Name = "Synthetic" };
-        library.Types.Add(cells);
+        library.Types.Add(definition);
 
         string source = new InteropPipeline().GenerateCode(library, new CodeGenerationOptions { Namespace = "Test" })
-            .Single(static d => d.RelativePath == "Cells.cs")
+            .Single(d => d.RelativePath == name + ".cs")
             .GetText();
         using var runtime = new MemoryStream(File.ReadAllBytes(typeof(DispatchObject).Assembly.Location));
-        var assembly = Assembly.Load(TestCompiler.Compile("Cells", source, reference: runtime).ToArray());
+        var assembly = Assembly.Load(TestCompiler.Compile(name, source, reference: runtime).ToArray());
 
         var recorder = new Recorder();
-        object wrapper = assembly.GetType("Test.Cells", throwOnError: true)!.GetMethod("Create")!.Invoke(null, [recorder])!;
+        object wrapper = assembly.GetType("Test." + name, throwOnError: true)!.GetMethod("Create")!.Invoke(null, [recorder])!;
         return (wrapper, recorder);
-
-        static MethodDefinition Method(string name, int dispId, InvokeKind kind, TypeReference returnType, params ParameterDefinition[] parameters)
-        {
-            var method = new MethodDefinition { Name = name, OriginalName = name, MemberId = dispId, InvokeKind = kind, ReturnType = returnType };
-            method.Parameters.AddRange(parameters);
-            return method;
-        }
-
-        static ParameterDefinition Parameter(string name, TypeReference type, bool isByRef = false) =>
-            new() { Name = name, Type = type, Flags = ParameterFlags.In | (isByRef ? ParameterFlags.Out : ParameterFlags.None) };
     }
+
+    private static MethodDefinition Method(string name, int dispId, InvokeKind kind, TypeReference returnType, params ParameterDefinition[] parameters)
+    {
+        var method = new MethodDefinition { Name = name, OriginalName = name, MemberId = dispId, InvokeKind = kind, ReturnType = returnType };
+        method.Parameters.AddRange(parameters);
+        return method;
+    }
+
+    private static ParameterDefinition Parameter(string name, TypeReference type, bool isByRef = false) =>
+        new() { Name = name, Type = type, Flags = ParameterFlags.In | (isByRef ? ParameterFlags.Out : ParameterFlags.None) };
 
     /// <summary>A call of <c>IDispatch::Invoke</c>, with its arguments in the declaration order.</summary>
     private sealed record Call(int DispId, DispatchFlags Flags, int[] NamedDispIds, object?[] Arguments);
 
     /// <summary>
-    /// Records the calls of <c>IDispatch::Invoke</c>, appends "!" to the strings passed by reference and returns <see cref="Result"/>.
+    /// Records the calls of <c>IDispatch::Invoke</c>, replaces the values passed by reference with <see cref="ByRefValue"/>
+    /// and returns <see cref="Result"/>.
     /// </summary>
     [GeneratedComClass]
     private sealed partial class Recorder : IDispatch
@@ -110,6 +139,9 @@ public sealed unsafe partial class DispatchWrapperTests
         public List<Call> Calls { get; } = [];
 
         public object? Result { get; set; }
+
+        /// <summary>Gets the new value of an argument passed by reference; by default, its string followed by "!".</summary>
+        public Func<object?, object?> ByRefValue { get; set; } = static value => value + "!";
 
         public int GetTypeInfoCount(out uint pctinfo)
         {
@@ -141,7 +173,7 @@ public sealed unsafe partial class DispatchWrapperTests
                     var target = (ComVariant*)argument.GetRawDataRef<nint>();
                     arguments[index] = VariantMarshaller.ConvertToManaged(*target);
                     target->Dispose();
-                    *target = VariantMarshaller.ConvertToUnmanaged(arguments[index] + "!");
+                    *target = VariantMarshaller.ConvertToUnmanaged(ByRefValue(arguments[index]));
                 }
                 else
                 {

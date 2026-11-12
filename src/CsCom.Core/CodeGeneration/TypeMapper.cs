@@ -251,8 +251,8 @@ internal sealed class TypeMapper
 
                 if (isPrimitive)
                 {
-                    string name = $"{element.Name}[]?";
-                    return new LateBoundType(name, x => $"({name}){x}");
+                    // Converted too, since servers often return a SAFEARRAY of VARIANTs, e.g. for a SAFEARRAY(BSTR) of VB or script.
+                    return new LateBoundType($"{element.Name}[]?", x => $"ToArray<{element.Name}>({x})");
                 }
 
                 return new LateBoundType("global::System.Array?", static x => $"(global::System.Array?){x}");
