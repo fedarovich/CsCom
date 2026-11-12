@@ -57,11 +57,13 @@ public sealed partial class LibrarySetBuild
             File.Delete(statePath);
         }
 
+        // An input that changes after this point may have been read before the change.
+        DateTime started = DateTime.UtcNow;
         var options = CreateOptions(request);
         var references = request.References.Select(r => CreateReference(r, request.ProjectDirectory)).ToList();
         var result = new LibrarySetGenerator(_pipeline, _loggerFactory).Generate(references, options);
         var files = GeneratedFiles.WriteFolder(output, result.Documents);
-        WriteState(statePath, requestHash, result.InputFiles, files);
+        WriteState(statePath, requestHash, result.InputFiles, files, started);
         LogGenerated(files.Count, output);
         return files;
     }
@@ -201,13 +203,17 @@ public sealed partial class LibrarySetBuild
 
     private static string Describe(string name, string? item) => item is null ? name : $"the {name} metadata of the CsComReference '{item}'";
 
-    private static void WriteState(string path, string requestHash, IReadOnlyList<string> inputs, IReadOnlyList<string> outputs)
+    private static void WriteState(string path, string requestHash, IReadOnlyList<string> inputs, IReadOnlyList<string> outputs, DateTime started)
     {
         var builder = new StringBuilder();
         builder.Append("hash=").AppendLine(requestHash);
         foreach (string input in inputs)
         {
-            builder.Append("input=").Append(File.GetLastWriteTimeUtc(input).Ticks.ToString(CultureInfo.InvariantCulture)).Append('|').AppendLine(input);
+            // An input written during the generation gets a time that it never has, so that the next build generates the
+            // code again: the generator may have read the content that it had before.
+            DateTime written = File.GetLastWriteTimeUtc(input);
+            long ticks = written >= started ? 0 : written.Ticks;
+            builder.Append("input=").Append(ticks.ToString(CultureInfo.InvariantCulture)).Append('|').AppendLine(input);
         }
 
         foreach (string output in outputs)
