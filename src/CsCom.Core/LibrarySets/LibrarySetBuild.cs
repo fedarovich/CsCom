@@ -16,7 +16,8 @@ namespace CsCom.LibrarySets;
 /// <remarks>
 /// The state file (<see cref="StateFileName"/>) is a text file with a line per entry: <c>hash=</c> the hash of the request,
 /// <c>input=</c> the last write time of an input file in ticks, <c>|</c> and its path, and <c>output=</c> the path of a
-/// generated file. It is written last, so it only exists after a successful generation.
+/// generated file. The <c>end</c> line completes the file. It is written last and replaced as a whole, so it only exists
+/// after a successful generation.
 /// </remarks>
 public sealed partial class LibrarySetBuild
 {
@@ -221,7 +222,11 @@ public sealed partial class LibrarySetBuild
             builder.Append("output=").AppendLine(output);
         }
 
-        File.WriteAllText(path, builder.ToString());
+        // The task only accepts a complete file, which replaces the state as a whole.
+        builder.AppendLine("end");
+        string temporary = path + ".tmp";
+        File.WriteAllText(temporary, builder.ToString());
+        File.Move(temporary, path, overwrite: true);
     }
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Generated {Count} files in '{Directory}'")]

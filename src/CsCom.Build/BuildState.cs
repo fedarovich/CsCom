@@ -5,7 +5,7 @@ namespace CsCom.Build;
 /// <summary>
 /// Reads the state file that the generator writes after a successful generation, see CsCom.LibrarySets.LibrarySetBuild:
 /// <c>hash=</c> the hash of the request, <c>input=</c> the last write time of an input file in ticks, <c>|</c> and its path,
-/// and <c>output=</c> the path of a generated file.
+/// <c>output=</c> the path of a generated file, and <c>end</c>, which completes the file.
 /// </summary>
 internal static class BuildState
 {
@@ -22,10 +22,16 @@ internal static class BuildState
         }
 
         bool sameRequest = false;
+        bool isComplete = false;
         var files = new List<string>();
         foreach (string line in File.ReadAllLines(path))
         {
-            if (line.StartsWith("hash=", StringComparison.Ordinal))
+            if (line == "end")
+            {
+                // A file that was not written to its end, e.g. by a generator that was stopped, is not a state.
+                isComplete = true;
+            }
+            else if (line.StartsWith("hash=", StringComparison.Ordinal))
             {
                 sameRequest = string.Equals(line.Substring("hash=".Length), hash, StringComparison.Ordinal);
             }
@@ -56,7 +62,7 @@ internal static class BuildState
             }
         }
 
-        return sameRequest ? files : null;
+        return sameRequest && isComplete ? files : null;
     }
 
     // The generator runs as a 64-bit process, while the MSBuild of Visual Studio can be a 32-bit process, for which System32
