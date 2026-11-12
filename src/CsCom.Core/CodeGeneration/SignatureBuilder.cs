@@ -299,11 +299,11 @@ internal sealed partial class SignatureBuilder
     private static bool CanBeOmitted(SignatureParameter parameter) =>
         !parameter.IsByRef && (parameter.Definition.Flags.HasFlag(ParameterFlags.Optional) || parameter.Definition.Flags.HasFlag(ParameterFlags.HasDefault));
 
-    // Whether the parameter is a VARIANT that can be omitted, so that its null value can mean an omitted argument.
+    // Whether the null value of a parameter that can be omitted can mean an omitted argument: a VARIANT, which IDispatch::Invoke
+    // passes as is in late-bound calls, where any parameter passed as an object can be omitted the same way.
     private static bool IsOptionalVariant(SignatureParameter parameter, bool lateBound) =>
         CanBeOmitted(parameter)
-        && parameter.TypeName == "object?"
-        && (lateBound || parameter.Marshalling?.Contains("VariantMarshaller", StringComparison.Ordinal) == true);
+        && (lateBound ? parameter.TypeName == LateBoundType.Object.Name : parameter.ValueType is PrimitiveTypeReference { VarType: VarEnum.VT_VARIANT });
 
     // The C# default value of an optional parameter, or null if it has none or C# cannot express it.
     private string? GetConstantDefault(SignatureParameter parameter, bool lateBound)
