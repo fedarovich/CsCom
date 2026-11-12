@@ -203,12 +203,18 @@ internal static partial class ProjectFile
         string edited = Write(document, newLine);
         string unedited = Write(XDocument.Parse(text, LoadOptions.PreserveWhitespace), newLine);
 
-        // The file is replaced as a whole, so that a failure does not leave a part of it.
+        // The file is replaced as a whole, so that a failure does not leave a part of it. A file that another process has
+        // open, e.g. a scanner or an editor, cannot always be replaced, but can be written in place.
+        string content = Merge(text, unedited, edited);
         string temporary = path + ".cscom.tmp";
         try
         {
-            File.WriteAllText(temporary, Merge(text, unedited, edited), encoding);
+            File.WriteAllText(temporary, content, encoding);
             File.Move(temporary, path, overwrite: true);
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            File.WriteAllText(path, content, encoding);
         }
         finally
         {
