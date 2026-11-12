@@ -595,10 +595,19 @@ public sealed class DynamicDispatchObject : DynamicObject, IDispatchProvider, IE
             named = [DispIds.PropertyPut, .. namedDispIds];
         }
 
-        if (IsComObject(value)
-            && ComDispatch.TryInvoke(Dispatch, dispId, DispatchFlags.PropertyPutRef, args, named, default, default, out _, out _) >= 0)
+        if (IsComObject(value))
         {
-            return true;
+            // Only an object without such a setter is assigned by value: another error is that of the assignment.
+            int hr = ComDispatch.TryInvoke(Dispatch, dispId, DispatchFlags.PropertyPutRef, args, named, default, default, out _, out int argument);
+            if (hr >= 0)
+            {
+                return true;
+            }
+
+            if (hr != DISP_E_MEMBERNOTFOUND)
+            {
+                throw ComDispatch.CreateInvocationException(hr, dispId, name, DispatchFlags.PropertyPutRef, args.Length, argument);
+            }
         }
 
         ComDispatch.Invoke(Dispatch, dispId, DispatchFlags.PropertyPut, args, named, memberName: name);

@@ -142,6 +142,24 @@ public sealed unsafe partial class DynamicNamedArgumentTests
         AssertCall(recorder.Calls.Single(), 13, DispatchFlags.PropertyGet | DispatchFlags.Method, [], []);
     }
 
+    [TestMethod]
+    public void AssignsObjectsByValueOnlyWhenTheObjectHasNoSetterByReference()
+    {
+        var recorder = new Recorder(LoadShapeEvents());
+        dynamic shape = ((IDispatch)recorder).AsDynamic();
+        dynamic other = ((IDispatch)new Recorder(typeInfo: null)).AsDynamic();
+
+        recorder.Failure = static (_, flags) => flags == DispatchFlags.PropertyPutRef ? unchecked((int)0x80020003) : 0;
+        shape.Title = other;
+        Assert.AreEqual(DispatchFlags.PropertyPut, recorder.Calls.Single().Flags);
+
+        // Another error is the error of the assignment: the object is not assigned by value instead.
+        recorder.Failure = static (_, flags) => flags == DispatchFlags.PropertyPutRef ? unchecked((int)0x80020005) : 0;
+        var exception = Assert.ThrowsExactly<COMException>(() => shape.Title = other);
+        Assert.AreEqual(unchecked((int)0x80020005), exception.HResult);
+        Assert.AreEqual(1, recorder.Calls.Count);
+    }
+
     private static void AssertCall(Call call, int dispId, DispatchFlags flags, object?[] positional, (int DispId, object? Value)[] named)
     {
         Assert.AreEqual((dispId, flags), (call.DispId, call.Flags));
