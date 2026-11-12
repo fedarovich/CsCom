@@ -98,18 +98,28 @@ internal static partial class ProjectFile
     /// the reference to CsCom.Runtime.Dynamic. Projects without a reference to CsCom.Runtime, whose support code is emitted
     /// into them, get no package references.
     /// </summary>
+    /// <param name="path">The path to the project file.</param>
+    /// <param name="languageVersion">
+    /// The C# version to set, or <see langword="null"/> to keep the <c>LangVersion</c> of the project, which its owner can
+    /// have changed: it is only set when the update asks for a version.
+    /// </param>
+    /// <param name="runtimePackageVersion">The version of the CsCom.Runtime packages.</param>
+    /// <param name="dynamic">Whether the project references CsCom.Runtime.Dynamic.</param>
     /// <returns>Whether the file was changed.</returns>
-    public static bool Update(string path, int languageVersion, string runtimePackageVersion, bool dynamic)
+    public static bool Update(string path, int? languageVersion, string runtimePackageVersion, bool dynamic)
     {
         var document = Load(path);
         bool changed = false;
-        string version = languageVersion.ToString(System.Globalization.CultureInfo.InvariantCulture);
-        foreach (var element in document.Descendants().Where(static e => e.Name.LocalName == "LangVersion"))
+        if (languageVersion is { } requested)
         {
-            if (element.Value != version)
+            string version = requested.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            foreach (var element in document.Descendants().Where(static e => e.Name.LocalName == "LangVersion"))
             {
-                element.Value = version;
-                changed = true;
+                if (element.Value != version)
+                {
+                    element.Value = version;
+                    changed = true;
+                }
             }
         }
 
@@ -176,28 +186,39 @@ internal static partial class ProjectFile
     }
 
     /// <summary>
-    /// Saves a project file loaded with <see cref="Load"/>, keeping the XML declaration, the byte order mark and the line
-    /// endings of the existing file.
+    /// Saves a project file loaded with <see cref="Load"/>, keeping the encoding, the byte order mark and the line endings
+    /// of the existing file, and the text of the tags and of the content that were not edited: the writer would put the
+    /// attributes of every tag on one line and change their quotes.
     /// </summary>
     public static void Save(XDocument document, string path)
     {
         byte[] existing = File.ReadAllBytes(path);
-        Encoding encoding = existing switch
-        {
-            [0xEF, 0xBB, 0xBF, ..] => new UTF8Encoding(true),
-            [0xFF, 0xFE, ..] => Encoding.Unicode,
-            [0xFE, 0xFF, ..] => Encoding.BigEndianUnicode,
-            _ => new UTF8Encoding(false),
-        };
+        Encoding encoding = GetEncoding(existing, document.Declaration?.Encoding);
+        using var reader = new StreamReader(new MemoryStream(existing), encoding, detectEncodingFromByteOrderMarks: true);
+        string text = reader.ReadToEnd();
 
         // The parser turns the line endings into \n, which the writer turns into those of the file. The whitespace around the
         // root element is part of the document, so only the declaration is written separately.
-        var settings = new XmlWriterSettings
+        string newLine = text.Contains("\r\n", StringComparison.Ordinal) ? "\r\n" : "\n";
+        string edited = Write(document, newLine);
+        string unedited = Write(XDocument.Parse(text, LoadOptions.PreserveWhitespace), newLine);
+
+        // The file is replaced as a whole, so that a failure does not leave a part of it.
+        string temporary = path + ".cscom.tmp";
+        try
         {
-            OmitXmlDeclaration = true,
-            NewLineChars = encoding.GetString(existing).Contains("\r\n", StringComparison.Ordinal) ? "\r\n" : "\n",
-            NewLineHandling = NewLineHandling.Replace,
-        };
+            File.WriteAllText(temporary, Merge(text, unedited, edited), encoding);
+            File.Move(temporary, path, overwrite: true);
+        }
+        finally
+        {
+            File.Delete(temporary);
+        }
+    }
+
+    private static string Write(XDocument document, string newLine)
+    {
+        var settings = new XmlWriterSettings { OmitXmlDeclaration = true, NewLineChars = newLine, NewLineHandling = NewLineHandling.Replace };
         var builder = new StringBuilder();
         builder.Append(document.Declaration?.ToString());
         using (var writer = XmlWriter.Create(builder, settings))
@@ -205,7 +226,175 @@ internal static partial class ProjectFile
             document.Save(writer);
         }
 
-        File.WriteAllText(path, builder.ToString(), encoding);
+        return builder.ToString();
+    }
+
+    // The encoding of the file: that of its byte order mark, otherwise the one that its XML declaration names, otherwise UTF-8.
+    private static Encoding GetEncoding(byte[] file, string? declared)
+    {
+        switch (file)
+        {
+            case [0xEF, 0xBB, 0xBF, ..]:
+                return new UTF8Encoding(true);
+            case [0xFF, 0xFE, ..]:
+                return Encoding.Unicode;
+            case [0xFE, 0xFF, ..]:
+                return Encoding.BigEndianUnicode;
+        }
+
+        if (!string.IsNullOrEmpty(declared) && !declared.Equals("utf-8", StringComparison.OrdinalIgnoreCase))
+        {
+            try
+            {
+                return Encoding.GetEncoding(declared);
+            }
+            catch (ArgumentException)
+            {
+                // The parser has read the file, so this is not expected; UTF-8 is the encoding of XML without a declaration.
+            }
+        }
+
+        return new UTF8Encoding(false);
+    }
+
+    /// <summary>
+    /// Applies the changes between two texts written by the XML writer to the original text of the document, which differs
+    /// from the first one only inside its tags and in the form of its characters: the tags and the content that are the same
+    /// in both keep their original text.
+    /// </summary>
+    /// <param name="original">The text of the file.</param>
+    /// <param name="unedited">The document of the file as the writer writes it.</param>
+    /// <param name="edited">The edited document as the writer writes it.</param>
+    internal static string Merge(string original, string unedited, string edited)
+    {
+        var originalTokens = Tokenize(original);
+        var uneditedTokens = Tokenize(unedited);
+        var editedTokens = Tokenize(edited);
+        if (originalTokens.Count != uneditedTokens.Count)
+        {
+            return edited;
+        }
+
+        // The common start and end, then the longest common subsequence of the tokens between them.
+        int start = 0;
+        while (start < uneditedTokens.Count && start < editedTokens.Count && uneditedTokens[start] == editedTokens[start])
+        {
+            start++;
+        }
+
+        int end = 0;
+        while (end < uneditedTokens.Count - start && end < editedTokens.Count - start && uneditedTokens[^(end + 1)] == editedTokens[^(end + 1)])
+        {
+            end++;
+        }
+
+        int rows = uneditedTokens.Count - start - end;
+        int columns = editedTokens.Count - start - end;
+        var lengths = new int[rows + 1, columns + 1];
+        for (int i = rows - 1; i >= 0; i--)
+        {
+            for (int j = columns - 1; j >= 0; j--)
+            {
+                lengths[i, j] = uneditedTokens[start + i] == editedTokens[start + j]
+                    ? lengths[i + 1, j + 1] + 1
+                    : Math.Max(lengths[i + 1, j], lengths[i, j + 1]);
+            }
+        }
+
+        var builder = new StringBuilder(edited.Length);
+        builder.AppendJoin(null, originalTokens.Take(start));
+        for (int i = 0, j = 0; j < columns;)
+        {
+            if (i < rows && uneditedTokens[start + i] == editedTokens[start + j])
+            {
+                builder.Append(originalTokens[start + i]);
+                i++;
+                j++;
+            }
+            else if (i < rows && lengths[i + 1, j] >= lengths[i, j + 1])
+            {
+                i++;
+            }
+            else
+            {
+                builder.Append(editedTokens[start + j]);
+                j++;
+            }
+        }
+
+        builder.AppendJoin(null, originalTokens.Skip(originalTokens.Count - end));
+        return builder.ToString();
+    }
+
+    // Splits the text of an XML document into its markup (tags, comments, CDATA sections, processing instructions and the
+    // document type) and the text between them.
+    private static List<string> Tokenize(string text)
+    {
+        var tokens = new List<string>();
+        int position = 0;
+        while (position < text.Length)
+        {
+            int end;
+            if (text[position] != '<')
+            {
+                end = text.IndexOf('<', position);
+                end = end < 0 ? text.Length : end;
+            }
+            else if (text.AsSpan(position).StartsWith("<!--", StringComparison.Ordinal))
+            {
+                end = EndOf("-->", position + 4);
+            }
+            else if (text.AsSpan(position).StartsWith("<![CDATA[", StringComparison.Ordinal))
+            {
+                end = EndOf("]]>", position + 9);
+            }
+            else if (text.AsSpan(position).StartsWith("<?", StringComparison.Ordinal))
+            {
+                end = EndOf("?>", position + 2);
+            }
+            else
+            {
+                // A tag ends at the first > outside of its attribute values; a document type can have brackets.
+                char quote = '\0';
+                int depth = 0;
+                for (end = position + 1; end < text.Length; end++)
+                {
+                    char c = text[end];
+                    if (quote != '\0')
+                    {
+                        quote = c == quote ? '\0' : quote;
+                    }
+                    else if (c is '"' or '\'')
+                    {
+                        quote = c;
+                    }
+                    else if (c == '[')
+                    {
+                        depth++;
+                    }
+                    else if (c == ']')
+                    {
+                        depth--;
+                    }
+                    else if (c == '>' && depth <= 0)
+                    {
+                        end++;
+                        break;
+                    }
+                }
+            }
+
+            tokens.Add(text[position..end]);
+            position = end;
+        }
+
+        return tokens;
+
+        int EndOf(string terminator, int from)
+        {
+            int index = text.IndexOf(terminator, from, StringComparison.Ordinal);
+            return index < 0 ? text.Length : index + terminator.Length;
+        }
     }
 
     /// <summary>

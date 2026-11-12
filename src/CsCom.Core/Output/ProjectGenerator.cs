@@ -122,7 +122,7 @@ public sealed partial class ProjectGenerator
         {
             LogProjectFileNotFound(directory);
         }
-        else if (ProjectFile.Update(projectPath, languageVersion, ToolInfo.Version, settings.IsDynamic))
+        else if (ProjectFile.Update(projectPath, request.LanguageVersion is null ? null : languageVersion, ToolInfo.Version, settings.IsDynamic))
         {
             LogProjectFileUpdated(projectPath);
         }

@@ -43,6 +43,50 @@ public sealed class ProjectGeneratorTests
     }
 
     [TestMethod]
+    public void UpdateKeepsTheLanguageVersionAndTheFormattingOfTheProjectFile()
+    {
+        // The owner of the project changed its LangVersion and formats the tags over several lines, with single quotes.
+        string directory = TestEnvironment.CreateDirectory("update-project-file");
+        string project = _generator.CreateProject(new CreateProjectRequest { Sources = [TestEnvironment.TestTypeLibrary], OutputDirectory = directory });
+        string text = File.ReadAllText(project)
+            .Replace("<LangVersion>14</LangVersion>", "<LangVersion>preview</LangVersion>", StringComparison.Ordinal)
+            .Replace(
+                $"<PackageReference Include=\"CsCom.Runtime\" Version=\"{ToolInfo.Version}\" />",
+                "<PackageReference Include='CsCom.Runtime'\r\n                      Version=\"0.0.1\"/>\r\n    <Content Include='a.txt'\r\n             CopyToOutputDirectory=\"Always\"/>",
+                StringComparison.Ordinal);
+        File.WriteAllText(project, text);
+
+        _generator.UpdateProject(new UpdateProjectRequest { ProjectDirectory = directory });
+
+        // Only the tag with the changed version is written again.
+        string expected = text.Replace(
+            "<PackageReference Include='CsCom.Runtime'\r\n                      Version=\"0.0.1\"/>",
+            $"<PackageReference Include=\"CsCom.Runtime\" Version=\"{ToolInfo.Version}\" />",
+            StringComparison.Ordinal);
+        Assert.AreEqual(expected, File.ReadAllText(project));
+
+        // The version is set when the update asks for one.
+        _generator.UpdateProject(new UpdateProjectRequest { ProjectDirectory = directory, LanguageVersion = 15 });
+        Assert.AreEqual(expected.Replace("<LangVersion>preview</LangVersion>", "<LangVersion>15</LangVersion>", StringComparison.Ordinal), File.ReadAllText(project));
+    }
+
+    [TestMethod]
+    public void UpdateKeepsTheEncodingOfTheProjectFile()
+    {
+        string directory = TestEnvironment.CreateDirectory("update-encoding");
+        string project = _generator.CreateProject(new CreateProjectRequest { Sources = [TestEnvironment.TestTypeLibrary], OutputDirectory = directory });
+        var latin1 = System.Text.Encoding.Latin1;
+        string text = "<?xml version=\"1.0\" encoding=\"iso-8859-1\"?>\r\n" + File.ReadAllText(project)
+            .Replace("<Nullable>enable</Nullable>", "<Nullable>enable</Nullable>\r\n    <Authors>Müller</Authors>", StringComparison.Ordinal)
+            .Replace($"Version=\"{ToolInfo.Version}\"", "Version=\"0.0.1\"", StringComparison.Ordinal);
+        File.WriteAllText(project, text, latin1);
+
+        _generator.UpdateProject(new UpdateProjectRequest { ProjectDirectory = directory });
+
+        Assert.AreEqual(text.Replace("Version=\"0.0.1\"", $"Version=\"{ToolInfo.Version}\"", StringComparison.Ordinal), File.ReadAllText(project, latin1));
+    }
+
+    [TestMethod]
     public void CreatesProjectWithOptions()
     {
         string directory = TestEnvironment.CreateDirectory("options");
