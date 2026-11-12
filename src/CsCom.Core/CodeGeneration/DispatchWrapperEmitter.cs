@@ -126,10 +126,10 @@ internal sealed class DispatchWrapperEmitter
             // properties, since objects reject DISPATCH_METHOD for them. The value of a setter is passed first.
             string call = method.InvokeKind switch
             {
-                InvokeKind.PropertyGet => $"InvokeGet({string.Join(", ", [id, .. parameters.Select(Argument)])})",
+                InvokeKind.PropertyGet => $"InvokeGet({string.Join(", ", [id, .. Arguments(parameters)])})",
                 InvokeKind.PropertyPut or InvokeKind.PropertyPutRef when parameters.Count > 0 =>
-                    $"{(method.InvokeKind == InvokeKind.PropertyPut ? "InvokePut" : "InvokePutRef")}({string.Join(", ", [id, Argument(parameters[^1]), .. parameters.SkipLast(1).Select(Argument)])})",
-                _ => $"InvokeMethod({string.Join(", ", [id, .. parameters.Select(Argument)])})",
+                    $"{(method.InvokeKind == InvokeKind.PropertyPut ? "InvokePut" : "InvokePutRef")}({string.Join(", ", [id, Argument(parameters[^1]), .. Arguments(parameters[..^1])])})",
+                _ => $"InvokeMethod({string.Join(", ", [id, .. Arguments(parameters)])})",
             };
             return _context.Annotations.Annotate(
                 declaration
@@ -208,7 +208,7 @@ internal sealed class DispatchWrapperEmitter
             int dispId = (getter ?? setter)!.MemberId;
             string id = DispId(dispId);
             string[] indexNames = SignatureParameter.GetIndexNames(property.Index);
-            string index = string.Concat(indexNames.Select(static n => ", " + Syntax.Escape(n)));
+            string index = string.Concat(Arguments(property.Index, indexNames.Select(Syntax.Escape).ToList()).Select(static a => ", " + a));
             string? get = getterSignature is null ? null : property.Type.FromObject($"InvokeGet({id}{index})");
             string? set = setterSignature is null ? null : $"{(setter == put ? "InvokePut" : "InvokePutRef")}({id}, value{index})";
             var accessors = new[] { getterSignature is null ? null : getter, setterSignature is null ? null : setter }
@@ -380,6 +380,14 @@ internal sealed class DispatchWrapperEmitter
 
     private static string Argument(SignatureParameter parameter) =>
         parameter.IsOptionalVariant ? $"{parameter.Name} ?? global::System.Reflection.Missing.Value" : parameter.Name;
+
+    // The arguments passed to the params parameter of InvokeMethod, InvokeGet, InvokePut and InvokePutRef. A single array is
+    // passed as an object, since C# would take an array of reference types for the list of the arguments itself.
+    private static IEnumerable<string> Arguments(IReadOnlyList<SignatureParameter> parameters, IReadOnlyList<string>? expressions = null)
+    {
+        expressions ??= [.. parameters.Select(Argument)];
+        return parameters.Count == 1 && parameters[0].TypeName.TrimEnd('?').EndsWith(']') ? [$"(object?){expressions[0]}"] : expressions;
+    }
 
     private static string DispId(int dispId) => dispId.ToString(CultureInfo.InvariantCulture);
 

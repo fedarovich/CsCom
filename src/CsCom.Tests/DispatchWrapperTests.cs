@@ -83,6 +83,47 @@ public sealed unsafe partial class DispatchWrapperTests
     }
 
     [TestMethod]
+    public void PassesASingleArrayAsOneArgument()
+    {
+        // C# would take an array of reference types for the list of the arguments of the params parameter of the runtime.
+        var strings = new SafeArrayTypeReference(new PrimitiveTypeReference(VarEnum.VT_BSTR));
+        var (wrapper, recorder) = CreateWrapper(
+            "Names",
+            Method("SetNames", 1, InvokeKind.Method, Void, Parameter("names", strings)),
+            Method("Find", 2, InvokeKind.PropertyGet, Variant, Parameter("names", strings)),
+            Method("Item", 0, InvokeKind.PropertyGet, Variant, Parameter("names", strings)),
+            Method("Item", 0, InvokeKind.PropertyPut, Void, Parameter("names", strings), Parameter("value", Variant)));
+
+        string?[] names = ["a", null, "c"];
+        wrapper.GetType().GetMethod("SetNames")!.Invoke(wrapper, [names]);
+        AssertSingleArray(DispatchFlags.Method, names);
+
+        wrapper.GetType().GetMethod("SetNames")!.Invoke(wrapper, [null]);
+        AssertCall(recorder.Calls[^1], 1, DispatchFlags.Method, [], [null]);
+
+        wrapper.GetType().GetMethod("get_Find")!.Invoke(wrapper, [names]);
+        AssertSingleArray(DispatchFlags.PropertyGet | DispatchFlags.Method, names);
+
+        var indexer = wrapper.GetType().GetProperties().Single(static p => p.GetIndexParameters().Length == 1);
+        indexer.GetValue(wrapper, [names]);
+        AssertSingleArray(DispatchFlags.PropertyGet | DispatchFlags.Method, names);
+
+        indexer.SetValue(wrapper, "value", [names]);
+        var call = recorder.Calls[^1];
+        Assert.AreEqual(2, call.Arguments.Length);
+        CollectionAssert.AreEqual(names, (string?[])call.Arguments[0]!);
+        Assert.AreEqual("value", call.Arguments[1]);
+
+        void AssertSingleArray(DispatchFlags flags, string?[] expected)
+        {
+            var call = recorder.Calls[^1];
+            Assert.AreEqual(flags, call.Flags);
+            Assert.AreEqual(1, call.Arguments.Length);
+            CollectionAssert.AreEqual(expected, (string?[])call.Arguments[0]!);
+        }
+    }
+
+    [TestMethod]
     public void ConvertsArraysOfEnums()
     {
         // A SAFEARRAY(Color), here also through an alias of the enum, is a SAFEARRAY of VT_I4. It is converted to a Color[] rather
