@@ -207,7 +207,8 @@ internal sealed class DispatchWrapperEmitter
         {
             int dispId = (getter ?? setter)!.MemberId;
             string id = DispId(dispId);
-            string index = string.Concat(property.Index.Select(static p => ", " + Syntax.Escape(p.GetIndexName())));
+            string[] indexNames = SignatureParameter.GetIndexNames(property.Index);
+            string index = string.Concat(indexNames.Select(static n => ", " + Syntax.Escape(n)));
             string? get = getterSignature is null ? null : property.Type.FromObject($"InvokeGet({id}{index})");
             string? set = setterSignature is null ? null : $"{(setter == put ? "InvokePut" : "InvokePutRef")}({id}, value{index})";
             var accessors = new[] { getterSignature is null ? null : getter, setterSignature is null ? null : setter }
@@ -222,7 +223,7 @@ internal sealed class DispatchWrapperEmitter
             }
             else if (!hasIndexer && dispId == DispIdValue)
             {
-                var parameters = property.Index.Select(static p => p.Annotate(Syntax.Parameter(p.TypeName, p.GetIndexName())));
+                var parameters = property.Index.Select((p, i) => p.Annotate(Syntax.Parameter(p.TypeName, indexNames[i])));
                 var indexer = IndexerDeclaration(Syntax.Type(property.Type.Name))
                     .WithModifiers(Syntax.Modifiers(SyntaxKind.PublicKeyword))
                     .WithParameterList(Syntax.BracketedParameters(parameters));

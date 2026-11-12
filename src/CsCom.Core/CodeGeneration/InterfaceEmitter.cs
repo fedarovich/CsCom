@@ -354,7 +354,7 @@ internal sealed partial class InterfaceEmitter
 
     private static string Arguments(IReadOnlyList<SignatureParameter> index, string? value = null)
     {
-        var arguments = index.Select(static p => Syntax.Escape(p.GetIndexName(Receiver))).ToList();
+        var arguments = SignatureParameter.GetIndexNames(index, Receiver).Select(Syntax.Escape).ToList();
         if (value is not null)
         {
             arguments.Add(value);
@@ -377,7 +377,8 @@ internal sealed partial class InterfaceEmitter
 
     private static IndexerDeclarationSyntax Indexer(string type, IReadOnlyList<SignatureParameter> index, string? getExpression, string? setExpression, string? documentation)
     {
-        var parameters = index.Select(static p => p.Annotate(Syntax.Parameter(p.TypeName, p.GetIndexName(Receiver))));
+        string[] names = SignatureParameter.GetIndexNames(index, Receiver);
+        var parameters = index.Select((p, i) => p.Annotate(Syntax.Parameter(p.TypeName, names[i])));
         var indexer = IndexerDeclaration(Syntax.Type(type))
             .WithModifiers(Syntax.Modifiers(SyntaxKind.PublicKeyword))
             .WithParameterList(Syntax.BracketedParameters(parameters));

@@ -67,13 +67,14 @@ internal static class NamedIndexerEmitter
         bool isClass = context.Options.NamedIndexers == NamedIndexers.ClassProperty;
         string inlining = isClass ? $"[{Inlining}] " : string.Empty;
         // The implicit setter parameter and the field cannot be shadowed by index parameters.
-        var arguments = index.Select(static p => Syntax.Escape(p.GetIndexName(Target))).ToList();
+        string[] names = SignatureParameter.GetIndexNames(index, Target);
+        var arguments = names.Select(Syntax.Escape).ToList();
         string? get = getter is null ? null : $"{Target}.{Syntax.Escape(getter)}({string.Join(", ", arguments)})";
         string? set = setter is null ? null : $"{Target}.{Syntax.Escape(setter)}({string.Join(", ", [.. arguments, "value"])})";
 
-        var parameters = index.Select(static p =>
+        var parameters = index.Select((p, i) =>
         {
-            var parameter = p.Annotate(Syntax.Parameter(p.TypeName, p.GetIndexName(Target)));
+            var parameter = p.Annotate(Syntax.Parameter(p.TypeName, names[i]));
             return p.DefaultValue is null ? parameter : parameter.WithDefault(EqualsValueClause(Syntax.Expression(p.DefaultValue)));
         });
         var indexer = IndexerDeclaration(Syntax.Type(valueType))

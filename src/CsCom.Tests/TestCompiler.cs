@@ -12,7 +12,8 @@ internal static class TestCompiler
     /// <summary>
     /// Compiles C# source into a library, written to <paramref name="path"/> if specified.
     /// </summary>
-    public static MemoryStream Compile(string name, string source, string? path = null, MemoryStream? reference = null)
+    /// <param name="languageVersion">The C# version, e.g. <see cref="LanguageVersion.Preview"/> for features of C# 15 such as extension indexers.</param>
+    public static MemoryStream Compile(string name, string source, string? path = null, MemoryStream? reference = null, LanguageVersion languageVersion = LanguageVersion.Default)
     {
         var references = ((string)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")!).Split(Path.PathSeparator)
             .Where(static f => Path.GetFileName(f).StartsWith("System.", StringComparison.Ordinal) || Path.GetFileName(f) is "mscorlib.dll" or "netstandard.dll")
@@ -25,7 +26,7 @@ internal static class TestCompiler
 
         var compilation = CSharpCompilation.Create(
             name,
-            [CSharpSyntaxTree.ParseText(source)],
+            [CSharpSyntaxTree.ParseText(source, CSharpParseOptions.Default.WithLanguageVersion(languageVersion))],
             references,
             new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary, allowUnsafe: true));
         var stream = new MemoryStream();

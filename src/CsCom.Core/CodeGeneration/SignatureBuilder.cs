@@ -37,11 +37,31 @@ internal sealed record SignatureParameter(ParameterDefinition Definition, TypeRe
         first.Count == second.Count && first.Zip(second).All(static pair => pair.First.TypeName == pair.Second.TypeName);
 
     /// <summary>
-    /// Gets the unescaped name of the parameter as an index parameter of a generated indexer: a trailing <c>_</c> keeps it from
-    /// shadowing the implicit <c>value</c> parameter of setters or <paramref name="reserved"/>, another name that the accessors use.
+    /// Gets the unescaped names of index parameters as the parameters of a generated indexer: trailing <c>_</c>s keep them from
+    /// shadowing the implicit <c>value</c> parameter of setters or <paramref name="reserved"/>, another name that the accessors
+    /// use, and from clashing with the other index parameters, e.g. <c>value__</c> for <c>value</c> next to <c>value_</c>.
     /// </summary>
-    public string GetIndexName(string? reserved = null) =>
-        Definition.Name == "value" || Definition.Name == reserved ? Definition.Name + "_" : Definition.Name;
+    public static string[] GetIndexNames(IReadOnlyList<SignatureParameter> index, string? reserved = null)
+    {
+        var taken = new HashSet<string>(index.Select(static p => p.Definition.Name), StringComparer.Ordinal);
+        var names = new string[index.Count];
+        for (int i = 0; i < names.Length; i++)
+        {
+            string name = index[i].Definition.Name;
+            if (name == "value" || name == reserved)
+            {
+                do
+                {
+                    name += "_";
+                }
+                while (!taken.Add(name));
+            }
+
+            names[i] = name;
+        }
+
+        return names;
+    }
 
     /// <summary>Associates a parameter declared for this parameter with <see cref="Definition"/>.</summary>
     public ParameterSyntax Annotate(ParameterSyntax parameter) => Annotation is null ? parameter : parameter.WithAdditionalAnnotations(Annotation);

@@ -465,6 +465,92 @@ public sealed class CodeGenerationTests : VerifyBase
     }
 
     [TestMethod]
+    public void NamesIndexParametersWithoutClashes()
+    {
+        // Index parameters named value, or like @this or _target that the accessors use, get a trailing _, and more while the
+        // name is taken by another index parameter. The generated code is compiled to catch duplicate parameters.
+        var variant = new PrimitiveTypeReference(System.Runtime.InteropServices.VarEnum.VT_VARIANT);
+        var library = new TypeLibrary { Name = "Synthetic" };
+
+        // The default member is the extension indexer with C# 15 and a proxy like Cell with C# 14.
+        var vtable = new InterfaceDefinition { Name = "IGrid", OriginalName = "IGrid", Guid = Guid.NewGuid(), InterfaceKind = InterfaceKind.Vtable, BaseVtableSlots = 3 };
+        var retval = new ParameterDefinition { Name = "result", Type = new PointerTypeReference(variant), Flags = ParameterFlags.Out | ParameterFlags.Retval };
+        AddAccessors(vtable, "Item", 0, new PrimitiveTypeReference(System.Runtime.InteropServices.VarEnum.VT_HRESULT), retval, "value", "value_", "this", "this_");
+        AddAccessors(vtable, "Cell", 1, new PrimitiveTypeReference(System.Runtime.InteropServices.VarEnum.VT_HRESULT), retval, "value", "value_", "_target", "_target_");
+        library.Types.Add(vtable);
+
+        // The default member of a dispinterface is the indexer of its wrapper.
+        var dispatch = new InterfaceDefinition
+        {
+            Name = "DGrid",
+            OriginalName = "DGrid",
+            Guid = Guid.NewGuid(),
+            InterfaceKind = InterfaceKind.Dispatch,
+            BaseInterface = new PrimitiveTypeReference(System.Runtime.InteropServices.VarEnum.VT_DISPATCH),
+            BaseVtableSlots = 7,
+        };
+        AddAccessors(dispatch, "_Default", 0, variant, null, "value", "value_");
+        library.Types.Add(dispatch);
+
+        string text = Generate(14);
+        StringAssert.Contains(text, "public object? this[object? value__, object? value_, object? @this, object? this_]");
+        StringAssert.Contains(text, "public object? this[object? value__, object? value_, object? _target__, object? _target_]");
+        StringAssert.Contains(text, "get => _target.get_Cell(value__, value_, _target__, _target_);");
+        StringAssert.Contains(text, "set => _target.set_Cell(value__, value_, _target__, _target_, value);");
+        StringAssert.Contains(text, "public object? this[object? value__, object? value_]");
+        StringAssert.Contains(text, "InvokePut(0, value, value__, value_)");
+
+        text = Generate(15);
+        StringAssert.Contains(text, "public object? this[object? value__, object? value_, object? this__, object? this_] { get => @this.get_Item(value__, value_, this__, this_); set => @this.set_Item(value__, value_, this__, this_, value); }");
+
+        string Generate(int languageVersion)
+        {
+            var options = new CodeGenerationOptions
+            {
+                Namespace = "Test",
+                LanguageVersion = languageVersion,
+                NamedIndexers = NamedIndexers.ClassProperty,
+                SingleFile = true,
+                SingleFileName = "Test.cs",
+            };
+            string text = new InteropPipeline().GenerateCode(library, options).Single().GetText();
+            using var runtime = new MemoryStream(File.ReadAllBytes(typeof(CsCom.Runtime.DispatchObject).Assembly.Location));
+            TestCompiler.Compile("Grid", text, reference: runtime, languageVersion: languageVersion >= 15 ? Microsoft.CodeAnalysis.CSharp.LanguageVersion.Preview : Microsoft.CodeAnalysis.CSharp.LanguageVersion.Default);
+            return text;
+        }
+
+        // A getter that returns its value through retval (vtable) or as the result (dispinterface), and a setter.
+        static void AddAccessors(InterfaceDefinition definition, string name, int dispId, TypeReference returnType, ParameterDefinition? retval, params string[] index)
+        {
+            var parameters = index.Select(n => new ParameterDefinition { Name = n, Type = new PrimitiveTypeReference(System.Runtime.InteropServices.VarEnum.VT_VARIANT), Flags = ParameterFlags.In }).ToList();
+            bool isVtable = definition.InterfaceKind == InterfaceKind.Vtable;
+            var getter = new MethodDefinition
+            {
+                Name = name,
+                OriginalName = name,
+                MemberId = dispId,
+                InvokeKind = InvokeKind.PropertyGet,
+                VtableSlot = isVtable ? definition.BaseVtableSlots + definition.Methods.Count : -1,
+                ReturnType = returnType,
+            };
+            getter.Parameters.AddRange(retval is null ? parameters : [.. parameters, retval]);
+            definition.Methods.Add(getter);
+
+            var setter = new MethodDefinition
+            {
+                Name = name,
+                OriginalName = name,
+                MemberId = dispId,
+                InvokeKind = InvokeKind.PropertyPut,
+                VtableSlot = isVtable ? definition.BaseVtableSlots + definition.Methods.Count : -1,
+                ReturnType = isVtable ? returnType : new PrimitiveTypeReference(System.Runtime.InteropServices.VarEnum.VT_VOID),
+            };
+            setter.Parameters.AddRange([.. parameters, new ParameterDefinition { Name = "item", Type = new PrimitiveTypeReference(System.Runtime.InteropServices.VarEnum.VT_VARIANT), Flags = ParameterFlags.In }]);
+            definition.Methods.Add(setter);
+        }
+    }
+
+    [TestMethod]
     public void TypesUnsignedVariantConstantsLikeIntegerLiterals()
     {
         // The VT_UI4 and VT_UI8 values of VARIANT constants get the first of int, uint, long and ulong that can hold them, like
