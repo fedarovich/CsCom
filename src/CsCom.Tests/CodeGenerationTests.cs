@@ -413,7 +413,8 @@ public sealed class CodeGenerationTests : VerifyBase
     public void NamesTheFieldsOfEventSinksWithoutClashes(EventStyle style)
     {
         // The observables are stored in fields named after the events, next to the __connection field: the event named
-        // connection, then connection_2, get the next free names. The generated code is compiled to catch duplicate members.
+        // connection, then connection_2, get the next free names. The event named __connection is renamed so that it does not
+        // clash with the field itself. The generated code is compiled to catch duplicate members.
         var events = new InterfaceDefinition
         {
             Name = "DPortEvents",
@@ -423,7 +424,7 @@ public sealed class CodeGenerationTests : VerifyBase
             BaseInterface = new PrimitiveTypeReference(System.Runtime.InteropServices.VarEnum.VT_DISPATCH),
             BaseVtableSlots = 7,
         };
-        string[] names = ["connection", "connection_2", "Closed"];
+        string[] names = ["connection", "connection_2", "Closed", "__connection"];
         for (int i = 0; i < names.Length; i++)
         {
             events.Methods.Add(new MethodDefinition
@@ -455,6 +456,11 @@ public sealed class CodeGenerationTests : VerifyBase
             StringAssert.Contains(text, "global::CsCom.Runtime.EventSubject<DPortEvents_connectionEventArgs> __connection_2 = new();");
             StringAssert.Contains(text, "global::CsCom.Runtime.EventSubject<DPortEvents_connection_2EventArgs> __connection_2_2 = new();");
             StringAssert.Contains(text, "global::CsCom.Runtime.EventSubject<DPortEvents_ClosedEventArgs> __Closed = new();");
+        }
+
+        if (style != EventStyle.Interface)
+        {
+            StringAssert.Contains(text, " __connectionEvent");
         }
     }
 

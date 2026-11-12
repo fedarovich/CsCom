@@ -26,10 +26,11 @@ internal sealed partial class EventEmitter
     // The field of the sink class that holds the connection, next to the fields of the observables (Event.FieldName).
     private const string ConnectionField = "__connection";
 
-    // The members of the sink classes and of object, which the events must not hide.
+    // The members of the sink classes and of object, which the events must not hide or clash with, e.g. an event named
+    // __connection with the connection field.
     private static readonly HashSet<string> ReservedNames = new(StringComparer.Ordinal)
     {
-        "Iid", "Connect", "Dispose", "DispatchHandler", "ComSink", "Equals", "GetHashCode", "GetType", "ToString", "MemberwiseClone", "ReferenceEquals", "Finalize",
+        "Iid", "Connect", "Dispose", "DispatchHandler", "ComSink", ConnectionField, "Equals", "GetHashCode", "GetType", "ToString", "MemberwiseClone", "ReferenceEquals", "Finalize",
     };
 
     private readonly EmitContext _context;
