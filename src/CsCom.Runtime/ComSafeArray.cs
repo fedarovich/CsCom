@@ -74,12 +74,21 @@ public sealed unsafe class ComSafeArray<T> : IDisposable, ISafeArrayProvider
         get
         {
             Marshal.ThrowExceptionForHR(OleNativeMethods.SafeArrayGetVartype(Pointer, out ushort vt));
+            GC.KeepAlive(this);
             return (VarEnum)vt;
         }
     }
 
     /// <summary>Gets the number of dimensions.</summary>
-    public int Rank => (int)OleNativeMethods.SafeArrayGetDim(Pointer);
+    public int Rank
+    {
+        get
+        {
+            int rank = (int)OleNativeMethods.SafeArrayGetDim(Pointer);
+            GC.KeepAlive(this);
+            return rank;
+        }
+    }
 
     /// <summary>Gets the total number of elements.</summary>
     public int Length
@@ -92,6 +101,7 @@ public sealed unsafe class ComSafeArray<T> : IDisposable, ISafeArrayProvider
                 length *= dimension;
             }
 
+            GC.KeepAlive(this);
             return length;
         }
     }
@@ -166,6 +176,7 @@ public sealed unsafe class ComSafeArray<T> : IDisposable, ISafeArrayProvider
     public int GetLowerBound(int dimension)
     {
         Marshal.ThrowExceptionForHR(OleNativeMethods.SafeArrayGetLBound(Pointer, CheckDimension(dimension), out int bound));
+        GC.KeepAlive(this);
         return bound;
     }
 
@@ -174,6 +185,7 @@ public sealed unsafe class ComSafeArray<T> : IDisposable, ISafeArrayProvider
     public int GetUpperBound(int dimension)
     {
         Marshal.ThrowExceptionForHR(OleNativeMethods.SafeArrayGetUBound(Pointer, CheckDimension(dimension), out int bound));
+        GC.KeepAlive(this);
         return bound;
     }
 
@@ -184,7 +196,9 @@ public sealed unsafe class ComSafeArray<T> : IDisposable, ISafeArrayProvider
     {
         nint pointer = Pointer;
         VarEnum vt = ElementType;
-        return ComConvert.To<T>(Access(pointer, indices, vt, null, static (element, vt, _) => SafeArrayConverter.ReadElement((void*)element, vt)));
+        object? value = Access(pointer, indices, vt, null, static (element, vt, _) => SafeArrayConverter.ReadElement((void*)element, vt));
+        GC.KeepAlive(this);
+        return ComConvert.To<T>(value);
     }
 
     /// <summary>Sets an element, converting the value to the element type of the <c>SAFEARRAY</c>.</summary>
@@ -200,6 +214,7 @@ public sealed unsafe class ComSafeArray<T> : IDisposable, ISafeArrayProvider
             SafeArrayConverter.WriteElement((void*)element, vt, value);
             return null;
         });
+        GC.KeepAlive(this);
     }
 
     /// <summary>
@@ -210,7 +225,8 @@ public sealed unsafe class ComSafeArray<T> : IDisposable, ISafeArrayProvider
     /// the elements: the numeric type of the elements or an enum based on it, <see cref="decimal"/> for <c>VT_DECIMAL</c>,
     /// <see cref="ComBool"/> for <c>VT_BOOL</c>, <see cref="ComDate"/> for <c>VT_DATE</c> or <see cref="ComCurrency"/> for
     /// <c>VT_CY</c>. The span is valid until the instance is disposed or detached, and while the <c>SAFEARRAY</c> is not
-    /// resized or destroyed by its owner.
+    /// resized or destroyed by its owner. An instance that owns its <c>SAFEARRAY</c> destroys it when it is finalized, so
+    /// the instance must be kept reachable while the span is used, e.g. by disposing it afterwards.
     /// </remarks>
     /// <exception cref="InvalidOperationException">
     /// The array is not one-dimensional, or its elements cannot be accessed as <typeparamref name="T"/>.
@@ -228,7 +244,9 @@ public sealed unsafe class ComSafeArray<T> : IDisposable, ISafeArrayProvider
 
         Marshal.ThrowExceptionForHR(OleNativeMethods.SafeArrayAccessData(pointer, out void* data));
         OleNativeMethods.SafeArrayUnaccessData(pointer);
-        return new Span<T>(data, GetLength(0));
+        var span = new Span<T>(data, GetLength(0));
+        GC.KeepAlive(this);
+        return span;
     }
 
     /// <summary>Copies the elements of a one-dimensional array to a zero-based .NET array.</summary>
@@ -347,7 +365,9 @@ public sealed unsafe class ComSafeArray<T> : IDisposable, ISafeArrayProvider
     {
         nint pointer = Pointer;
         CheckRank(pointer, rank);
-        return SafeArrayConverter.ToManaged(pointer)!;
+        Array array = SafeArrayConverter.ToManaged(pointer)!;
+        GC.KeepAlive(this);
+        return array;
     }
 
     private uint CheckDimension(int dimension)

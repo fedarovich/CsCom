@@ -52,10 +52,26 @@ public sealed unsafe class ComBstr : IDisposable
     public bool OwnsString { get; private set; }
 
     /// <summary>Gets the number of characters.</summary>
-    public int Length => (int)OleNativeMethods.SysStringLen(Pointer);
+    public int Length
+    {
+        get
+        {
+            int length = (int)OleNativeMethods.SysStringLen(Pointer);
+            GC.KeepAlive(this);
+            return length;
+        }
+    }
 
     /// <summary>Gets the number of bytes, which can be odd for <c>BSTR</c>s that hold binary data.</summary>
-    public int ByteLength => (int)OleNativeMethods.SysStringByteLen(Pointer);
+    public int ByteLength
+    {
+        get
+        {
+            int length = (int)OleNativeMethods.SysStringByteLen(Pointer);
+            GC.KeepAlive(this);
+            return length;
+        }
+    }
 
     /// <summary>Creates a <c>BSTR</c> with the characters of a string.</summary>
     public static ComBstr Create(ReadOnlySpan<char> value)
@@ -84,23 +100,38 @@ public sealed unsafe class ComBstr : IDisposable
     /// <returns>The wrapper, or <see langword="null"/> if <paramref name="pointer"/> is 0, which COM treats as an empty string.</returns>
     public static ComBstr? FromPointer(nint pointer, bool ownsString) => pointer == 0 ? null : new(pointer, ownsString);
 
-    /// <summary>Gets the characters, which are valid until the instance is disposed.</summary>
+    /// <summary>
+    /// Gets the characters, which are valid until the instance is disposed. An instance that owns its <c>BSTR</c> frees it
+    /// when it is finalized, so the instance must be kept reachable while the span is used, e.g. by disposing it afterwards.
+    /// </summary>
     public ReadOnlySpan<char> AsSpan()
     {
         nint pointer = Pointer;
-        return new((void*)pointer, (int)OleNativeMethods.SysStringLen(pointer));
+        var span = new ReadOnlySpan<char>((void*)pointer, (int)OleNativeMethods.SysStringLen(pointer));
+        GC.KeepAlive(this);
+        return span;
     }
 
-    /// <summary>Gets the bytes, which are valid until the instance is disposed.</summary>
+    /// <summary>
+    /// Gets the bytes, which are valid until the instance is disposed. An instance that owns its <c>BSTR</c> frees it when
+    /// it is finalized, so the instance must be kept reachable while the span is used, e.g. by disposing it afterwards.
+    /// </summary>
     public ReadOnlySpan<byte> AsBytes()
     {
         nint pointer = Pointer;
-        return new((void*)pointer, (int)OleNativeMethods.SysStringByteLen(pointer));
+        var span = new ReadOnlySpan<byte>((void*)pointer, (int)OleNativeMethods.SysStringByteLen(pointer));
+        GC.KeepAlive(this);
+        return span;
     }
 
     /// <summary>Copies the characters to a string.</summary>
     /// <exception cref="ObjectDisposedException">The instance was disposed or detached.</exception>
-    public override string ToString() => new(AsSpan());
+    public override string ToString()
+    {
+        string text = new(AsSpan());
+        GC.KeepAlive(this);
+        return text;
+    }
 
     /// <summary>
     /// Gives up the <c>BSTR</c> without freeing it, e.g. to return it to a COM caller. The instance cannot be used afterwards.
