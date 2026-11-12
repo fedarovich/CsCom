@@ -74,6 +74,7 @@ public sealed partial class TypeLibraryReader
         private readonly ILogger _logger;
         private readonly Dictionary<TypeKey, TypeDefinition> _definitions = [];
         private readonly Dictionary<Guid, TypeLibraryReference> _importedLibraries = [];
+        private readonly List<string> _importedFiles = [];
         private readonly Queue<(ITypeInfo TypeInfo, TypeDefinition Definition)> _pending = [];
         private readonly Dictionary<VarEnum, PrimitiveTypeReference> _primitives = [];
         private Guid _libraryId;
@@ -125,6 +126,7 @@ public sealed partial class TypeLibraryReader
             _library.Types.Clear();
             _library.Types.AddRange(ordered);
             _library.ImportedLibraries.AddRange(_importedLibraries.Values);
+            _library.ImportedFiles.AddRange(_importedFiles.Distinct(StringComparer.OrdinalIgnoreCase));
             return _library;
         }
 
@@ -191,9 +193,32 @@ public sealed partial class TypeLibraryReader
                 typeLib.GetDocumentation(-1, out string? name, out _, out _, out _);
                 reference = new TypeLibraryReference(name ?? libraryId.ToString("B"), libraryId, attr.wMajorVerNum, attr.wMinorVerNum);
                 _importedLibraries.Add(libraryId, reference);
+                if (FindRegisteredFile(attr) is { } file)
+                {
+                    _importedFiles.Add(file);
+                }
             }
 
             return reference;
+        }
+
+        // The file of an imported library, which OLE loads through the registry like LoadRegTypeLib, if it is registered.
+        private static string? FindRegisteredFile(TLIBATTR attr)
+        {
+            if (OleAut32.QueryPathOfRegTypeLib(attr.guid, attr.wMajorVerNum, attr.wMinorVerNum, attr.lcid, out nint bstr) < 0 || bstr == 0)
+            {
+                return null;
+            }
+
+            string? path = Marshal.PtrToStringBSTR(bstr);
+            Marshal.FreeBSTR(bstr);
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                return null;
+            }
+
+            string file = TypeLibrarySource.GetFilePath(Environment.ExpandEnvironmentVariables(path.TrimEnd('\0')));
+            return File.Exists(file) ? System.IO.Path.GetFullPath(file) : null;
         }
 
         private void Populate(ITypeInfo typeInfo, TypeDefinition definition)

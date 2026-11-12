@@ -142,6 +142,9 @@ public sealed partial class LibrarySetGenerator
                 inputFiles.Add(TypeLibrarySource.GetFilePath(path));
             }
 
+            // The types used from other libraries are read from their files: registered type libraries or referenced assemblies.
+            inputFiles.AddRange(library.ImportedFiles);
+
             models.Add((reference, library, LoadConfiguration(reference.ConfigurationPath, inputFiles)));
         }
 

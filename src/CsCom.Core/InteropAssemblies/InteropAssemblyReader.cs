@@ -183,6 +183,10 @@ public sealed partial class InteropAssemblyReader
             _library.Types.Clear();
             _library.Types.AddRange(ordered);
             _library.ImportedLibraries.AddRange(_importedLibraries.Values);
+            _library.ImportedFiles.AddRange(_importedLibraries.Keys
+                .Select(static a => a.Location)
+                .Where(static l => !string.IsNullOrEmpty(l))
+                .Distinct(StringComparer.OrdinalIgnoreCase));
             return _library;
         }
 

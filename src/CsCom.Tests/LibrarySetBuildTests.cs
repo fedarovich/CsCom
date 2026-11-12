@@ -41,6 +41,48 @@ public sealed class LibrarySetBuildTests
     }
 
     [TestMethod]
+    public void RecordsTheRegisteredTypeLibrariesOfImportedTypes()
+    {
+        // CsComTest uses types of stdole, which are read from its registered type library, e.g. System32\stdole2.tlb.
+        string project = TestEnvironment.CreateDirectory("build-imported");
+
+        Run(project, [new BuildReference { Source = TestEnvironment.TestTypeLibrary }]);
+
+        var inputs = ReadInputs(Path.Combine(project, "obj", "CsCom", LibrarySetBuild.StateFileName));
+        Assert.IsTrue(
+            inputs.Any(static i => string.Equals(Path.GetFileName(i), "stdole2.tlb", StringComparison.OrdinalIgnoreCase) && File.Exists(i)),
+            string.Join(Environment.NewLine, inputs));
+    }
+
+    [TestMethod]
+    public void RecordsTheReferencedAssembliesOfImportedTypes()
+    {
+        // An interop assembly whose structure uses an enum of an assembly of the reference path: the code is out of date when
+        // that assembly is rebuilt, like when the interop assembly itself is.
+        string project = TestEnvironment.CreateDirectory("build-referenced");
+        string references = Path.Combine(project, "references");
+        Directory.CreateDirectory(references);
+        string enums = Path.Combine(references, "Enums.dll");
+        TestCompiler.Compile(
+            "Interop.Uses",
+            """
+            [assembly: System.Runtime.InteropServices.ImportedFromTypeLib("Uses")]
+            namespace Uses { public struct Item { public Enums.Kind Kind; } }
+            """,
+            Path.Combine(project, "Interop.Uses.dll"),
+            TestCompiler.Compile("Enums", "namespace Enums { public enum Kind { First } }", enums));
+
+        Run(project, [new BuildReference { Source = "Interop.Uses.dll", ReferencePath = "references" }]);
+
+        string state = Path.Combine(project, "obj", "CsCom", LibrarySetBuild.StateFileName);
+        CollectionAssert.Contains(ReadInputs(state).ToArray(), enums);
+        Assert.IsNotNull(BuildState.ReadGeneratedFiles(state, "hash1"));
+
+        File.SetLastWriteTimeUtc(enums, new DateTime(2000, 1, 1, 0, 0, 0, DateTimeKind.Utc));
+        Assert.IsNull(BuildState.ReadGeneratedFiles(state, "hash1"));
+    }
+
+    [TestMethod]
     [DataRow("EventStyle", "delegates", "'delegates' is not a valid value of CsComEventStyle: one of events, observable, interface, none is expected.")]
     [DataRow("SupportCode", "nuget", "'nuget' is not a valid value of CsComSupportCode: one of package, public, internal is expected.")]
     [DataRow("SafeArrayMarshalling", "1", "'1' is not a valid value of CsComSafeArrayMarshalling: one of array, sysarray, wrapper, none is expected.")]
@@ -181,4 +223,8 @@ public sealed class LibrarySetBuildTests
                 References = references,
             },
             "hash1");
+
+    // The paths of the input= lines of a state file, which follow the last write time and a '|'.
+    private static List<string> ReadInputs(string state) =>
+        [.. File.ReadAllLines(state).Where(static l => l.StartsWith("input=", StringComparison.Ordinal)).Select(static l => l[(l.IndexOf('|') + 1)..])];
 }

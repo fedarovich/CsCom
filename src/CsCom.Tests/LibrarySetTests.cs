@@ -139,7 +139,12 @@ public sealed class LibrarySetTests : VerifyBase
 
         StringAssert.Contains(GetText(result, LibrarySetGenerator.AssemblyAttributesFileName), "[assembly: global::System.Runtime.CompilerServices.DisableRuntimeMarshalling]");
         StringAssert.Contains(GetText(result, "Interop.CsComDrawing/ICanvas.cs"), "#nullable enable\r\n#pragma warning disable CS1591, SYSLIB1230\r\n");
-        CollectionAssert.AreEquivalent(new[] { TestEnvironment.DrawingTypeLibrary }, result.InputFiles.ToArray());
+
+        // CsComDrawing uses types of stdole, which are read from its registered type library.
+        string[] inputs = [.. result.InputFiles];
+        Assert.AreEqual(2, inputs.Length, string.Join(Environment.NewLine, inputs));
+        Assert.AreEqual(TestEnvironment.DrawingTypeLibrary, inputs[0]);
+        Assert.AreEqual(TestEnvironment.StdOle, inputs[1], ignoreCase: true);
     }
 
     [TestMethod]

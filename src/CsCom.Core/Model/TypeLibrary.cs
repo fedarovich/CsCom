@@ -34,6 +34,12 @@ public sealed class TypeLibrary
 
     /// <summary>The libraries some of the <see cref="Types"/> are imported from.</summary>
     public List<TypeLibraryReference> ImportedLibraries { get; } = [];
+
+    /// <summary>
+    /// The files that the <see cref="ImportedLibraries"/> were read from, when they are known: the registered type libraries
+    /// or the referenced assemblies. The imported types depend on them, e.g. for the up-to-date check of CsCom.Build.
+    /// </summary>
+    public List<string> ImportedFiles { get; } = [];
 }
 
 /// <summary>
