@@ -320,10 +320,17 @@ internal sealed partial class SignatureBuilder
         !parameter.IsByRef && (parameter.Definition.Flags.HasFlag(ParameterFlags.Optional) || parameter.Definition.Flags.HasFlag(ParameterFlags.HasDefault));
 
     // Whether the null value of a parameter that can be omitted can mean an omitted argument: a VARIANT, which IDispatch::Invoke
-    // passes as is in late-bound calls, where any parameter passed as an object can be omitted the same way.
+    // passes as is in late-bound calls, where any parameter passed as an object can be omitted the same way. The object
+    // applies the default value of an omitted argument of a late-bound call, but nothing does for a call through the vtable,
+    // so a VARIANT with a default value is not omitted there: the overloads for default values pass its value.
     private static bool IsOptionalVariant(SignatureParameter parameter, bool lateBound) =>
         CanBeOmitted(parameter)
-        && (lateBound ? parameter.TypeName == LateBoundType.Object.Name : parameter.ValueType is PrimitiveTypeReference { VarType: VarEnum.VT_VARIANT });
+        && (lateBound
+            ? parameter.TypeName == LateBoundType.Object.Name
+            : parameter.ValueType is PrimitiveTypeReference { VarType: VarEnum.VT_VARIANT } && !HasDefaultValue(parameter));
+
+    private static bool HasDefaultValue(SignatureParameter parameter) =>
+        parameter.Definition.Flags.HasFlag(ParameterFlags.HasDefault) && parameter.Definition.DefaultValue is not null;
 
     // The C# default value of an optional parameter, or null if it has none or C# cannot express it.
     private string? GetConstantDefault(SignatureParameter parameter, bool lateBound)
@@ -481,6 +488,9 @@ internal sealed partial class SignatureBuilder
                         temporary,
                         [$"nint {temporary} = global::System.Runtime.InteropServices.Marshal.StringToBSTR({Syntax.Literal(text)});"],
                         [$"global::System.Runtime.InteropServices.Marshal.FreeBSTR({temporary});"]),
+                // C# only allows null as the default value of an object parameter.
+                (PrimitiveTypeReference { VarType: VarEnum.VT_VARIANT }, "object?") when FormatVariant(value) is { } variant =>
+                    new(variant, [], []),
                 _ => null,
             };
         }
@@ -494,6 +504,32 @@ internal sealed partial class SignatureBuilder
         static double ToOADate(object value) => value is DateTime date ? date.ToOADate() : System.Convert.ToDouble(value, CultureInfo.InvariantCulture);
 
         static string FormatDouble(double value) => value.ToString("R", CultureInfo.InvariantCulture) + "D";
+
+        // The expression of the value of a VARIANT, which is boxed with its own type, e.g. a VT_I2 as a short.
+        static string? FormatVariant(object value) => value switch
+        {
+            string text => Syntax.Literal(text),
+            bool boolean => boolean ? "true" : "false",
+            int number => number.ToString(CultureInfo.InvariantCulture),
+            sbyte or byte or short or ushort => $"({SmallIntegerType(value)}){System.Convert.ToInt32(value, CultureInfo.InvariantCulture).ToString(CultureInfo.InvariantCulture)}",
+            uint number => number.ToString(CultureInfo.InvariantCulture) + "U",
+            long number => number.ToString(CultureInfo.InvariantCulture) + "L",
+            ulong number => number.ToString(CultureInfo.InvariantCulture) + "UL",
+            float number when float.IsFinite(number) => number.ToString("R", CultureInfo.InvariantCulture) + "F",
+            double number when double.IsFinite(number) => FormatDouble(number),
+            decimal number => number.ToString(CultureInfo.InvariantCulture) + "m",
+            DateTime date => $"global::System.DateTime.FromOADate({FormatDouble(date.ToOADate())})",
+            DBNull => "global::System.DBNull.Value",
+            _ => null,
+        };
+
+        static string SmallIntegerType(object value) => value switch
+        {
+            sbyte => "sbyte",
+            byte => "byte",
+            short => "short",
+            _ => "ushort",
+        };
     }
 
     [LoggerMessage(Level = LogLevel.Debug, Message = "{Method} has {Count} parameters with default values that need overloads; only {Max} overloads are generated")]

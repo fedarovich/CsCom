@@ -635,6 +635,24 @@ public sealed class CodeGenerationTests : VerifyBase
     }
 
     [TestMethod]
+    public void VariantsWithDefaultValuesAreNotOmittedInVtableCalls()
+    {
+        // Nothing applies the default value of an omitted VARIANT in a call through the vtable, and C# cannot express it as
+        // the default value of an object parameter, so the parameter is required and an overload passes the value.
+        var variant = new PrimitiveTypeReference(System.Runtime.InteropServices.VarEnum.VT_VARIANT);
+        var find = Method("Find", 3);
+        find.Parameters.Add(new ParameterDefinition { Name = "text", Type = new PrimitiveTypeReference(System.Runtime.InteropServices.VarEnum.VT_BSTR), Flags = ParameterFlags.In });
+        find.Parameters.Add(new ParameterDefinition { Name = "start", Type = variant, Flags = ParameterFlags.In | ParameterFlags.Optional | ParameterFlags.HasDefault, DefaultValue = 1 });
+        find.Parameters.Add(new ParameterDefinition { Name = "options", Type = variant, Flags = ParameterFlags.In | ParameterFlags.Optional });
+
+        string text = GenerateInterface("IFinder", null, 3, find);
+
+        StringAssert.Contains(text, "VariantMarshaller))] object? start, ");
+        StringAssert.Contains(text, "OptionalVariantMarshaller))] object? options = null);");
+        StringAssert.Contains(text, "public void Find(string? text) => @this.Find(text, 1, null);");
+    }
+
+    [TestMethod]
     public void InterfacesDerivedFromIEnumVariantHaveItAsTheBase()
     {
         // The methods follow those of IEnumVARIANT in the vtable, so the interface derives from it.

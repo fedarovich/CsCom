@@ -645,7 +645,9 @@ parameters, dispinterface properties and structure fields with the `SetMarshalli
 
 C# requires the optional parameters to follow the required ones and their default values to be constants, so a parameter whose
 type library default has no C# constant makes it and the parameters before it required: `DATE` defaults (`DateTime` has no
-constants), and `VARIANT_BOOL`, `CURRENCY`, `DATE` and `BSTR` defaults with the `wrapper` and `none` options.
+constants), `VARIANT` defaults of interface methods (an `object` parameter can only default to `null`, and nothing applies the
+default of an omitted argument in a vtable call), and `VARIANT_BOOL`, `CURRENCY`, `DATE` and `BSTR` defaults with the `wrapper`
+and `none` options.
 `--overloads-for-default-values` generates overloads that omit them and pass their default values:
 
 ```csharp
