@@ -635,6 +635,44 @@ public sealed class CodeGenerationTests : VerifyBase
     }
 
     [TestMethod]
+    public void InterfacesDerivedFromIEnumVariantHaveItAsTheBase()
+    {
+        // The methods follow those of IEnumVARIANT in the vtable, so the interface derives from it.
+        string text = GenerateInterface("IEnumShapes", new WellKnownTypeReference(WellKnownType.IEnumVariant), 7, Method("Extra", 7));
+
+        StringAssert.Contains(text, "public unsafe partial interface IEnumShapes : global::CsCom.Runtime.IEnumVARIANT");
+        Assert.IsFalse(text.Contains("_VtblGap", StringComparison.Ordinal));
+    }
+
+    private static MethodDefinition Method(string name, int slot, InvokeKind kind = InvokeKind.Method, int? memberId = null) => new()
+    {
+        Name = name,
+        OriginalName = name,
+        InvokeKind = kind,
+        MemberId = memberId ?? slot,
+        VtableSlot = slot,
+        ReturnType = new PrimitiveTypeReference(System.Runtime.InteropServices.VarEnum.VT_HRESULT),
+    };
+
+    private static string GenerateInterface(string name, TypeReference? baseInterface, int baseSlots, params MethodDefinition[] methods) =>
+        GenerateInterface(name, baseInterface, baseSlots, CodeGenerationOptions.MinimumLanguageVersion, NamedIndexers.None, methods);
+
+    // Generates a vtable interface of a synthetic library with the overloads for default values.
+    private static string GenerateInterface(
+        string name, TypeReference? baseInterface, int baseSlots, int languageVersion, NamedIndexers namedIndexers, params MethodDefinition[] methods)
+    {
+        var @interface = new InterfaceDefinition { Name = name, OriginalName = name, Guid = Guid.NewGuid(), BaseInterface = baseInterface, BaseVtableSlots = baseSlots };
+        @interface.Methods.AddRange(methods);
+        var library = new TypeLibrary { Name = "Synthetic" };
+        library.Types.Add(@interface);
+
+        var documents = new InteropPipeline().GenerateCode(
+            library,
+            new CodeGenerationOptions { Namespace = "Test", OverloadsForDefaultValues = true, LanguageVersion = languageVersion, NamedIndexers = namedIndexers });
+        return documents.Single(d => d.RelativePath == name + ".cs").GetText();
+    }
+
+    [TestMethod]
     public Task GeneratesChangedTypes()
     {
         var documents = Generate(new CodeGenerationOptions { Namespace = "Interop.CsComTest", ToolVersion = TestEnvironment.ToolVersion }, """

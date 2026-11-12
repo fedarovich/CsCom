@@ -118,6 +118,8 @@ internal sealed partial class InterfaceEmitter
         UserDefinedTypeReference { Definition: InterfaceDefinition { InterfaceKind: not InterfaceKind.Dispatch } baseInterface } =>
             _context.GetTypeName(baseInterface, @namespace),
         UserDefinedTypeReference or PrimitiveTypeReference { VarType: VarEnum.VT_DISPATCH } => $"{_context.Support}.IDispatch",
+        // The methods of the interface follow those of IEnumVARIANT in the vtable.
+        WellKnownTypeReference { Type: WellKnownType.IEnumVariant } => $"{_context.Support}.IEnumVARIANT",
         _ => null,
     };
 
@@ -305,15 +307,21 @@ internal sealed partial class InterfaceEmitter
     private static HashSet<string> GetMethodNamesInHierarchy(InterfaceDefinition definition)
     {
         var names = new HashSet<string>(StringComparer.Ordinal);
+        TypeReference? root = null;
         for (var current = definition; current is not null; current = (current.BaseInterface as UserDefinedTypeReference)?.Definition as InterfaceDefinition)
         {
+            root = current.BaseInterface;
             foreach (var method in current.Methods)
             {
                 names.Add(SignatureBuilder.GetMethodName(method));
             }
         }
 
-        if (definition.BaseInterface is not null)
+        if (root is WellKnownTypeReference { Type: WellKnownType.IEnumVariant })
+        {
+            names.UnionWith(["Next", "Skip", "Reset", "Clone"]);
+        }
+        else if (definition.BaseInterface is not null)
         {
             names.UnionWith(["GetTypeInfoCount", "GetTypeInfo", "GetIDsOfNames", "Invoke"]);
         }
