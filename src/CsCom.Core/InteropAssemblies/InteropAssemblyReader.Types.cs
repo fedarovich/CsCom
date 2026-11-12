@@ -273,6 +273,7 @@ public sealed partial class InteropAssemblyReader
             var charSet = attribute?.CharSet ?? CharSet.Ansi;
             var offsets = new int[fields.Count];
             bool sequential = true;
+            bool isPacked = false;
             int end = 0;
             int size = 0;
             int alignment = 1;
@@ -280,6 +281,7 @@ public sealed partial class InteropAssemblyReader
             {
                 var (fieldSize, fieldAlignment) = GetFieldLayout(fields[i].FieldType, GetDescriptor(fields[i]), charSet);
                 int effective = Math.Min(fieldAlignment, pack);
+                isPacked |= fieldAlignment > pack;
                 offsets[i] = isExplicit ? GetFieldOffset(fields[i]) : Align(end, effective);
                 sequential &= offsets[i] == Align(end, effective);
                 end = offsets[i] + fieldSize;
@@ -292,6 +294,13 @@ public sealed partial class InteropAssemblyReader
             if (isExplicit && !isUnion && !sequential)
             {
                 LogExplicitLayout(type.Name);
+            }
+
+            // TlbImp writes the alignment of the type library as the packing, which is 4 for the structures of a 32-bit type
+            // library whose 64-bit layout aligns pointers and 8-byte fields at 8: the packing is kept, with a warning.
+            if (isPacked && !isExplicit)
+            {
+                LogPacking(type.Name, pack);
             }
 
             size = Math.Max(Align(size, alignment), attribute?.Size ?? 0);

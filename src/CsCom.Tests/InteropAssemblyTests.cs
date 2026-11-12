@@ -160,6 +160,41 @@ public sealed partial class InteropAssemblyTests : VerifyBase
     }
 
     [TestMethod]
+    public void WarnsAboutThePackingOfStructuresImportedFrom32BitTypeLibraries()
+    {
+        // TlbImp writes the alignment of a 32-bit type library as the packing, which is kept.
+        string path = Path.Combine(TestEnvironment.CreateDirectory("interop-pack"), "Packed.dll");
+        Compile(
+            "Packed",
+            """
+            using System;
+            using System.Runtime.InteropServices;
+
+            namespace Packed
+            {
+                [StructLayout(LayoutKind.Sequential, Pack = 4)]
+                public struct Item { public int Id; public IntPtr Data; }
+
+                [StructLayout(LayoutKind.Sequential, Pack = 4)]
+                public struct Point { public int X; public int Y; }
+
+                [ComImport, Guid("0F1D2C3B-0000-4000-8000-000000000030"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+                public interface IItems
+                {
+                    void Add(Item item, Point point);
+                }
+            }
+            """,
+            path);
+        var logger = new WarningCollector<InteropAssemblyReader>();
+
+        var library = new InteropAssemblyReader(logger).Read(path);
+
+        Assert.AreEqual(4, Get<RecordDefinition>(library, "Item").Alignment);
+        StringAssert.StartsWith(logger.Messages.Single(), "The structure 'Item' is packed at 4 bytes");
+    }
+
+    [TestMethod]
     public void ReadsDecimalDefaultValues()
     {
         // C# stores decimal default values with the uint constructor of DecimalConstantAttribute, whose parts of 2^31 and more

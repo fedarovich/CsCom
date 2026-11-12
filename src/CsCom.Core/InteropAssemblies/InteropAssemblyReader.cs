@@ -577,6 +577,12 @@ public sealed partial class InteropAssemblyReader
         [LoggerMessage(Level = LogLevel.Warning, Message = "The structure '{Name}' has an explicit layout, which is imported as a sequential layout")]
         private partial void LogExplicitLayout(string name);
 
+        [LoggerMessage(
+            Level = LogLevel.Warning,
+            Message = "The structure '{Name}' is packed at {Pack} bytes, which is less than the alignment of its fields in a 64-bit process: " +
+                "if the interop assembly was imported from a 32-bit type library, the layout differs from that of the 64-bit library, which reading the type library avoids")]
+        private partial void LogPacking(string name, int pack);
+
         [LoggerMessage(Level = LogLevel.Warning, Message = "'{Member}' is a C-style array, which is imported as a pointer to its first element")]
         private partial void LogCArray(string member);
 
