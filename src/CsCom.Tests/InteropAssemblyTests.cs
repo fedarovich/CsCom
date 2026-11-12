@@ -126,6 +126,40 @@ public sealed partial class InteropAssemblyTests : VerifyBase
     }
 
     [TestMethod]
+    public void ImportsInterfacesOfOtherKindsAsIUnknown()
+    {
+        // An IInspectable interface is not a COM interface that is generated: it is not read as an interface of the library.
+        string path = Path.Combine(TestEnvironment.CreateDirectory("interop-inspectable"), "Inspectable.dll");
+        Compile(
+            "Inspectable",
+            """
+            using System.Runtime.InteropServices;
+
+            namespace Inspectable
+            {
+                [ComImport, Guid("0F1D2C3B-0000-4000-8000-000000000020"), InterfaceType(ComInterfaceType.InterfaceIsIInspectable)]
+                public interface IWidget
+                {
+                }
+
+                [ComImport, Guid("0F1D2C3B-0000-4000-8000-000000000021"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+                public interface IHost
+                {
+                    void Attach(IWidget widget);
+                }
+            }
+            """,
+            path);
+        var logger = new WarningCollector<InteropAssemblyReader>();
+
+        var library = new InteropAssemblyReader(logger).Read(path);
+
+        CollectionAssert.AreEqual(new[] { "IHost" }, library.Types.Select(static t => t.Name).ToArray());
+        Assert.AreEqual(new PrimitiveTypeReference(System.Runtime.InteropServices.VarEnum.VT_UNKNOWN), Get<InterfaceDefinition>(library, "IHost").Methods.Single().Parameters.Single().Type);
+        StringAssert.Contains(logger.Messages.Single(), "IWidget");
+    }
+
+    [TestMethod]
     public void ReadsDecimalDefaultValues()
     {
         // C# stores decimal default values with the uint constructor of DecimalConstantAttribute, whose parts of 2^31 and more

@@ -434,7 +434,8 @@ public sealed partial class InteropAssemblyReader
             bool first = true;
             foreach (string name in (sources ?? string.Empty).Split('\0', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
             {
-                if (ResolveTypeName(name, type.Assembly) is not { } source)
+                // A source interface of another kind, e.g. an IInspectable one, is not a COM interface that is generated.
+                if (ResolveTypeName(name, type.Assembly) is not { } source || (source.IsInterface && GetInterfaceKind(source) is null))
                 {
                     LogUnresolvedSource(name, definition.Name);
                     continue;
@@ -564,7 +565,7 @@ public sealed partial class InteropAssemblyReader
         [LoggerMessage(Level = LogLevel.Information, Message = "Importing {Kind} '{Name}' from '{Library}'")]
         private partial void LogImportingType(Model.TypeKind kind, string name, string library);
 
-        [LoggerMessage(Level = LogLevel.Warning, Message = "The source interface '{Name}' of the coclass '{CoClass}' was not found")]
+        [LoggerMessage(Level = LogLevel.Warning, Message = "The source interface '{Name}' of the coclass '{CoClass}' was not found or is not a COM interface")]
         private partial void LogUnresolvedSource(string name, string coClass);
 
         [LoggerMessage(Level = LogLevel.Debug, Message = "Skipping '{Name}', which is a source-generated COM interface rather than a [ComImport] one")]

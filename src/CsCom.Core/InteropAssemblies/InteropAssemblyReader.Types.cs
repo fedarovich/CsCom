@@ -167,6 +167,13 @@ public sealed partial class InteropAssemblyReader
                         Type? defaultInterface = type.GetInterfaces().FirstOrDefault(IsCoClassInterfaceCandidate);
                         return new PointerTypeReference(new UserDefinedTypeReference(GetOrCreateDefinition(defaultInterface ?? coClass)));
                     }
+
+                    // An interface of another kind, e.g. an IInspectable one, is not a COM interface that is generated.
+                    if (GetInterfaceKind(type) is null)
+                    {
+                        LogUnsupportedType(context, DisplayName(type), "IUnknown*");
+                        return GetPrimitive(VarEnum.VT_UNKNOWN);
+                    }
                 }
 
                 return new PointerTypeReference(new UserDefinedTypeReference(GetOrCreateDefinition(type)));
