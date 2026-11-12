@@ -206,7 +206,15 @@ internal sealed partial class LibrarySetMerger
 
         if (entry.Reference is not null)
         {
-            LogImportedTypeNotFound(type.Name, entry.Library.Name);
+            // The copy of another version of the library is generated next to the types of the reference.
+            if ((entry.Library.MajorVersion, entry.Library.MinorVersion) != (origin.MajorVersion, origin.MinorVersion))
+            {
+                LogImportedTypeOfOtherVersion(type.Name, $"{origin.MajorVersion}.{origin.MinorVersion}", entry.Library.Name);
+            }
+            else
+            {
+                LogImportedTypeNotFound(type.Name, entry.Library.Name);
+            }
         }
 
         types.Add(GetTypeKey(type), type);
@@ -254,6 +262,9 @@ internal sealed partial class LibrarySetMerger
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "The references use the versions {FirstVersion} and {Version} of '{Library}'; the types of the first one are generated")]
     private partial void LogVersionMismatch(string library, string firstVersion, string version);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "The type '{Type}' of the version {Version} of '{Library}' was not found in the referenced version; its copy is generated")]
+    private partial void LogImportedTypeOfOtherVersion(string type, string version, string library);
 
     [LoggerMessage(Level = LogLevel.Debug, Message = "The type '{Type}' was not found in the reference '{Library}'; the imported copy is generated")]
     private partial void LogImportedTypeNotFound(string type, string library);

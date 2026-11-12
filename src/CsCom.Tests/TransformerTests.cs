@@ -107,6 +107,31 @@ public sealed class TransformerTests
     }
 
     [TestMethod]
+    public void NameSanitizerReportsTheTypesThatItRenames()
+    {
+        // The copy that another version of the library imported is generated into the namespace of the library too.
+        var library = new TypeLibrary { Name = "Shapes", Guid = Guid.NewGuid(), MajorVersion = 2 };
+        var other = new TypeLibraryReference("Shapes", library.Guid, 1, 0);
+        var first = new EnumDefinition { Name = "Kind", OriginalName = "Kind" };
+        var second = new EnumDefinition { Name = "Kind", OriginalName = "_Kind" };
+        var imported = new EnumDefinition { Name = "Kind", OriginalName = "Kind", ImportedFrom = other };
+        var elsewhere = new EnumDefinition { Name = "Kind", OriginalName = "Kind", ImportedFrom = new TypeLibraryReference("Other", Guid.NewGuid(), 1, 0) };
+        library.Types.AddRange([first, second, imported, elsewhere]);
+        var logger = new WarningCollector<NameSanitizer>();
+
+        new NameSanitizer().Transform(library, new TransformationContext { Options = Context.Options, Logger = logger });
+
+        CollectionAssert.AreEqual(new[] { "Kind", "Kind_", "Kind__", "Kind" }, library.Types.Select(static t => t.Name).ToArray());
+        CollectionAssert.AreEqual(
+            new[]
+            {
+                "The type 'Kind' is renamed to 'Kind_', because another type of the library has the name",
+                "The type 'Kind' is renamed to 'Kind__', because another type of the library has the name",
+            },
+            logger.Messages);
+    }
+
+    [TestMethod]
     public void NameSanitizerRenamesMembersThatClashWithTheWrapperBaseClass()
     {
         var library = new TypeLibraryReader().Read(TestEnvironment.TestTypeLibrary);

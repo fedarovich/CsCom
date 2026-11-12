@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text;
 using CsCom.Model;
+using Microsoft.Extensions.Logging;
 
 namespace CsCom.Transformations;
 
@@ -10,7 +11,7 @@ namespace CsCom.Transformations;
 /// <remarks>
 /// C# keywords are not renamed: they are escaped with <c>@</c> when the code is emitted.
 /// </remarks>
-public sealed class NameSanitizer : IModelTransformer
+public sealed partial class NameSanitizer : IModelTransformer
 {
     /// <summary>
     /// The names of the members of the late-bound wrapper base class that dispinterface members must not hide.
@@ -25,12 +26,19 @@ public sealed class NameSanitizer : IModelTransformer
     /// <inheritdoc/>
     public void Transform(TypeLibrary library, TransformationContext context)
     {
-        foreach (var group in library.Types.GroupBy(static t => t.ImportedFrom))
+        // The types of a library are generated into one namespace, also the copies that another version of the library
+        // imported, so they are grouped by the library and not by its version. The type that comes first keeps its name.
+        foreach (var group in library.Types.GroupBy(t => GetLibraryKey(t.ImportedFrom?.Guid ?? library.Guid, t.ImportedFrom?.Name ?? library.Name)))
         {
             var names = new HashSet<string>(StringComparer.Ordinal);
             foreach (var type in group)
             {
-                type.Name = MakeUnique(ToIdentifier(type.Name), names);
+                string name = ToIdentifier(type.Name);
+                type.Name = MakeUnique(name, names);
+                if (type.Name != name)
+                {
+                    LogTypeRenamed(context.Logger, name, type.Name);
+                }
             }
         }
 
@@ -111,6 +119,11 @@ public sealed class NameSanitizer : IModelTransformer
             setName(member, MakeUnique(ToIdentifier(getName(member)), names));
         }
     }
+
+    private static string GetLibraryKey(Guid guid, string name) => guid != Guid.Empty ? guid.ToString() : name.ToUpperInvariant();
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "The type '{Name}' is renamed to '{NewName}', because another type of the library has the name")]
+    private static partial void LogTypeRenamed(ILogger logger, string name, string newName);
 
     private static string MakeUnique(string name, HashSet<string> names)
     {
