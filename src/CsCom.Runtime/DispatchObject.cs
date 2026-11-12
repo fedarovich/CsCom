@@ -1,4 +1,5 @@
 using System;
+using System.Runtime.InteropServices;
 
 namespace CsCom.Runtime;
 
@@ -35,6 +36,19 @@ public abstract class DispatchObject : IDispatchProvider
     protected object? InvokeMethodByRef(int dispId, Span<object?> args, ReadOnlySpan<bool> byRef)
     {
         return DispatchInvoker.Invoke(Dispatch, dispId, DispatchFlags.Method, args, output: args, byRef: DispatchInvoker.ToVariantReferences(byRef));
+    }
+
+    /// <summary>Invokes a method that has by-reference parameters. The values of by-reference arguments are updated in place.</summary>
+    /// <param name="dispId">The dispatch identifier of the member.</param>
+    /// <param name="args">The arguments.</param>
+    /// <param name="byRef">
+    /// For each argument, the type that its reference points to: <see cref="VarEnum.VT_EMPTY"/> for an argument passed by
+    /// value, <see cref="VarEnum.VT_VARIANT"/> for a reference to a <c>VARIANT</c>, otherwise the type of the parameter,
+    /// e.g. <see cref="VarEnum.VT_I4"/> for a <c>long*</c>.
+    /// </param>
+    protected object? InvokeMethodByRef(int dispId, Span<object?> args, ReadOnlySpan<VarEnum> byRef)
+    {
+        return DispatchInvoker.Invoke(Dispatch, dispId, DispatchFlags.Method, args, byRef);
     }
 
     /// <summary>Gets the value of a property.</summary>
@@ -131,5 +145,25 @@ public abstract class DispatchObject : IDispatchProvider
     public static object? InvokeByRef(IDispatch dispatch, int dispId, DispatchFlags flags, Span<object?> args, ReadOnlySpan<bool> byRef)
     {
         return DispatchInvoker.Invoke(dispatch, dispId, flags, args, output: args, byRef: DispatchInvoker.ToVariantReferences(byRef));
+    }
+
+    /// <summary>
+    /// Invokes a member of an <see cref="IDispatch"/> interface that has by-reference parameters, which are passed as
+    /// references of the types of the parameters.
+    /// </summary>
+    /// <param name="dispatch">The interface to invoke the member on.</param>
+    /// <param name="dispId">The dispatch identifier of the member.</param>
+    /// <param name="flags">The kind of the invocation.</param>
+    /// <param name="args">The arguments, in the declaration order. By-reference arguments are updated in place.</param>
+    /// <param name="byRef">
+    /// For each argument, the type that its reference points to: <see cref="VarEnum.VT_EMPTY"/> for an argument passed by
+    /// value, <see cref="VarEnum.VT_VARIANT"/> for a reference to a <c>VARIANT</c>, otherwise the type of the parameter,
+    /// e.g. <see cref="VarEnum.VT_I4"/> for a <c>long*</c>. An argument that cannot be converted to the type, or whose type
+    /// has no typed references, is passed as a reference to a <c>VARIANT</c>.
+    /// </param>
+    /// <returns>The result of the invocation.</returns>
+    public static object? InvokeByRef(IDispatch dispatch, int dispId, DispatchFlags flags, Span<object?> args, ReadOnlySpan<VarEnum> byRef)
+    {
+        return DispatchInvoker.Invoke(dispatch, dispId, flags, args, byRef);
     }
 }

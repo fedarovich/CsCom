@@ -36,7 +36,7 @@ public sealed partial class _ShapeEvents : global::CsCom.Runtime.DispatchObject,
     public void Closing(ref bool Cancel)
     {
         object?[] __args = [Cancel];
-        InvokeMethodByRef(2, __args, [true]);
+        InvokeMethodByRef(2, __args, [global::System.Runtime.InteropServices.VarEnum.VT_BOOL]);
         Cancel = global::System.Convert.ToBoolean(__args[0]);
     }
 
@@ -45,7 +45,7 @@ public sealed partial class _ShapeEvents : global::CsCom.Runtime.DispatchObject,
     public string? Describe(object? Value, out int length)
     {
         object?[] __args = [Value, null];
-        object? __result = InvokeMethodByRef(4, __args, [false, true]);
+        object? __result = InvokeMethodByRef(4, __args, [global::System.Runtime.InteropServices.VarEnum.VT_EMPTY, global::System.Runtime.InteropServices.VarEnum.VT_I4]);
         length = global::System.Convert.ToInt32(__args[1]);
         return (string?)__result;
     }

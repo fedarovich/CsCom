@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Runtime.InteropServices;
 using CsCom.Model;
 using CsCom.Transformations;
 using Microsoft.CodeAnalysis;
@@ -146,8 +147,9 @@ internal sealed class DispatchWrapperEmitter
 
         // Accessors are invoked with the flags of properties too. The arguments keep the declaration order, in which the value of
         // a setter is the last one: the runtime passes it as the DISPID_PROPERTYPUT named argument. Dispatch is qualified, since
-        // a parameter can have its name.
-        string byRef = $"[{string.Join(", ", parameters.Select(static p => p.IsByRef ? "true" : "false"))}]";
+        // a parameter can have its name. The references have the types of the parameters, which the objects that implement
+        // IDispatch::Invoke with their type information require: they reject a reference to a VARIANT for a long*.
+        string byRef = $"[{string.Join(", ", parameters.Select(static p => ReferenceType(p)))}]";
         string invoke = PropertyFlags(method.InvokeKind) is { } flags
             ? $"InvokeByRef(this.Dispatch, {id}, {flags}, __args, {byRef})"
             : $"InvokeMethodByRef({id}, __args, {byRef})";
@@ -388,6 +390,49 @@ internal sealed class DispatchWrapperEmitter
         expressions ??= [.. parameters.Select(Argument)];
         return parameters.Count == 1 && parameters[0].TypeName.TrimEnd('?').EndsWith(']') ? [$"(object?){expressions[0]}"] : expressions;
     }
+
+    // How an argument is passed to InvokeMethodByRef and InvokeByRef: VT_EMPTY by value, otherwise the type that the
+    // reference points to, which is VT_VARIANT for the types that have no typed references.
+    private static string ReferenceType(SignatureParameter parameter)
+    {
+        VarEnum type = parameter.IsByRef ? GetVarType(parameter.ValueType) : VarEnum.VT_EMPTY;
+        return $"{Syntax.InteropNamespace}.VarEnum.{type}";
+    }
+
+    // The variant type of a value passed by reference. SAFEARRAYs stay references to VARIANTs, in which VB and script
+    // servers store SAFEARRAYs of VARIANTs, whatever the element type that the type library declares.
+    private static VarEnum GetVarType(TypeReference type)
+    {
+        switch (type)
+        {
+            case PrimitiveTypeReference
+            {
+                VarType: VarEnum.VT_I1 or VarEnum.VT_UI1 or VarEnum.VT_I2 or VarEnum.VT_UI2 or VarEnum.VT_I4 or VarEnum.VT_UI4
+                    or VarEnum.VT_I8 or VarEnum.VT_UI8 or VarEnum.VT_INT or VarEnum.VT_UINT or VarEnum.VT_R4 or VarEnum.VT_R8
+                    or VarEnum.VT_CY or VarEnum.VT_DATE or VarEnum.VT_BSTR or VarEnum.VT_BOOL or VarEnum.VT_ERROR
+                    or VarEnum.VT_DISPATCH or VarEnum.VT_UNKNOWN
+            } primitive:
+                return primitive.VarType;
+            case UserDefinedTypeReference { Definition: EnumDefinition }:
+                return VarEnum.VT_I4;
+            case UserDefinedTypeReference { Definition: AliasDefinition alias }:
+                return GetVarType(alias.Target);
+            case PointerTypeReference pointer when TypeMapper.IsInterfaceLike(pointer.ElementType):
+                return IsDispatch(pointer.ElementType) ? VarEnum.VT_DISPATCH : VarEnum.VT_UNKNOWN;
+            default:
+                return VarEnum.VT_VARIANT;
+        }
+    }
+
+    // Whether the pointers to the interface or the class are IDispatch pointers.
+    private static bool IsDispatch(TypeReference type) => type switch
+    {
+        PrimitiveTypeReference { VarType: VarEnum.VT_DISPATCH } => true,
+        UserDefinedTypeReference { Definition: InterfaceDefinition { InterfaceKind: InterfaceKind.Dual or InterfaceKind.Dispatch } } => true,
+        UserDefinedTypeReference { Definition: InterfaceDefinition { BaseInterface: { } baseInterface } } => IsDispatch(baseInterface),
+        UserDefinedTypeReference { Definition: CoClassDefinition { DefaultInterface.Interface: { } defaultInterface } } => IsDispatch(defaultInterface),
+        _ => false,
+    };
 
     private static string DispId(int dispId) => dispId.ToString(CultureInfo.InvariantCulture);
 

@@ -76,7 +76,37 @@ public sealed partial class DynamicByRefTests
         Assert.AreEqual("Type mismatch in argument 1 of 'Swap'.", exception.Message);
     }
 
-    private static unsafe dynamic CreateCalculator()
+    [TestMethod]
+    public void PassesReferencesOfTheDeclaredTypes()
+    {
+        // As the generated late-bound wrappers do: the references have the types of the parameters, whatever the values are.
+        IDispatch calculator = CreateDispatch();
+        Span<int> ids = stackalloc int[1];
+
+        Assert.AreEqual(0, ComDispatch.GetDispIds(calculator, ["Swap"], ids));
+        object?[] args = [1, 2];
+        DispatchObject.InvokeByRef(calculator, ids[0], DispatchFlags.Method, args, [VarEnum.VT_I4, VarEnum.VT_I4]);
+        CollectionAssert.AreEqual(new object?[] { 2, 1 }, args);
+
+        // A value of another type is converted to the type of the parameter.
+        args = [(short)3, 4L];
+        DispatchObject.InvokeByRef(calculator, ids[0], DispatchFlags.Method, args, [VarEnum.VT_I4, VarEnum.VT_I4]);
+        CollectionAssert.AreEqual(new object?[] { 4, 3 }, args);
+
+        // The out arguments have no values.
+        Assert.AreEqual(0, ComDispatch.GetDispIds(calculator, ["Divide"], ids));
+        args = [7.0, 2.0, null, null];
+        DispatchObject.InvokeByRef(calculator, ids[0], DispatchFlags.Method, args, [VarEnum.VT_EMPTY, VarEnum.VT_EMPTY, VarEnum.VT_R8, VarEnum.VT_R8]);
+        CollectionAssert.AreEqual(new object?[] { 7.0, 2.0, 3.0, 1.0 }, args);
+
+        // References to VARIANTs are rejected for these parameters.
+        int divide = ids[0];
+        Assert.ThrowsExactly<COMException>(() => DispatchObject.InvokeByRef(calculator, divide, DispatchFlags.Method, new object?[] { 7.0, 2.0, null, null }, [false, false, true, true]));
+    }
+
+    private static dynamic CreateCalculator() => CreateDispatch().AsDynamic();
+
+    private static unsafe IDispatch CreateDispatch()
     {
         Marshal.ThrowExceptionForHR(LoadTypeLibEx(TestEnvironment.TestTypeLibrary, 0, out ComTypes.ITypeLib typeLibrary));
         Guid iid = typeof(ICalculator).GUID;
@@ -90,7 +120,7 @@ public sealed partial class DynamicByRefTests
             Marshal.ThrowExceptionForHR(CreateStdDispatch(0, calculator, typeInfoPointer, out nint unknown));
             var dispatch = ComInterfaceMarshaller<IDispatch>.ConvertToManaged((void*)unknown)!;
             Marshal.Release(unknown);
-            return dispatch.AsDynamic();
+            return dispatch;
         }
         finally
         {

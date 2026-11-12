@@ -62,6 +62,42 @@ internal static unsafe class DispatchInvoker
     }
 
     /// <summary>
+    /// Invokes a member whose by-reference arguments are references of the declared types of its parameters, and throws an
+    /// exception if the invocation fails.
+    /// </summary>
+    /// <param name="dispatch">The interface to invoke the member on.</param>
+    /// <param name="dispId">The dispatch identifier of the member.</param>
+    /// <param name="flags">The kind of the invocation.</param>
+    /// <param name="args">The arguments, in the declaration order. By-reference arguments are updated in place.</param>
+    /// <param name="types">
+    /// For each argument, the type that its reference points to: <c>VT_EMPTY</c> for an argument passed by value and
+    /// <c>VT_VARIANT</c> for a reference to a <c>VARIANT</c>.
+    /// </param>
+    /// <returns>The result of the invocation.</returns>
+    /// <exception cref="COMException">The invocation failed or the COM object raised an exception.</exception>
+    public static object? Invoke(IDispatch dispatch, int dispId, DispatchFlags flags, Span<object?> args, ReadOnlySpan<VarEnum> types)
+    {
+        var kinds = new ByRefKind[types.Length];
+        for (int i = 0; i < kinds.Length; i++)
+        {
+            kinds[i] = types[i] switch
+            {
+                VarEnum.VT_EMPTY => ByRefKind.None,
+                VarEnum.VT_VARIANT => ByRefKind.Variant,
+                _ => ByRefKind.Typed,
+            };
+        }
+
+        int hr = TryInvoke(dispatch, dispId, flags, args, default, args, kinds, out object? result, out int argument, types);
+        if (hr < 0)
+        {
+            ThrowInvocationException(hr, dispId, null, flags, args.Length, argument);
+        }
+
+        return result;
+    }
+
+    /// <summary>
     /// Invokes a member and returns the <c>HRESULT</c>. Exceptions raised by the COM object (<c>DISP_E_EXCEPTION</c>) are still thrown.
     /// </summary>
     /// <param name="dispatch">The interface to invoke the member on.</param>
@@ -79,6 +115,11 @@ internal static unsafe class DispatchInvoker
     /// The index in <paramref name="args"/> of the argument that caused a <c>DISP_E_TYPEMISMATCH</c> or <c>DISP_E_PARAMNOTFOUND</c>
     /// error, or -1.
     /// </param>
+    /// <param name="types">
+    /// The declared types of the <see cref="ByRefKind.Typed"/> references, which the arguments are converted to; a
+    /// <see langword="null"/> argument becomes a zero or a null pointer of the type. Empty when the references have the types
+    /// of the values.
+    /// </param>
     /// <returns>The <c>HRESULT</c> returned by <c>IDispatch::Invoke</c>.</returns>
     /// <exception cref="COMException">The COM object raised an exception.</exception>
     public static int TryInvoke(
@@ -90,12 +131,18 @@ internal static unsafe class DispatchInvoker
         Span<object?> output,
         ReadOnlySpan<ByRefKind> byRef,
         out object? result,
-        out int argument)
+        out int argument,
+        ReadOnlySpan<VarEnum> types = default)
     {
         int count = args.Length;
         if (!byRef.IsEmpty && byRef.Length != count)
         {
             throw new ArgumentException("The number of by-reference flags must match the number of arguments.", nameof(byRef));
+        }
+
+        if (!types.IsEmpty && types.Length != count)
+        {
+            throw new ArgumentException("The number of types of the references must match the number of arguments.", nameof(types));
         }
 
         bool isSetter = (flags & (DispatchFlags.PropertyPut | DispatchFlags.PropertyPutRef)) != 0;
@@ -136,8 +183,14 @@ internal static unsafe class DispatchInvoker
                     }
 
                     pStorage[i] = VariantMarshaller.ConvertToUnmanaged(args[i]);
+                    if (kind == ByRefKind.Typed && !types.IsEmpty)
+                    {
+                        ConvertStorage(pStorage + i, types[i]);
+                    }
+
+                    // A value that could not be converted to the declared type is passed as a VT_BYREF | VT_VARIANT.
                     VarEnum type = pStorage[i].VarType;
-                    pVariants[nativeIndex] = kind == ByRefKind.Typed && HasTypedReference(type)
+                    pVariants[nativeIndex] = kind == ByRefKind.Typed && HasTypedReference(type) && (types.IsEmpty || type == types[i])
                         ? ComVariant.CreateRaw(VarEnum.VT_BYREF | type, (nint)Unsafe.AsPointer(ref pStorage[i].GetRawDataRef<byte>()))
                         : ComVariant.CreateRaw(VarEnum.VT_BYREF | VarEnum.VT_VARIANT, (nint)(pStorage + i));
                 }
@@ -300,6 +353,27 @@ internal static unsafe class DispatchInvoker
             or VarEnum.VT_I8 or VarEnum.VT_UI8 or VarEnum.VT_INT or VarEnum.VT_UINT or VarEnum.VT_R4 or VarEnum.VT_R8
             or VarEnum.VT_CY or VarEnum.VT_DATE or VarEnum.VT_BSTR or VarEnum.VT_DISPATCH or VarEnum.VT_UNKNOWN
             or VarEnum.VT_BOOL or VarEnum.VT_ERROR;
+
+    // Gives the storage of a typed reference the declared type of the parameter: an empty value, e.g. of an out argument or
+    // a null string, object or array, becomes a zero or a null pointer, and the other values are converted, e.g. a
+    // VT_DECIMAL to a VT_CY. The storage is left as is when the type has no typed references or the conversion fails.
+    private static void ConvertStorage(ComVariant* storage, VarEnum type)
+    {
+        VarEnum actual = storage->VarType;
+        if (actual == type || !HasTypedReference(type))
+        {
+            return;
+        }
+
+        if (actual is VarEnum.VT_EMPTY or VarEnum.VT_NULL)
+        {
+            *storage = ComVariant.CreateRaw(type, (nint)0);
+        }
+        else if ((type & VarEnum.VT_ARRAY) == 0)
+        {
+            _ = OleNativeMethods.VariantChangeType(storage, storage, 0, (ushort)type);
+        }
+    }
 
     private static COMException CreateException(ExcepInfo* excepInfo)
     {

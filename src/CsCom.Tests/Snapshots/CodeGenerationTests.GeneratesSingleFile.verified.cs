@@ -235,7 +235,7 @@ namespace Interop.CsComTest
         public void Resize(ref int width, out int height)
         {
             object?[] __args = [width, null];
-            InvokeMethodByRef(12, __args, [true, true]);
+            InvokeMethodByRef(12, __args, [global::System.Runtime.InteropServices.VarEnum.VT_I4, global::System.Runtime.InteropServices.VarEnum.VT_I4]);
             width = global::System.Convert.ToInt32(__args[0]);
             height = global::System.Convert.ToInt32(__args[1]);
         }
@@ -665,7 +665,7 @@ namespace Interop.CsComTest
         public void Closing(ref bool Cancel)
         {
             object?[] __args = [Cancel];
-            InvokeMethodByRef(2, __args, [true]);
+            InvokeMethodByRef(2, __args, [global::System.Runtime.InteropServices.VarEnum.VT_BOOL]);
             Cancel = global::System.Convert.ToBoolean(__args[0]);
         }
 
@@ -674,7 +674,7 @@ namespace Interop.CsComTest
         public string? Describe(object? Value, out int length)
         {
             object?[] __args = [Value, null];
-            object? __result = InvokeMethodByRef(4, __args, [false, true]);
+            object? __result = InvokeMethodByRef(4, __args, [global::System.Runtime.InteropServices.VarEnum.VT_EMPTY, global::System.Runtime.InteropServices.VarEnum.VT_I4]);
             length = global::System.Convert.ToInt32(__args[1]);
             return (string?)__result;
         }

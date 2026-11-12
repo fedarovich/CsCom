@@ -41,7 +41,7 @@ public sealed partial class DShapeEvents : global::CsCom.Runtime.DispatchObject,
     public void Resize(ref int width, out int height)
     {
         object?[] __args = [width, null];
-        InvokeMethodByRef(12, __args, [true, true]);
+        InvokeMethodByRef(12, __args, [global::System.Runtime.InteropServices.VarEnum.VT_I4, global::System.Runtime.InteropServices.VarEnum.VT_I4]);
         width = global::System.Convert.ToInt32(__args[0]);
         height = global::System.Convert.ToInt32(__args[1]);
     }
