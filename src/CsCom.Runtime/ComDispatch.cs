@@ -23,6 +23,25 @@ public enum DispatchArgumentKind : byte
 }
 
 /// <summary>
+/// How the type information of an object describes a member, see <see cref="ComDispatch.GetMemberKinds"/>.
+/// </summary>
+[Flags]
+public enum DispatchMemberKinds
+{
+    /// <summary>The member is not described.</summary>
+    None = 0,
+
+    /// <summary>The member is invoked as a method.</summary>
+    Method = 1,
+
+    /// <summary>The member is a property that can be read.</summary>
+    Property = 2,
+
+    /// <summary>The getter of the property takes arguments, required or optional.</summary>
+    IndexedProperty = 4,
+}
+
+/// <summary>
 /// Resolves and invokes the members of <see cref="IDispatch"/> interfaces by name and dispatch identifier, and reads their type
 /// information: the late binding that the generated dispinterface wrappers and <c>dynamic</c> objects build on.
 /// </summary>
@@ -144,6 +163,20 @@ public static class ComDispatch
     {
         ArgumentNullException.ThrowIfNull(dispatch);
         return ComTypeInfo.GetTypeInfo(dispatch) is { } typeInfo ? ComTypeInfo.GetMemberName(typeInfo, dispId) : null;
+    }
+
+    /// <summary>
+    /// Gets how the type information of an object describes a member: as a method, as a property that can be read, and
+    /// whether the getter of the property takes arguments. Late-bound callers that read a member can then return something
+    /// to call or to index rather than invoke it.
+    /// </summary>
+    /// <returns>
+    /// The kinds, or <see cref="DispatchMemberKinds.None"/> for an unknown member and if the object provides no type information.
+    /// </returns>
+    public static DispatchMemberKinds GetMemberKinds(IDispatch dispatch, int dispId)
+    {
+        ArgumentNullException.ThrowIfNull(dispatch);
+        return ComTypeInfo.GetTypeInfo(dispatch) is { } typeInfo ? ComTypeInfo.GetMemberKinds(typeInfo, dispId) : DispatchMemberKinds.None;
     }
 
     /// <summary>

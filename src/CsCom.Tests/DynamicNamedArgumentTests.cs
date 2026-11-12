@@ -96,6 +96,37 @@ public sealed unsafe partial class DynamicNamedArgumentTests
         Assert.AreEqual(1, recorder.TypeInfoRequests);
     }
 
+    [TestMethod]
+    public void ReadsMembersAsTheTypeInformationDescribesThem()
+    {
+        var recorder = new Recorder(LoadShapeEvents());
+        IDispatch dispatch = recorder;
+        dynamic shape = dispatch.AsDynamic();
+
+        Assert.AreEqual(DispatchMemberKinds.Method, ComDispatch.GetMemberKinds(dispatch, 16));
+        Assert.AreEqual(DispatchMemberKinds.Property, ComDispatch.GetMemberKinds(dispatch, 13));
+        Assert.AreEqual(DispatchMemberKinds.Property, ComDispatch.GetMemberKinds(dispatch, 1));
+        Assert.AreEqual(DispatchMemberKinds.Property | DispatchMemberKinds.IndexedProperty, ComDispatch.GetMemberKinds(dispatch, CellId));
+        Assert.AreEqual(DispatchMemberKinds.None, ComDispatch.GetMemberKinds(dispatch, 999));
+
+        // A property whose getter takes arguments is not read before it is indexed: the result of a getter whose arguments
+        // are optional would be indexed otherwise.
+        _ = shape.Cell[1, 2];
+        Assert.AreEqual(0, recorder.ReadsWithoutArguments);
+        AssertCall(recorder.Calls.Single(), CellId, DispatchFlags.PropertyGet | DispatchFlags.Method, [1, 2], []);
+
+        // A method that is read is not invoked: it is called through the result.
+        var names = shape.Names;
+        Assert.AreEqual(1, recorder.Calls.Count);
+        names();
+        AssertCall(recorder.Calls[^1], 16, DispatchFlags.Method | DispatchFlags.PropertyGet, [], []);
+
+        // A property is read.
+        _ = shape.Title;
+        AssertCall(recorder.Calls[^1], 13, DispatchFlags.PropertyGet | DispatchFlags.Method, [], []);
+        Assert.AreEqual(3, recorder.Calls.Count);
+    }
+
     private static void AssertCall(Call call, int dispId, DispatchFlags flags, object?[] positional, (int DispId, object? Value)[] named)
     {
         Assert.AreEqual((dispId, flags), (call.DispId, call.Flags));
@@ -127,6 +158,12 @@ public sealed unsafe partial class DynamicNamedArgumentTests
         public List<Call> Calls { get; } = [];
 
         public int TypeInfoRequests { get; private set; }
+
+        /// <summary>Gets the number of times that Cell was read without arguments.</summary>
+        public int ReadsWithoutArguments { get; private set; }
+
+        /// <summary>Gets or sets the <c>HRESULT</c> of the invocations of a member that fail, which are not recorded.</summary>
+        public Func<int, DispatchFlags, int>? Failure { get; set; }
 
         public int GetTypeInfoCount(out uint pctinfo)
         {
@@ -175,10 +212,17 @@ public sealed unsafe partial class DynamicNamedArgumentTests
             int count = (int)pDispParams->cArgs;
             int named = (int)pDispParams->cNamedArgs;
 
-            // Cell is read without arguments first, and then indexed by dynamic when that fails.
+            // Cell is read without arguments first, and then indexed by dynamic when that fails, unless the type information
+            // tells that its getter takes arguments.
             if (dispIdMember == CellId && count == 0)
             {
+                ReadsWithoutArguments++;
                 return DISP_E_BADPARAMCOUNT;
+            }
+
+            if (Failure?.Invoke(dispIdMember, (DispatchFlags)wFlags) is { } failure and < 0)
+            {
+                return failure;
             }
 
             // rgvarg holds the named arguments first, then the positional ones in reverse order.

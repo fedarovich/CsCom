@@ -287,6 +287,80 @@ internal static unsafe class ComTypeInfo
         }
     }
 
+    /// <summary>
+    /// Gets how a member of the type or of its base interfaces is described: as a method, as a property that can be read,
+    /// and whether the getter of the property takes arguments.
+    /// </summary>
+    public static DispatchMemberKinds GetMemberKinds(ITypeInfo typeInfo, int memberId)
+    {
+        var kinds = DispatchMemberKinds.None;
+        AddMemberKinds(typeInfo, memberId, ref kinds, []);
+        return kinds;
+    }
+
+    private static void AddMemberKinds(ITypeInfo typeInfo, int memberId, ref DispatchMemberKinds kinds, HashSet<Guid> visited)
+    {
+        TypeAttr attr = GetTypeAttr(typeInfo);
+        if (attr.typekind is not (TKIND_INTERFACE or TKIND_DISPATCH) || !visited.Add(attr.guid))
+        {
+            return;
+        }
+
+        for (uint i = 0; i < attr.cFuncs; i++)
+        {
+            if (typeInfo.GetFuncDesc(i, out FuncDesc* func) < 0)
+            {
+                continue;
+            }
+
+            if (func->memid == memberId)
+            {
+                if (func->invkind == INVOKE_FUNC)
+                {
+                    kinds |= DispatchMemberKinds.Method;
+                }
+                else if ((func->invkind & INVOKE_PROPERTYGET) != 0)
+                {
+                    kinds |= DispatchMemberKinds.Property;
+
+                    // The [retval] and [lcid] parameters are not passed by callers of IDispatch::Invoke.
+                    for (int parameter = 0; parameter < func->cParams; parameter++)
+                    {
+                        if ((func->lprgelemdescParam[parameter].wParamFlags & (PARAMFLAG_FRETVAL | PARAMFLAG_FLCID)) == 0)
+                        {
+                            kinds |= DispatchMemberKinds.IndexedProperty;
+                        }
+                    }
+                }
+            }
+
+            typeInfo.ReleaseFuncDesc(func);
+        }
+
+        for (uint i = 0; i < attr.cVars; i++)
+        {
+            if (typeInfo.GetVarDesc(i, out VarDesc* var) < 0)
+            {
+                continue;
+            }
+
+            if (var->varkind == VAR_DISPATCH && var->memid == memberId)
+            {
+                kinds |= DispatchMemberKinds.Property;
+            }
+
+            typeInfo.ReleaseVarDesc(var);
+        }
+
+        for (uint i = 0; i < attr.cImplTypes; i++)
+        {
+            if (GetImplementedType(typeInfo, i) is { } baseType)
+            {
+                AddMemberKinds(baseType, memberId, ref kinds, visited);
+            }
+        }
+    }
+
     // The [retval] and [lcid] parameters are not passed by callers of IDispatch::Invoke.
     private static bool HasRequiredParameters(FuncDesc* func)
     {

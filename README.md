@@ -739,10 +739,13 @@ DShapeEvents events = shape.GetEvents();           // and the late-bound wrapper
   object per COM object, so `==` compares COM objects (`if (sheet == excel.ActiveSheet)`), like the runtime callable wrappers
   of the built-in COM interop. The dynamic objects are attached to the managed objects of the COM objects and do not keep them
   alive.
-- **Properties:** assigning a COM object to a property or an indexer uses `PROPERTYPUTREF` when the property supports it, like
-  VB's `Set`. A property that requires arguments, or can only be set, can be indexed with its arguments: `dictionary.Item["a"]`,
-  `dictionary.Key["a"] = "b"`. A property whose parameters are all optional, such as Excel's `Range.Value`, is read at once, so
-  brackets would index its value; pass the arguments in parentheses instead: `range.Value(xlRangeValueMSPersistXML)`.
+- **Properties:** assigning a COM object to a property or an indexer uses `PROPERTYPUTREF`, like VB's `Set`, and a property
+  put when the object has no such setter. A property that requires arguments, or can only be set, can be indexed with its
+  arguments: `dictionary.Item["a"]`, `dictionary.Key["a"] = "b"`. So can a property whose parameters are all optional, such as
+  Excel's `Range.Value`, when the object has type information: `range.Value[xlRangeValueMSPersistXML]`. Without type
+  information such a property is read at once and brackets index its value; pass the arguments in parentheses instead.
+- **Methods:** a method that is read without parentheses is not invoked when the type information of the object describes it
+  as a method: `var quit = app.Quit;` gives a value to call, `quit()`. Without type information, reading a member invokes it.
 - **Named arguments:** they work in invocations and indexes, e.g. `sheet.Cells[ColumnIndex: 2, RowIndex: 1]`. Those of the
   default member (`d[index: 1]`, `d(index: 1)`) need the type information of the object, which gives the name of the member;
   without it, or when it describes no default member, they throw `NotSupportedException`.

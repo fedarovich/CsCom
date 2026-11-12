@@ -100,7 +100,7 @@ public sealed class DynamicDispatchObject : DynamicObject, IDispatchProvider, IE
             return false;
         }
 
-        if (!member.IsIndexed)
+        if (!member.IsIndexed && !IsCalledOrIndexed(binder, ref member))
         {
             int hr = ComDispatch.TryInvoke(Dispatch, member.DispId, DispatchFlags.PropertyGet | DispatchFlags.Method, [], [], default, default, out object? value, out int argument);
             if (hr >= 0)
@@ -121,6 +121,22 @@ public sealed class DynamicDispatchObject : DynamicObject, IDispatchProvider, IE
 
         result = new IndexedProperty(this, member.DispId, binder.Name);
         return true;
+    }
+
+    // Whether a member that is read is not invoked, according to the type information of the object: a method, which the
+    // caller calls, e.g. the delegate-like value of d.Quit, and a property whose getter takes arguments in d.Property[...],
+    // for which C# reads the member to index the result, e.g. Excel's range.Resize[2, 3], whose arguments are optional.
+    private bool IsCalledOrIndexed(GetMemberBinder binder, ref Member member)
+    {
+        if (member.Kinds is not { } kinds)
+        {
+            kinds = ComDispatch.GetMemberKinds(Dispatch, member.DispId);
+            member = member with { Kinds = kinds };
+            _members[binder.Name] = member;
+        }
+
+        return (kinds & (DispatchMemberKinds.Method | DispatchMemberKinds.Property)) == DispatchMemberKinds.Method
+            || ((kinds & DispatchMemberKinds.IndexedProperty) != 0 && binder is IInvokeOnGetBinder { InvokeOnGet: false });
     }
 
     /// <inheritdoc/>
@@ -619,7 +635,8 @@ public sealed class DynamicDispatchObject : DynamicObject, IDispatchProvider, IE
         return Wrap(result);
     }
 
-    private readonly record struct Member(int DispId, bool IsIndexed);
+    // Kinds is how the type information describes the member, read when the member is first read.
+    private readonly record struct Member(int DispId, bool IsIndexed, DispatchMemberKinds? Kinds = null);
 
     /// <summary>
     /// An event of the COM object, read by <c>d.Event += handler</c> and <c>d.Event -= handler</c>, which add and remove the
