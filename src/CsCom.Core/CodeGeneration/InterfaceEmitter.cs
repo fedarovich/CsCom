@@ -16,8 +16,10 @@ internal sealed partial class InterfaceEmitter
     private const int DispIdValue = 0;
     private const int DispIdNewEnum = -4;
 
-    // The receiver parameter of the extension blocks (@this), which index parameters cannot shadow.
+    // The receiver parameter of the extension blocks, which index parameters cannot shadow, and the expression that refers to it
+    // in the members of the blocks (@this).
     private const string Receiver = "this";
+    private static readonly string ReceiverExpression = Syntax.Escape(Receiver);
 
     private readonly EmitContext _context;
 
@@ -169,8 +171,8 @@ internal sealed partial class InterfaceEmitter
             }
 
             string? documentation = (getter ?? setterMethod)!.Documentation;
-            string? getExpression = getterSignature is null ? null : $"@this.{Syntax.Escape(SignatureBuilder.GetMethodName(getter!))}({Arguments(property.Index)})";
-            string? setExpression = setterSignature is null ? null : $"@this.{Syntax.Escape(SignatureBuilder.GetMethodName(setterMethod!))}({Arguments(property.Index, "value")})";
+            string? getExpression = getterSignature is null ? null : $"{ReceiverExpression}.{Syntax.Escape(SignatureBuilder.GetMethodName(getter!))}({Arguments(property.Index)})";
+            string? setExpression = setterSignature is null ? null : $"{ReceiverExpression}.{Syntax.Escape(SignatureBuilder.GetMethodName(setterMethod!))}({Arguments(property.Index, "value")})";
             MethodDefinition?[] accessors = [getterSignature is null ? null : getter, setterSignature is null ? null : setterMethod];
 
             if (property.Index.Count == 0)
@@ -205,7 +207,7 @@ internal sealed partial class InterfaceEmitter
                 NamedIndexerEmitter.GetTypeName(namedIndexer.Name, takenNames),
                 definition.Name,
                 _context.GetTypeName(definition, @namespace),
-                "@this",
+                ReceiverExpression,
                 namedIndexer.Property.Type,
                 namedIndexer.Property.Index,
                 namedIndexer.Getter is { } getter ? SignatureBuilder.GetMethodName(getter) : null,
@@ -223,7 +225,7 @@ internal sealed partial class InterfaceEmitter
             members.Add(_context.Annotations.Annotate(
                 MethodDeclaration(Syntax.Type($"{_context.Support}.ComEnumerator"), Syntax.Identifier("GetEnumerator"))
                     .WithModifiers(Syntax.Modifiers(SyntaxKind.PublicKeyword))
-                    .WithExpressionBody(Syntax.Arrow($"{_context.Support}.ComEnumerator.FromObject(@this.{Syntax.Escape(SignatureBuilder.GetMethodName(newEnum))}())"))
+                    .WithExpressionBody(Syntax.Arrow($"{_context.Support}.ComEnumerator.FromObject({ReceiverExpression}.{Syntax.Escape(SignatureBuilder.GetMethodName(newEnum))}())"))
                     .WithSemicolonToken(Token(SyntaxKind.SemicolonToken))
                     .WithDocumentation("Returns an enumerator that iterates through the collection, so that it can be used in foreach loops."),
                 newEnum,
@@ -245,7 +247,7 @@ internal sealed partial class InterfaceEmitter
                 foreach (var overload in signatures.GetDefaultOverloads(method, parameters, lateBound: false))
                 {
                     members.Add(_context.Annotations.Annotate(
-                        SignatureBuilder.BuildOverload(overload, returnType.Name, name, $"@this.{Syntax.Escape(name)}", SyntaxKind.PublicKeyword)
+                        SignatureBuilder.BuildOverload(overload, returnType.Name, name, $"{ReceiverExpression}.{Syntax.Escape(name)}", SyntaxKind.PublicKeyword)
                             .WithDocumentation(method.Documentation),
                         method,
                         SyntaxRole.Overload));
