@@ -119,6 +119,51 @@ public sealed unsafe class EventRuntimeTests
     }
 
     [TestMethod]
+    public void CopiesTheArraysOfTheUnderlyingTypeOfEnums()
+    {
+        // The int arrays of SAFEARRAYs of enums are copied as a block into zero-based arrays of the same shape; the elements of
+        // other types are converted one by one.
+        var variants = stackalloc ComVariant[3];
+        variants[2] = VariantMarshaller.ConvertToUnmanaged(new[,] { { 1, 3, 1 }, { 3, 1, 3 } });
+        variants[1] = VariantMarshaller.ConvertToUnmanaged(new[,,] { { { 1, 3 } }, { { 3, 1 } } });
+        variants[0] = VariantMarshaller.ConvertToUnmanaged(new byte[] { 3, 1 });
+        var parameters = new DispParams { rgvarg = variants, cArgs = 3 };
+        try
+        {
+            var arguments = new EventArguments(&parameters, null);
+
+            var grid = arguments.GetArray2D<TestColor>(0)!;
+            Assert.AreEqual(typeof(TestColor[,]), grid.GetType());
+            Assert.AreEqual((2, 3), (grid.GetLength(0), grid.GetLength(1)));
+            Assert.AreEqual((TestColor.Blue, TestColor.Blue), (grid[0, 1], grid[1, 2]));
+
+            var cube = arguments.GetArray3D<TestColor>(1)!;
+            Assert.AreEqual((2, 1, 2), (cube.GetLength(0), cube.GetLength(1), cube.GetLength(2)));
+            Assert.AreEqual((TestColor.Blue, TestColor.Blue), (cube[0, 0, 1], cube[1, 0, 0]));
+
+            CollectionAssert.AreEqual(new[] { TestColor.Blue, TestColor.Red }, arguments.GetArray<TestColor>(2));
+        }
+        finally
+        {
+            for (int i = 0; i < 3; i++)
+            {
+                variants[i].Dispose();
+            }
+        }
+
+        // Arrays with other lower bounds than zero, e.g. those of VB, are copied from their first elements.
+        var vector = Array.CreateInstance(typeof(int), [2], [1]);
+        vector.SetValue(3, 2);
+        var matrix = Array.CreateInstance(typeof(int), [2, 2], [1, 5]);
+        matrix.SetValue(3, 1, 6);
+        matrix.SetValue(1, 2, 5);
+        CollectionAssert.AreEqual(new[] { default, TestColor.Blue }, Conversions.ToArray<TestColor>(vector));
+        var copy = Conversions.ToArray2D<TestColor>(matrix)!;
+        Assert.AreEqual((0, 0), (copy.GetLowerBound(0), copy.GetLowerBound(1)));
+        Assert.AreEqual((TestColor.Blue, TestColor.Red), (copy[0, 1], copy[1, 0]));
+    }
+
+    [TestMethod]
     public void WritesBackByReferenceArguments()
     {
         short flag = 0;
@@ -285,5 +330,13 @@ public sealed unsafe class EventRuntimeTests
         public void OnError(Exception error) => throw new AssertFailedException("Unexpected error.", error);
 
         public void OnCompleted() => completed?.Invoke();
+    }
+
+    /// <summary>Exposes the array conversions of the generated late-bound wrappers.</summary>
+    private abstract class Conversions(IDispatch dispatch) : DispatchObject(dispatch)
+    {
+        public static new T[]? ToArray<T>(object? value) => DispatchObject.ToArray<T>(value);
+
+        public static new T[,]? ToArray2D<T>(object? value) => DispatchObject.ToArray2D<T>(value);
     }
 }

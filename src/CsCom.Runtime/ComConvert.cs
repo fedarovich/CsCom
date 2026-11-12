@@ -89,7 +89,8 @@ internal static class ComConvert
     }
 
     // The arrays are only returned as is when their type is exactly the requested one: the CLR also considers an int[] to be a
-    // Color[] (an enum of int) and a string[] to be an object[], whose elements could then not be set to other objects.
+    // Color[] (an enum of int) and a string[] to be an object[], whose elements could then not be set to other objects. The
+    // arrays of the underlying type of an enum, e.g. the int[] read from a SAFEARRAY(Color), are copied as a block.
 
     /// <summary>Converts a one-dimensional array to an array of <typeparamref name="T"/>, converting the elements with <see cref="To{T}"/>.</summary>
     public static T[]? ToArray<T>(object? value)
@@ -103,6 +104,11 @@ internal static class ComConvert
             case Array { Rank: 1 } array:
             {
                 var result = new T[array.Length];
+                if (TryCopyEnumArray<T>(array, result))
+                {
+                    return result;
+                }
+
                 int lowerBound = array.GetLowerBound(0);
                 for (int i = 0; i < result.Length; i++)
                 {
@@ -129,6 +135,11 @@ internal static class ComConvert
             case Array { Rank: 2 } array:
             {
                 var result = new T[array.GetLength(0), array.GetLength(1)];
+                if (TryCopyEnumArray<T>(array, result))
+                {
+                    return result;
+                }
+
                 int lower0 = array.GetLowerBound(0);
                 int lower1 = array.GetLowerBound(1);
                 for (int i = 0; i < result.GetLength(0); i++)
@@ -159,6 +170,11 @@ internal static class ComConvert
             case Array { Rank: 3 } array:
             {
                 var result = new T[array.GetLength(0), array.GetLength(1), array.GetLength(2)];
+                if (TryCopyEnumArray<T>(array, result))
+                {
+                    return result;
+                }
+
                 int lower0 = array.GetLowerBound(0);
                 int lower1 = array.GetLowerBound(1);
                 int lower2 = array.GetLowerBound(2);
@@ -179,6 +195,19 @@ internal static class ComConvert
             default:
                 throw new InvalidCastException($"The value of type {value.GetType()} is not a three-dimensional array.");
         }
+    }
+
+    // Copies an array of the underlying type of the enum T into the zero-based result of the same shape, without boxing the
+    // elements. Array.Copy treats the arrays as one-dimensional, from their first elements, whatever their lower bounds.
+    private static bool TryCopyEnumArray<T>(Array array, Array result)
+    {
+        if (!typeof(T).IsEnum || array.GetType().GetElementType() != Enum.GetUnderlyingType(typeof(T)))
+        {
+            return false;
+        }
+
+        Array.Copy(array, result, array.Length);
+        return true;
     }
 
     // Only valid when TFrom and TTo are the same type.
