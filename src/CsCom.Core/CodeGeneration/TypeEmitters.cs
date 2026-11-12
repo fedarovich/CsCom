@@ -96,7 +96,7 @@ internal sealed partial class TypeEmitters
             string setter = conversion?.Set("value") ?? "value";
             members.Add(_context.Annotations.Annotate(declaration, field, SyntaxRole.BackingField));
             members.Add(_context.Annotations.Annotate(
-                ParseMember($"public {conversion?.TypeName ?? type} {Syntax.Escape(field.Name)} {{ readonly get => {getter}; set => {fieldName} = {setter}; }}")
+                Syntax.Member($"public {conversion?.TypeName ?? type} {Syntax.Escape(field.Name)} {{ readonly get => {getter}; set => {fieldName} = {setter}; }}")
                     .WithDocumentation(field.Documentation),
                 field));
         }
@@ -126,7 +126,7 @@ internal sealed partial class TypeEmitters
         var members = new List<MemberDeclarationSyntax>();
         if (definition.Guid is { } guid)
         {
-            members.Add(ParseMember($"public static readonly global::System.Guid Clsid = new({Syntax.GuidLiteral(guid)});")
+            members.Add(Syntax.Member($"public static readonly global::System.Guid Clsid = new({Syntax.GuidLiteral(guid)});")
                 .WithDocumentation($"The class identifier (CLSID) of the {definition.OriginalName} class."));
 
             if (definition.Flags.HasFlag(TypeFlags.CanCreate))
@@ -142,7 +142,7 @@ internal sealed partial class TypeEmitters
                     _ => Create("object", "CreateInstance"),
                 };
 
-                members.Add(ParseMember(create).WithDocumentation(
+                members.Add(Syntax.Member(create).WithDocumentation(
                     $"Creates an instance of the {definition.OriginalName} class.",
                     ("param name=\"context\"", "The context in which the code that manages the newly created object will run.")));
 
@@ -153,7 +153,7 @@ internal sealed partial class TypeEmitters
                     or PrimitiveTypeReference { VarType: VarEnum.VT_DISPATCH };
                 if (isDispatchable && _context.Options.Dynamic)
                 {
-                    members.Add(ParseMember(
+                    members.Add(Syntax.Member(
                             $"[global::System.Diagnostics.CodeAnalysis.RequiresDynamicCode({Syntax.Literal("Late binding with dynamic requires dynamic code generation and is not compatible with Native AOT.")})] " +
                             $"public static dynamic CreateDynamic({context}) => {support}.ComDynamic.CreateDynamicInstance(Clsid, context);")
                         .WithDocumentation(
@@ -247,7 +247,7 @@ internal sealed partial class TypeEmitters
         string name = Syntax.Escape(constant.Name);
         if (constant.Value is DateTime date)
         {
-            return ParseMember($"public static readonly global::System.DateTime {name} = new({date.Ticks.ToString(CultureInfo.InvariantCulture)}L);")
+            return Syntax.Member($"public static readonly global::System.DateTime {name} = new({date.Ticks.ToString(CultureInfo.InvariantCulture)}L);")
                 .WithDocumentation(constant.Documentation);
         }
 
@@ -278,7 +278,7 @@ internal sealed partial class TypeEmitters
             return null;
         }
 
-        return ParseMember($"public const {type} {name} = {value};").WithDocumentation(constant.Documentation);
+        return Syntax.Member($"public const {type} {name} = {value};").WithDocumentation(constant.Documentation);
 
         // The type of an unsigned VARIANT value, like the type of a C# integer literal: the first of int, uint, long and ulong
         // that can hold the value, so that the smaller values keep the int type of the other VARIANT integers.
@@ -352,17 +352,6 @@ internal sealed partial class TypeEmitters
                 "global::System.Runtime.CompilerServices.InlineArray", length.ToString(CultureInfo.InvariantCulture)))))
             .WithMembers(SingletonList<MemberDeclarationSyntax>(Field(elementType, "_element0", SyntaxKind.PrivateKeyword)))
             .WithDocumentation($"A fixed-size buffer of {length} elements.");
-
-    private static MemberDeclarationSyntax ParseMember(string text)
-    {
-        var member = ParseMemberDeclaration(text, options: Syntax.ParseOptions);
-        if (member is null || member.ContainsDiagnostics)
-        {
-            throw new InvalidOperationException($"Invalid member generated: {text}");
-        }
-
-        return member;
-    }
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Module '{Module}': skipping the constant '{Name}', whose value is not supported")]
     private static partial void LogUnsupportedConstant(ILogger logger, string module, string name);

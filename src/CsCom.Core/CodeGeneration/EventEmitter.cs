@@ -198,7 +198,7 @@ internal sealed partial class EventEmitter
             string body = outs.Count == 0
                 ? e.IsVoid ? "{ }" : "=> default;"
                 : $"{{ {string.Concat(outs.Select(static p => $"{p.Name} = default; "))}{(e.IsVoid ? string.Empty : "return default;")} }}";
-            var member = ParseMember($"{e.ReturnType} {Syntax.Escape(e.HandlerName)}({Parameters(e)}) {body}").WithDocumentation(e.Method.Documentation);
+            var member = Syntax.Member($"{e.ReturnType} {Syntax.Escape(e.HandlerName)}({Parameters(e)}) {body}").WithDocumentation(e.Method.Documentation);
             return annotations.Annotate(AnnotateParameters(member, e.Parameters), e.Method, SyntaxRole.EventHandler);
         });
 
@@ -214,7 +214,7 @@ internal sealed partial class EventEmitter
     private MemberDeclarationSyntax EmitDelegate(Source source, Event @event)
     {
         string modifiers = Accessibility + (@event.HasPointers ? " unsafe" : string.Empty);
-        var member = ParseMember($"{modifiers} delegate {@event.ReturnType} {source.DelegateName(@event)}({Parameters(@event)});")
+        var member = Syntax.Member($"{modifiers} delegate {@event.ReturnType} {source.DelegateName(@event)}({Parameters(@event)});")
             .WithDocumentation($"Represents the method that handles the {@event.Method.OriginalName} event of the {source.Definition.OriginalName} event interface.");
         return _context.Annotations.Annotate(AnnotateParameters(member, @event.Parameters), @event.Method, SyntaxRole.EventDelegate);
     }
@@ -225,7 +225,7 @@ internal sealed partial class EventEmitter
         foreach (var parameter in @event.Parameters)
         {
             string accessor = parameter.IsByRef ? "set" : "init";
-            var property = ParseMember($"public {parameter.TypeName} {PropertyName(@event, parameter)} {{ get; {accessor}; }}").WithDocumentation(parameter.IsByRef
+            var property = Syntax.Member($"public {parameter.TypeName} {PropertyName(@event, parameter)} {{ get; {accessor}; }}").WithDocumentation(parameter.IsByRef
                 ? $"Gets or sets the {parameter.Definition.Name} argument, which is passed back to the COM object."
                 : $"Gets the {parameter.Definition.Name} argument.");
             members.Add(_context.Annotations.Annotate(property, parameter.Definition, SyntaxRole.Property));
@@ -233,7 +233,7 @@ internal sealed partial class EventEmitter
 
         if (!@event.IsVoid)
         {
-            members.Add(ParseMember($"public {@event.ReturnType} Result {{ get; set; }}")
+            members.Add(Syntax.Member($"public {@event.ReturnType} Result {{ get; set; }}")
                 .WithDocumentation("Gets or sets the result of the event, which is passed back to the COM object."));
         }
 
@@ -272,19 +272,19 @@ internal sealed partial class EventEmitter
         var style = _context.Options.EventStyle;
         var members = new List<MemberDeclarationSyntax>
         {
-            ParseMember($"public static readonly global::System.Guid Iid = new({Syntax.GuidLiteral(source.Guid)});")
+            Syntax.Member($"public static readonly global::System.Guid Iid = new({Syntax.GuidLiteral(source.Guid)});")
                 .WithDocumentation($"The interface identifier (IID) of the {name} event interface."),
         };
 
         if (style != EventStyle.Interface)
         {
-            members.Add(ParseMember($"private readonly {support}.EventConnection {ConnectionField};"));
+            members.Add(Syntax.Member($"private readonly {support}.EventConnection {ConnectionField};"));
             if (style == EventStyle.Observable)
             {
-                members.AddRange(source.Events.Select(e => ParseMember($"private readonly {support}.EventSubject<{source.EventArgsName(e)}> {e.FieldName} = new();")));
+                members.AddRange(source.Events.Select(e => Syntax.Member($"private readonly {support}.EventSubject<{source.EventArgsName(e)}> {e.FieldName} = new();")));
             }
 
-            members.Add(ParseMember($"public {source.SinkName}(object source) {{ {ConnectionField} = Connect(source, this); }}").WithDocumentation(
+            members.Add(Syntax.Member($"public {source.SinkName}(object source) {{ {ConnectionField} = Connect(source, this); }}").WithDocumentation(
                 $"Connects the sink to the {name} events of a COM object.",
                 ("param name=\"source\"", "The COM object that raises the events.")));
 
@@ -292,13 +292,13 @@ internal sealed partial class EventEmitter
             {
                 string documentation = @event.Method.Documentation ?? $"Occurs when the COM object raises the {@event.Method.OriginalName} event.";
                 var member = style == EventStyle.Events
-                    ? ParseMember($"public event {source.DelegateName(@event)}? {Syntax.Escape(@event.Name)};").WithDocumentation(documentation)
-                    : ParseMember($"public global::System.IObservable<{source.EventArgsName(@event)}> {Syntax.Escape(@event.Name)} => {@event.FieldName};").WithDocumentation(documentation);
+                    ? Syntax.Member($"public event {source.DelegateName(@event)}? {Syntax.Escape(@event.Name)};").WithDocumentation(documentation)
+                    : Syntax.Member($"public global::System.IObservable<{source.EventArgsName(@event)}> {Syntax.Escape(@event.Name)} => {@event.FieldName};").WithDocumentation(documentation);
                 members.Add(_context.Annotations.Annotate(member, @event.Method, SyntaxRole.Event));
             }
 
             string completions = style == EventStyle.Observable ? string.Concat(source.Events.Select(static e => $"{e.FieldName}.OnCompleted(); ")) : string.Empty;
-            members.Add(ParseMember($"public void Dispose() {{ {ConnectionField}.Dispose(); {completions}}}").WithDocumentation(style == EventStyle.Observable
+            members.Add(Syntax.Member($"public void Dispose() {{ {ConnectionField}.Dispose(); {completions}}}").WithDocumentation(style == EventStyle.Observable
                 ? "Disconnects the sink from the events and completes the observables."
                 : "Disconnects the sink from the events."));
         }
@@ -306,7 +306,7 @@ internal sealed partial class EventEmitter
         string connect = source.IsDispatch
             ? $"{support}.EventConnection.AdviseDispatch(source, Iid, new DispatchHandler(handler))"
             : $"{support}.EventConnection.Advise(source, Iid, new ComSink(handler))";
-        members.Add(ParseMember($"public static {support}.EventConnection Connect(object source, {source.HandlerName} handler) {{ global::System.ArgumentNullException.ThrowIfNull(handler); return {connect}; }}")
+        members.Add(Syntax.Member($"public static {support}.EventConnection Connect(object source, {source.HandlerName} handler) {{ global::System.ArgumentNullException.ThrowIfNull(handler); return {connect}; }}")
             .WithDocumentation(
                 $"Connects a handler to the {name} events of a COM object.",
                 ("param name=\"source\"", "The COM object that raises the events."),
@@ -364,14 +364,14 @@ internal sealed partial class EventEmitter
         var outs = @event.Parameters.Where(static p => p.Modifier == SyntaxKind.OutKeyword).ToList();
         if (outs.Count == 0)
         {
-            return ParseMember(@event.IsVoid
+            return Syntax.Member(@event.IsVoid
                 ? $"{signature} => {field}?.Invoke({arguments});"
                 : $"{signature} => {field} is {{ }} __handler ? __handler({arguments}) : default;");
         }
 
         string call = @event.IsVoid ? $"__handler({arguments}); return;" : $"return __handler({arguments});";
         string defaults = string.Concat(outs.Select(static p => $"{p.Name} = default; "));
-        return ParseMember($"{signature} {{ if ({field} is {{ }} __handler) {{ {call} }} {defaults}{(@event.IsVoid ? string.Empty : "return default;")} }}");
+        return Syntax.Member($"{signature} {{ if ({field} is {{ }} __handler) {{ {call} }} {defaults}{(@event.IsVoid ? string.Empty : "return default;")} }}");
     }
 
     // The explicit implementation of a handler method that pushes the event arguments to the observable.
@@ -385,11 +385,11 @@ internal sealed partial class EventEmitter
         var byRef = @event.Parameters.Where(static p => p.IsByRef).ToList();
         if (byRef.Count == 0 && @event.IsVoid)
         {
-            return ParseMember($"{signature} => this.{@event.FieldName}.OnNext({create});");
+            return Syntax.Member($"{signature} => this.{@event.FieldName}.OnNext({create});");
         }
 
         string results = string.Concat(byRef.Select(p => $"{p.Name} = __args.{PropertyName(@event, p)}; "));
-        return ParseMember($"{signature} {{ var __args = {create}; this.{@event.FieldName}.OnNext(__args); {results}{(@event.IsVoid ? string.Empty : "return __args.Result;")} }}");
+        return Syntax.Member($"{signature} {{ var __args = {create}; this.{@event.FieldName}.OnNext(__args); {results}{(@event.IsVoid ? string.Empty : "return __args.Result;")} }}");
     }
 
     // Passes the invocations of IDispatch::Invoke to the handler.
@@ -452,8 +452,8 @@ internal sealed partial class EventEmitter
             .WithBaseList(BaseList(SingletonSeparatedList<BaseTypeSyntax>(SimpleBaseType(Syntax.Type($"{support}.IDispatchEventHandler")))))
             .WithMembers(List(
             [
-                ParseMember($"private readonly {source.HandlerName} __handler;"),
-                ParseMember($"public DispatchHandler({source.HandlerName} handler) {{ __handler = handler; }}"),
+                Syntax.Member($"private readonly {source.HandlerName} __handler;"),
+                Syntax.Member($"public DispatchHandler({source.HandlerName} handler) {{ __handler = handler; }}"),
                 invoke,
             ]))
             .WithDocumentation("Passes the events raised through IDispatch::Invoke to the handler.");
@@ -465,35 +465,35 @@ internal sealed partial class EventEmitter
         string support = _context.Support;
         var members = new List<MemberDeclarationSyntax>
         {
-            ParseMember($"private readonly {source.HandlerName} __handler;"),
+            Syntax.Member($"private readonly {source.HandlerName} __handler;"),
         };
 
         if (source.IsDual)
         {
-            members.Add(ParseMember("private readonly DispatchHandler __dispatch;"));
-            members.Add(ParseMember($"public ComSink({source.HandlerName} handler) {{ __handler = handler; __dispatch = new DispatchHandler(handler); }}"));
+            members.Add(Syntax.Member("private readonly DispatchHandler __dispatch;"));
+            members.Add(Syntax.Member($"public ComSink({source.HandlerName} handler) {{ __handler = handler; __dispatch = new DispatchHandler(handler); }}"));
         }
         else
         {
-            members.Add(ParseMember($"public ComSink({source.HandlerName} handler) {{ __handler = handler; }}"));
+            members.Add(Syntax.Member($"public ComSink({source.HandlerName} handler) {{ __handler = handler; }}"));
         }
 
         foreach (var @event in source.Events)
         {
-            members.Add(ParseMember(
+            members.Add(Syntax.Member(
                 $"public {@event.ReturnType} {Syntax.Escape(SignatureBuilder.GetMethodName(@event.Method))}({Parameters(@event)}) => __handler.{Syntax.Escape(@event.HandlerName)}({Arguments(@event.Parameters)});"));
         }
 
-        members.AddRange(source.VtableGaps.Select(static slot => ParseMember($"public int {InterfaceEmitter.GetPlaceholderName(slot)}() => {NotImplemented};")));
+        members.AddRange(source.VtableGaps.Select(static slot => Syntax.Member($"public int {InterfaceEmitter.GetPlaceholderName(slot)}() => {NotImplemented};")));
 
         if (source.IsDual)
         {
             string dispatch = $"{support}.IDispatch";
-            members.Add(ParseMember($"int {dispatch}.GetTypeInfoCount(out uint pctinfo) {{ pctinfo = 0; return 0; }}"));
-            members.Add(ParseMember($"int {dispatch}.GetTypeInfo(uint iTInfo, uint lcid, out nint ppTInfo) {{ ppTInfo = 0; return {NotImplemented}; }}"));
-            members.Add(ParseMember(
+            members.Add(Syntax.Member($"int {dispatch}.GetTypeInfoCount(out uint pctinfo) {{ pctinfo = 0; return 0; }}"));
+            members.Add(Syntax.Member($"int {dispatch}.GetTypeInfo(uint iTInfo, uint lcid, out nint ppTInfo) {{ ppTInfo = 0; return {NotImplemented}; }}"));
+            members.Add(Syntax.Member(
                 $"int {dispatch}.GetIDsOfNames(in global::System.Guid riid, char** rgszNames, uint cNames, uint lcid, int* rgDispId) {{ for (uint i = 0; i < cNames; i++) {{ rgDispId[i] = -1; }} return {UnknownName}; }}"));
-            members.Add(ParseMember(
+            members.Add(Syntax.Member(
                 $"int {dispatch}.Invoke(int dispIdMember, in global::System.Guid riid, uint lcid, ushort wFlags, {support}.DispParams* pDispParams, {Syntax.MarshallingNamespace}.ComVariant* pVarResult, {support}.ExcepInfo* pExcepInfo, uint* puArgErr) => " +
                 $"{support}.DispatchEventSink.InvokeHandler(__dispatch, dispIdMember, pDispParams, pVarResult, pExcepInfo);"));
         }
@@ -561,17 +561,6 @@ internal sealed partial class EventEmitter
 
     private SyntaxTokenList Modifiers(bool isUnsafe, params SyntaxKind[] modifiers) =>
         Syntax.Modifiers([_context.Accessibility, .. isUnsafe ? [SyntaxKind.UnsafeKeyword] : Array.Empty<SyntaxKind>(), .. modifiers]);
-
-    private static MemberDeclarationSyntax ParseMember(string text)
-    {
-        var member = ParseMemberDeclaration(text, options: Syntax.ParseOptions);
-        if (member is null || member.ContainsDiagnostics)
-        {
-            throw new InvalidOperationException($"Invalid member generated: {text}");
-        }
-
-        return member;
-    }
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Event interface '{Name}': skipping the events, because the interface has no GUID")]
     private static partial void LogMissingGuid(ILogger logger, string name);

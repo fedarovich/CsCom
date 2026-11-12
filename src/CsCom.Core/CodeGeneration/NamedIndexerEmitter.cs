@@ -86,19 +86,19 @@ internal static class NamedIndexerEmitter
                     .Select(a => Accessor(a.Kind, a.Expression!, isClass)))));
 
         string modifiers = $"{SyntaxFacts.GetText(context.Accessibility)} {(isClass ? "sealed class" : "readonly record struct")}";
-        var type = ((TypeDeclarationSyntax)ParseMember($"{modifiers} {typeName} {{ }}"))
+        var type = ((TypeDeclarationSyntax)Syntax.Member($"{modifiers} {typeName} {{ }}"))
             .WithMembers(List<MemberDeclarationSyntax>(
             [
-                ParseMember($"private readonly {targetType} {Target};"),
-                ParseMember($"{inlining}internal {typeName}({targetType} target) => {Target} = target;"),
+                Syntax.Member($"private readonly {targetType} {Target};"),
+                Syntax.Member($"{inlining}internal {typeName}({targetType} target) => {Target} = target;"),
                 Annotate(context, indexer.WithDocumentation(documentation), accessors, SyntaxRole.NamedIndexer),
             ]))
             .WithDocumentation($"Gives indexer syntax to the parameterized property {property} of {owner}.");
 
         string name = Syntax.Escape(property);
         var member = isClass
-            ? ParseMember($"public {typeName} {name} {{ {inlining}get => new({receiver}); }}")
-            : ParseMember($"public {typeName} {name}() => new({receiver});");
+            ? Syntax.Member($"public {typeName} {name} {{ {inlining}get => new({receiver}); }}")
+            : Syntax.Member($"public {typeName} {name}() => new({receiver});");
 
         return (
             Annotate(context, member.WithDocumentation(documentation), accessors, SyntaxRole.Property),
@@ -119,15 +119,4 @@ internal static class NamedIndexerEmitter
     private static TNode Annotate<TNode>(EmitContext context, TNode node, IEnumerable<MethodDefinition> accessors, SyntaxRole role)
         where TNode : SyntaxNode =>
         node.WithAdditionalAnnotations(accessors.Select(a => context.Annotations.GetAnnotation(a, role)));
-
-    private static MemberDeclarationSyntax ParseMember(string text)
-    {
-        var member = ParseMemberDeclaration(text, options: Syntax.ParseOptions);
-        if (member is null || member.ContainsDiagnostics)
-        {
-            throw new InvalidOperationException($"Invalid member generated: {text}");
-        }
-
-        return member;
-    }
 }

@@ -33,12 +33,12 @@ internal sealed class DispatchWrapperEmitter
         var members = new List<MemberDeclarationSyntax>();
         if (definition.Guid is { } guid)
         {
-            members.Add(ParseMember($"public static readonly global::System.Guid Iid = new({Syntax.GuidLiteral(guid)});")
+            members.Add(Syntax.Member($"public static readonly global::System.Guid Iid = new({Syntax.GuidLiteral(guid)});")
                 .WithDocumentation($"The interface identifier (IID) of the {definition.OriginalName} dispinterface."));
         }
 
-        members.Add(ParseMember($"private {Syntax.Escape(definition.Name)}({support}.IDispatch dispatch) : base(dispatch) {{ }}"));
-        members.Add(ParseMember($"public static {self} Create({support}.IDispatch dispatch) => new(dispatch);")
+        members.Add(Syntax.Member($"private {Syntax.Escape(definition.Name)}({support}.IDispatch dispatch) : base(dispatch) {{ }}"));
+        members.Add(Syntax.Member($"public static {self} Create({support}.IDispatch dispatch) => new(dispatch);")
             .WithDocumentation("Creates a late-bound wrapper for the specified IDispatch interface.", ("param name=\"dispatch\"", "The IDispatch interface of the object.")));
 
         foreach (var property in definition.Properties.Where(static p => p.DispId != DispIdNewEnum))
@@ -88,7 +88,7 @@ internal sealed class DispatchWrapperEmitter
         if (newEnum is not null && !memberNames.Contains("GetEnumerator"))
         {
             members.Add(_context.Annotations.Annotate(
-                ParseMember($"public {support}.ComEnumerator GetEnumerator() => GetEnumeratorCore();")
+                Syntax.Member($"public {support}.ComEnumerator GetEnumerator() => GetEnumeratorCore();")
                     .WithDocumentation("Returns an enumerator that iterates through the collection, so that it can be used in foreach loops."),
                 newEnum,
                 SyntaxRole.Enumerator));
@@ -388,17 +388,6 @@ internal sealed class DispatchWrapperEmitter
     private static string IndexParameterName(string name) => name is "value" ? name + "_" : Syntax.Escape(name);
 
     private static string DispId(int dispId) => dispId.ToString(CultureInfo.InvariantCulture);
-
-    private static MemberDeclarationSyntax ParseMember(string text)
-    {
-        var member = ParseMemberDeclaration(text, options: Syntax.ParseOptions);
-        if (member is null || member.ContainsDiagnostics)
-        {
-            throw new InvalidOperationException($"Invalid member generated: {text}");
-        }
-
-        return member;
-    }
 
     private sealed record PropertySignature(LateBoundType Type, IReadOnlyList<SignatureParameter> Index)
     {

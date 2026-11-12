@@ -46,6 +46,17 @@ internal static class Syntax
         return statement;
     }
 
+    public static MemberDeclarationSyntax Member(string text)
+    {
+        var member = ParseMemberDeclaration(text, options: ParseOptions);
+        if (member is null || member.ContainsDiagnostics)
+        {
+            throw new InvalidOperationException($"Invalid member generated: {text}");
+        }
+
+        return member;
+    }
+
     /// <summary>
     /// Creates an attribute. When <paramref name="arguments"/> is <see langword="null"/>, <paramref name="name"/> can include the argument list, e.g. <c>Foo(1, 2)</c>.
     /// </summary>
