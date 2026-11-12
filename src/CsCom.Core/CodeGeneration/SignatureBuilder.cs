@@ -284,14 +284,20 @@ internal sealed partial class SignatureBuilder
         }
     }
 
+    // Whether the parameter can be omitted: it is optional or has a default value, and it is not passed by reference.
+    private static bool CanBeOmitted(SignatureParameter parameter) =>
+        !parameter.IsByRef && (parameter.Definition.Flags.HasFlag(ParameterFlags.Optional) || parameter.Definition.Flags.HasFlag(ParameterFlags.HasDefault));
+
+    // Whether the parameter is a VARIANT that can be omitted, so that its null value can mean an omitted argument.
     private static bool IsOptionalVariant(SignatureParameter parameter, bool lateBound) =>
-        parameter.TypeName == "object?" && (lateBound || parameter.Marshalling?.Contains("VariantMarshaller", StringComparison.Ordinal) == true);
+        CanBeOmitted(parameter)
+        && parameter.TypeName == "object?"
+        && (lateBound || parameter.Marshalling?.Contains("VariantMarshaller", StringComparison.Ordinal) == true);
 
     // The C# default value of an optional parameter, or null if it has none or C# cannot express it.
     private string? GetConstantDefault(SignatureParameter parameter, bool lateBound)
     {
-        var flags = parameter.Definition.Flags;
-        if (parameter.IsByRef || (!flags.HasFlag(ParameterFlags.Optional) && !flags.HasFlag(ParameterFlags.HasDefault)))
+        if (!CanBeOmitted(parameter))
         {
             return null;
         }
@@ -301,6 +307,7 @@ internal sealed partial class SignatureBuilder
             return "null";
         }
 
+        var flags = parameter.Definition.Flags;
         return flags.HasFlag(ParameterFlags.HasDefault) && parameter.Definition.DefaultValue is { } value
             ? FormatConstant(value, parameter.ValueType, parameter.TypeName)
             : parameter.TypeName.EndsWith('?') && flags.HasFlag(ParameterFlags.Optional) ? "null" : null;
@@ -350,11 +357,13 @@ internal sealed partial class SignatureBuilder
             for (int i = 0; i < parameters.Count; i++)
             {
                 // The method does not treat the null value of an optional VARIANT that precedes a lost default value as an
-                // omitted argument, so the overloads pass Missing.Value, which is marshalled as DISP_E_PARAMNOTFOUND.
+                // omitted argument, so the overloads pass Missing.Value, which is marshalled as DISP_E_PARAMNOTFOUND. Such a
+                // VARIANT is not passed by reference, but it can be an `in` parameter, whose argument cannot be an expression
+                // with the modifier: without it, the expression is passed in a temporary.
                 bool passMissing = IsOptionalVariant(parameters[i], lateBound) && !parameters[i].IsOptionalVariant;
                 if (i < index)
                 {
-                    arguments.Add(Modifier(parameters[i]) + parameters[i].Name + (passMissing ? $" ?? {Missing}" : string.Empty));
+                    arguments.Add(passMissing ? $"{parameters[i].Name} ?? {Missing}" : Modifier(parameters[i]) + parameters[i].Name);
                 }
                 else if (passMissing)
                 {

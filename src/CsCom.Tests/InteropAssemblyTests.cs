@@ -126,6 +126,41 @@ public sealed partial class InteropAssemblyTests : VerifyBase
     }
 
     [TestMethod]
+    public void ReadsDecimalDefaultValues()
+    {
+        // C# stores decimal default values with the uint constructor of DecimalConstantAttribute, whose parts of 2^31 and more
+        // do not fit an int; the int constructor stores them as negative numbers.
+        string path = Path.Combine(TestEnvironment.CreateDirectory("interop-decimals"), "Decimals.dll");
+        Compile(
+            "Decimals",
+            """
+            using System.Runtime.CompilerServices;
+            using System.Runtime.InteropServices;
+
+            namespace Decimals
+            {
+                [ComImport, Guid("0F1D2C3B-0000-4000-8000-000000000010"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+                public interface IPayments
+                {
+                    void Pay(
+                        [Optional, DecimalConstant(0, 128, -1, -1, -1)] decimal min,
+                        decimal small = 1.5m,
+                        decimal large = -3000000000.25m,
+                        decimal max = 79228162514264337593543950335m);
+                }
+            }
+            """,
+            path);
+
+        var library = new InteropAssemblyReader().Read(path);
+
+        var pay = Get<InterfaceDefinition>(library, "IPayments").Methods.Single(static m => m.Name == "Pay");
+        CollectionAssert.AreEqual(
+            new object[] { decimal.MinValue, 1.5m, -3000000000.25m, decimal.MaxValue },
+            pay.Parameters.Select(static p => p.DefaultValue).ToList());
+    }
+
+    [TestMethod]
     public void RejectsEmbeddedInteropTypes()
     {
         string path = Path.Combine(TestEnvironment.CreateDirectory("interop-embedded"), "Application.dll");

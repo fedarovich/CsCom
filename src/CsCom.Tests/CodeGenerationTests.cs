@@ -407,6 +407,60 @@ public sealed class CodeGenerationTests : VerifyBase
     }
 
     [TestMethod]
+    [DataRow(InterfaceKind.Vtable)]
+    [DataRow(InterfaceKind.Dispatch)]
+    public void DefaultOverloadsPassMissingOnlyForOptionalVariants(InterfaceKind kind)
+    {
+        // The DATE default value of date has no C# constant, so an overload omits it. The optional VARIANTs before it are
+        // passed as Missing.Value when null, but the required VARIANT keeps its null value (VT_EMPTY) and the VARIANT passed
+        // by reference is passed as is: `ref state ?? Missing.Value` does not compile.
+        var variant = new PrimitiveTypeReference(System.Runtime.InteropServices.VarEnum.VT_VARIANT);
+        var library = new TypeLibrary { Name = "Synthetic" };
+        var @interface = new InterfaceDefinition
+        {
+            Name = "IRecorder",
+            OriginalName = "IRecorder",
+            Guid = Guid.NewGuid(),
+            InterfaceKind = kind,
+            BaseInterface = kind == InterfaceKind.Dispatch ? new PrimitiveTypeReference(System.Runtime.InteropServices.VarEnum.VT_DISPATCH) : null,
+            BaseVtableSlots = kind == InterfaceKind.Dispatch ? 7 : 3,
+        };
+        var method = new MethodDefinition
+        {
+            Name = "Record",
+            OriginalName = "Record",
+            InvokeKind = InvokeKind.Method,
+            MemberId = 1,
+            VtableSlot = 3,
+            ReturnType = new PrimitiveTypeReference(kind == InterfaceKind.Dispatch ? System.Runtime.InteropServices.VarEnum.VT_VOID : System.Runtime.InteropServices.VarEnum.VT_HRESULT),
+        };
+        method.Parameters.Add(new ParameterDefinition { Name = "state", Type = new PointerTypeReference(variant), Flags = ParameterFlags.In | ParameterFlags.Out });
+        method.Parameters.Add(new ParameterDefinition { Name = "key", Type = variant, Flags = ParameterFlags.In });
+        method.Parameters.Add(new ParameterDefinition { Name = "hint", Type = new PointerTypeReference(variant), Flags = ParameterFlags.In | ParameterFlags.Optional });
+        method.Parameters.Add(new ParameterDefinition { Name = "extra", Type = variant, Flags = ParameterFlags.In | ParameterFlags.Optional });
+        method.Parameters.Add(new ParameterDefinition
+        {
+            Name = "date",
+            Type = new PrimitiveTypeReference(System.Runtime.InteropServices.VarEnum.VT_DATE),
+            Flags = ParameterFlags.In | ParameterFlags.Optional | ParameterFlags.HasDefault,
+            DefaultValue = new DateTime(2000, 1, 1),
+        });
+        @interface.Methods.Add(method);
+        library.Types.Add(@interface);
+
+        var documents = new InteropPipeline().GenerateCode(library, new CodeGenerationOptions { Namespace = "Test", OverloadsForDefaultValues = true });
+
+        // The early-bound [in] VARIANT* is an `in` parameter; the call omits the modifier, which an expression cannot have.
+        string text = documents.Single(static d => d.RelativePath == "IRecorder.cs").GetText();
+        string hint = kind == InterfaceKind.Dispatch ? "object? hint" : "in object? hint";
+        string callee = kind == InterfaceKind.Dispatch ? "Record" : "@this.Record";
+        StringAssert.Contains(
+            text,
+            $"public void Record(ref object? state, object? key, {hint} = null, object? extra = null) => {callee}(ref state, key, " +
+            "hint ?? global::System.Reflection.Missing.Value, extra ?? global::System.Reflection.Missing.Value, global::System.DateTime.FromOADate(36526D));");
+    }
+
+    [TestMethod]
     public Task GeneratesChangedTypes()
     {
         var documents = Generate(new CodeGenerationOptions { Namespace = "Interop.CsComTest", ToolVersion = TestEnvironment.ToolVersion }, """

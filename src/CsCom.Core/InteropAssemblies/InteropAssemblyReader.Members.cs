@@ -283,9 +283,9 @@ public sealed partial class InteropAssemblyReader
                     case "System.Runtime.CompilerServices.DecimalConstantAttribute":
                         var arguments = attribute.ConstructorArguments;
                         value = new decimal(
-                            Convert.ToInt32(arguments[4].Value, CultureInfo.InvariantCulture),
-                            Convert.ToInt32(arguments[3].Value, CultureInfo.InvariantCulture),
-                            Convert.ToInt32(arguments[2].Value, CultureInfo.InvariantCulture),
+                            ToBits(arguments[4].Value),
+                            ToBits(arguments[3].Value),
+                            ToBits(arguments[2].Value),
                             Convert.ToByte(arguments[1].Value, CultureInfo.InvariantCulture) != 0,
                             Convert.ToByte(arguments[0].Value, CultureInfo.InvariantCulture));
                         return true;
@@ -298,6 +298,9 @@ public sealed partial class InteropAssemblyReader
 
             value = null;
             return false;
+
+            // DecimalConstantAttribute takes the 32-bit parts of the value as uint (as C# emits it) or as int.
+            static int ToBits(object? part) => part is uint bits ? unchecked((int)bits) : Convert.ToInt32(part, CultureInfo.InvariantCulture);
         }
 
         private static bool IsPreserveSig(MethodInfo method) => (method.MethodImplementationFlags & MethodImplAttributes.PreserveSig) != 0;
