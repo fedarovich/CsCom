@@ -163,8 +163,10 @@ public sealed partial class ProjectGenerator
         string? globalPackagesFolder,
         IReadOnlyDictionary<string, string>? extraProperties = null)
     {
+        // The directory is not a project of the tool yet, so the files of an existing Generated folder that the tool did not
+        // generate are kept.
         Directory.CreateDirectory(directory);
-        GeneratedFiles.Write(directory, documents);
+        GeneratedFiles.Write(directory, documents, keepOtherFiles: true);
         LogFilesGenerated(documents.Count, Path.Combine(directory, GeneratedFiles.FolderName));
 
         string? runtimePackageVersion = ToolInfo.Version;
