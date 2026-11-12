@@ -43,6 +43,31 @@ public sealed class ProjectGeneratorTests
     }
 
     [TestMethod]
+    public void EmptyValuesAreIgnoredOrRejected()
+    {
+        // An empty configuration file removes the one of a library on update; a new project has none.
+        string directory = TestEnvironment.CreateDirectory("empty-values");
+        _generator.CreateProject(new CreateProjectRequest
+        {
+            Sources = [TestEnvironment.TestTypeLibrary],
+            OutputDirectory = directory,
+            ConfigurationPaths = new Dictionary<string, string> { ["CsComTest"] = string.Empty },
+        });
+        Assert.IsNull(CsComManifest.Read(directory).Configurations);
+
+        var exception = Assert.ThrowsExactly<CsComException>(() => _generator.CreateProject(new CreateProjectRequest { Sources = [TestEnvironment.TestTypeLibrary], OutputDirectory = string.Empty }));
+        Assert.AreEqual("The output directory is empty.", exception.Message);
+
+        exception = Assert.ThrowsExactly<CsComException>(() => _generator.CreateProject(new CreateProjectRequest
+        {
+            Sources = [TestEnvironment.TestTypeLibrary],
+            OutputDirectory = TestEnvironment.CreateDirectory("empty-reference-path"),
+            ReferencePaths = [string.Empty],
+        }));
+        Assert.AreEqual("A reference path is empty.", exception.Message);
+    }
+
+    [TestMethod]
     public void UpdateKeepsTheLanguageVersionAndTheFormattingOfTheProjectFile()
     {
         // The owner of the project changed its LangVersion and formats the tags over several lines, with single quotes.

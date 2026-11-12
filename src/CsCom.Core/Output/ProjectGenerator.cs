@@ -35,6 +35,7 @@ public sealed partial class ProjectGenerator
     public string CreateProject(CreateProjectRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);
+        ValidateOutputDirectory(request);
 
         // The directory is checked before the generation when it is known.
         if ((request.OutputDirectory ?? request.Name) is { } knownDirectory)
@@ -77,7 +78,7 @@ public sealed partial class ProjectGenerator
         {
             null => manifest.ReferencePaths?.Select(path => Path.GetFullPath(Path.Combine(directory, path))).ToList(),
             [] => null,
-            var paths => paths.Select(Path.GetFullPath).ToList(),
+            var paths => paths.Select(GetReferencePath).ToList(),
         };
 
         // The namespace and the configuration file of the single source of the projects of earlier versions apply to it, and
@@ -143,13 +144,29 @@ public sealed partial class ProjectGenerator
     /// </summary>
     internal GeneratedProject Generate(OutputRequest request)
     {
+        ValidateOutputDirectory(request);
         var settings = ResolveSettings(request);
         var namespaces = Merge(null, request.Namespaces);
-        var configurations = Merge(null, request.ConfigurationPaths.ToDictionary(static p => p.Key, static p => Path.GetFullPath(p.Value)));
+
+        // An empty value removes the configuration file of a library when a project is updated; a new one has none.
+        var configurations = Merge(
+            null,
+            request.ConfigurationPaths.Where(static p => p.Value.Length > 0).ToDictionary(static p => p.Key, static p => Path.GetFullPath(p.Value)));
         string? configuration = string.IsNullOrEmpty(request.ConfigurationPath) ? null : Path.GetFullPath(request.ConfigurationPath);
         var references = CreateReferences(request.Sources, settings.ReferencePaths ?? [], request.Namespace, configuration);
         return Generate(settings, references, namespaces, configurations, request.Name);
     }
+
+    private static void ValidateOutputDirectory(OutputRequest request)
+    {
+        if (request.OutputDirectory is { Length: 0 })
+        {
+            throw new CsComException("The output directory is empty.");
+        }
+    }
+
+    private static string GetReferencePath(string path) =>
+        path.Length > 0 ? Path.GetFullPath(path) : throw new CsComException("A reference path is empty.");
 
     /// <summary>
     /// Gets the package source as nuget.config takes it: the URL of a feed as it is, or the full path to a folder.
@@ -256,7 +273,7 @@ public sealed partial class ProjectGenerator
             OverloadsForDefaultValues = request.OverloadsForDefaultValues,
             NamedIndexers = request.NamedIndexers,
             Dynamic = request.Dynamic,
-            ReferencePaths = request.ReferencePaths.Count > 0 ? [.. request.ReferencePaths.Select(Path.GetFullPath)] : null,
+            ReferencePaths = request.ReferencePaths.Count > 0 ? [.. request.ReferencePaths.Select(GetReferencePath)] : null,
         };
     }
 
