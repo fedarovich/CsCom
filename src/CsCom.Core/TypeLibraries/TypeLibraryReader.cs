@@ -296,7 +296,7 @@ public sealed partial class TypeLibraryReader
             {
                 if (isDual && typeInfo.GetRefTypeOfImplType(unchecked((uint)-1), out uint vtableRef) >= 0)
                 {
-                    typeInfo.GetRefTypeInfo(vtableRef, out ITypeInfo vtableTypeInfo);
+                    ITypeInfo vtableTypeInfo = GetReferencedType(typeInfo, vtableRef);
                     definition.InterfaceKind = InterfaceKind.Dual;
                     PopulateVtableInterface(vtableTypeInfo, definition);
                 }
@@ -331,7 +331,7 @@ public sealed partial class TypeLibraryReader
             if (implTypeCount > 0)
             {
                 typeInfo.GetRefTypeOfImplType(0, out uint baseRef);
-                typeInfo.GetRefTypeInfo(baseRef, out ITypeInfo baseTypeInfo);
+                ITypeInfo baseTypeInfo = GetReferencedType(typeInfo, baseRef);
                 TypeReference baseInterface = ResolveReference(baseTypeInfo);
                 definition.BaseInterface = baseInterface is PrimitiveTypeReference { VarType: VarEnum.VT_UNKNOWN } ? null : baseInterface;
 
@@ -408,7 +408,7 @@ public sealed partial class TypeLibraryReader
             {
                 typeInfo.GetRefTypeOfImplType(i, out uint implRef);
                 typeInfo.GetImplTypeFlags(i, out IMPLTYPEFLAGS flags);
-                typeInfo.GetRefTypeInfo(implRef, out ITypeInfo implTypeInfo);
+                ITypeInfo implTypeInfo = GetReferencedType(typeInfo, implRef);
                 definition.Interfaces.Add(new CoClassInterface(
                     ResolveReference(implTypeInfo),
                     IsDefault: (flags & IMPLTYPEFLAGS.IMPLTYPEFLAG_FDEFAULT) != 0,
@@ -555,8 +555,7 @@ public sealed partial class TypeLibraryReader
                 }
 
                 case VarEnum.VT_USERDEFINED:
-                    typeInfo.GetRefTypeInfo(desc->hreftype, out ITypeInfo refTypeInfo);
-                    return ResolveReference(refTypeInfo);
+                    return ResolveReference(GetReferencedType(typeInfo, desc->hreftype));
                 default:
                     return GetPrimitive(vt);
             }
@@ -564,7 +563,17 @@ public sealed partial class TypeLibraryReader
 
         private TypeReference ResolveReference(ITypeInfo typeInfo)
         {
-            typeInfo.GetContainingTypeLib(out ITypeLib containingLib, out uint index);
+            ITypeLib containingLib;
+            uint index;
+            try
+            {
+                typeInfo.GetContainingTypeLib(out containingLib, out index);
+            }
+            catch (COMException e)
+            {
+                throw CreateReferenceException(typeInfo, e);
+            }
+
             Guid libraryId = GetLibAttr(containingLib).guid;
             return ResolveWellKnown(typeInfo, libraryId)
                 ?? new UserDefinedTypeReference(GetOrCreateDefinition(typeInfo, containingLib, libraryId, index));
@@ -775,6 +784,29 @@ public sealed partial class TypeLibraryReader
             {
                 typeLib.ReleaseTLibAttr(attr);
             }
+        }
+
+        // Gets a type that a type refers to: its base interface, an interface of a class or the type of a member. The type
+        // library of a type of another library is found in the registry.
+        private static ITypeInfo GetReferencedType(ITypeInfo typeInfo, uint reference)
+        {
+            try
+            {
+                typeInfo.GetRefTypeInfo(reference, out ITypeInfo referenced);
+                return referenced;
+            }
+            catch (COMException e)
+            {
+                throw CreateReferenceException(typeInfo, e);
+            }
+        }
+
+        private static TypeLibraryException CreateReferenceException(ITypeInfo typeInfo, COMException exception)
+        {
+            string name = typeInfo.GetDocumentation(-1, out string? typeName, out _, out _, out _) >= 0 && typeName is not null ? $"'{typeName}'" : "a type";
+            return new TypeLibraryException(
+                $"A type that {name} uses cannot be loaded (HRESULT 0x{exception.HResult:X8}): the type library that defines it may not be registered.",
+                exception);
         }
 
         private static string GetName(ITypeInfo typeInfo) => GetName(typeInfo, out _);
