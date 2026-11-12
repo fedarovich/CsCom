@@ -205,6 +205,40 @@ public sealed unsafe class EventRuntimeTests
     }
 
     [TestMethod]
+    public void WritesBackNullStringsObjectsAndArrays()
+    {
+        // E.g. the ppDisp of an event like NewWindow2, which the handler leaves null: the values that follow are still set.
+        nint text = Marshal.StringToBSTR("old");
+        nint dispatch = 0;
+        nint array = 0;
+        short cancel = 0;
+        var variants = stackalloc ComVariant[4];
+        variants[3] = ComVariant.CreateRaw(VarEnum.VT_BYREF | VarEnum.VT_BSTR, (nint)(&text));
+        variants[2] = ComVariant.CreateRaw(VarEnum.VT_BYREF | VarEnum.VT_DISPATCH, (nint)(&dispatch));
+        variants[1] = ComVariant.CreateRaw(VarEnum.VT_BYREF | VarEnum.VT_ARRAY | VarEnum.VT_I4, (nint)(&array));
+        variants[0] = ComVariant.CreateRaw(VarEnum.VT_BYREF | VarEnum.VT_BOOL, (nint)(&cancel));
+        var parameters = new DispParams { rgvarg = variants, cArgs = 4 };
+        try
+        {
+            var arguments = new EventArguments(&parameters, null);
+
+            arguments.Set<string?>(0, null);
+            arguments.Set<object?>(1, null);
+            arguments.Set<int[]?>(2, null);
+            arguments.Set(3, true);
+
+            Assert.AreEqual((nint)0, text, "The previous string is freed.");
+            Assert.AreEqual((nint)0, dispatch);
+            Assert.AreEqual((nint)0, array);
+            Assert.AreEqual((short)-1, cancel);
+        }
+        finally
+        {
+            Marshal.FreeBSTR(text);
+        }
+    }
+
+    [TestMethod]
     public void SetsTheResultIfTheCallerExpectsOne()
     {
         var parameters = new DispParams();

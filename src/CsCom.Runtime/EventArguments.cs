@@ -123,6 +123,13 @@ public readonly unsafe ref struct EventArguments
 
         try
         {
+            // A null string, object or array is a null pointer, which VariantChangeType does not convert an empty value to.
+            if (converted.VarType is VarEnum.VT_EMPTY or VarEnum.VT_NULL
+                && ((type & VarEnum.VT_ARRAY) != 0 || type is VarEnum.VT_BSTR or VarEnum.VT_UNKNOWN or VarEnum.VT_DISPATCH))
+            {
+                converted = ComVariant.CreateRaw(type, (nint)0);
+            }
+
             if (converted.VarType != type)
             {
                 Marshal.ThrowExceptionForHR(OleNativeMethods.VariantChangeType(&converted, &converted, 0, (ushort)type));
