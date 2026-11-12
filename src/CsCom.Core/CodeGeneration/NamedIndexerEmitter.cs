@@ -66,13 +66,14 @@ internal static class NamedIndexerEmitter
     {
         bool isClass = context.Options.NamedIndexers == NamedIndexers.ClassProperty;
         string inlining = isClass ? $"[{Inlining}] " : string.Empty;
-        var arguments = index.Select(static p => ParameterName(p.Definition.Name)).ToList();
+        // The implicit setter parameter and the field cannot be shadowed by index parameters.
+        var arguments = index.Select(static p => Syntax.Escape(p.GetIndexName(Target))).ToList();
         string? get = getter is null ? null : $"{Target}.{Syntax.Escape(getter)}({string.Join(", ", arguments)})";
         string? set = setter is null ? null : $"{Target}.{Syntax.Escape(setter)}({string.Join(", ", [.. arguments, "value"])})";
 
         var parameters = index.Select(static p =>
         {
-            var parameter = p.Annotate(Syntax.Parameter(p.TypeName, ParameterName(p.Definition.Name).TrimStart('@')));
+            var parameter = p.Annotate(Syntax.Parameter(p.TypeName, p.GetIndexName(Target)));
             return p.DefaultValue is null ? parameter : parameter.WithDefault(EqualsValueClause(Syntax.Expression(p.DefaultValue)));
         });
         var indexer = IndexerDeclaration(Syntax.Type(valueType))
@@ -104,9 +105,6 @@ internal static class NamedIndexerEmitter
             Annotate(context, member.WithDocumentation(documentation), accessors, SyntaxRole.Property),
             Annotate(context, type, accessors, SyntaxRole.NamedIndexer));
     }
-
-    // The implicit setter parameter and the field cannot be shadowed by index parameters.
-    private static string ParameterName(string name) => name is "value" or Target ? name + "_" : Syntax.Escape(name);
 
     private static AccessorDeclarationSyntax Accessor(SyntaxKind kind, string expression, bool inline)
     {

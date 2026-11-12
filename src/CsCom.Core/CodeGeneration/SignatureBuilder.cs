@@ -32,6 +32,17 @@ internal sealed record SignatureParameter(ParameterDefinition Definition, TypeRe
 
     public bool IsByRef => Modifier is SyntaxKind.RefKeyword or SyntaxKind.OutKeyword;
 
+    /// <summary>Whether two parameter lists have the same types, e.g. the indexes of the getter and the setter of a property.</summary>
+    public static bool HaveSameTypes(IReadOnlyList<SignatureParameter> first, IReadOnlyList<SignatureParameter> second) =>
+        first.Count == second.Count && first.Zip(second).All(static pair => pair.First.TypeName == pair.Second.TypeName);
+
+    /// <summary>
+    /// Gets the unescaped name of the parameter as an index parameter of a generated indexer: a trailing <c>_</c> keeps it from
+    /// shadowing the implicit <c>value</c> parameter of setters or <paramref name="reserved"/>, another name that the accessors use.
+    /// </summary>
+    public string GetIndexName(string? reserved = null) =>
+        Definition.Name == "value" || Definition.Name == reserved ? Definition.Name + "_" : Definition.Name;
+
     /// <summary>Associates a parameter declared for this parameter with <see cref="Definition"/>.</summary>
     public ParameterSyntax Annotate(ParameterSyntax parameter) => Annotation is null ? parameter : parameter.WithAdditionalAnnotations(Annotation);
 

@@ -16,6 +16,9 @@ internal sealed partial class InterfaceEmitter
     private const int DispIdValue = 0;
     private const int DispIdNewEnum = -4;
 
+    // The receiver parameter of the extension blocks (@this), which index parameters cannot shadow.
+    private const string Receiver = "this";
+
     private readonly EmitContext _context;
 
     public InterfaceEmitter(EmitContext context)
@@ -255,7 +258,7 @@ internal sealed partial class InterfaceEmitter
             return null;
         }
 
-        var receiver = Syntax.Parameter(_context.GetTypeName(definition, @namespace), "this");
+        var receiver = Syntax.Parameter(_context.GetTypeName(definition, @namespace), Receiver);
         var extension = ExtensionBlockDeclaration()
             .WithParameterList(Syntax.Parameters([receiver]))
             .WithOpenBraceToken(Token(SyntaxKind.OpenBraceToken))
@@ -351,7 +354,7 @@ internal sealed partial class InterfaceEmitter
 
     private static string Arguments(IReadOnlyList<SignatureParameter> index, string? value = null)
     {
-        var arguments = index.Select(static p => IndexParameterName(p.Definition.Name)).ToList();
+        var arguments = index.Select(static p => Syntax.Escape(p.GetIndexName(Receiver))).ToList();
         if (value is not null)
         {
             arguments.Add(value);
@@ -359,9 +362,6 @@ internal sealed partial class InterfaceEmitter
 
         return string.Join(", ", arguments);
     }
-
-    // The implicit setter parameter and the receiver parameter cannot be shadowed by index parameters.
-    private static string IndexParameterName(string name) => name is "value" or "this" ? name + "_" : Syntax.Escape(name);
 
     private static PropertyDeclarationSyntax Property(string type, string name, string? getExpression, string? setExpression, string? documentation)
     {
@@ -377,7 +377,7 @@ internal sealed partial class InterfaceEmitter
 
     private static IndexerDeclarationSyntax Indexer(string type, IReadOnlyList<SignatureParameter> index, string? getExpression, string? setExpression, string? documentation)
     {
-        var parameters = index.Select(static p => p.Annotate(Syntax.Parameter(p.TypeName, IndexParameterName(p.Definition.Name).TrimStart('@'))));
+        var parameters = index.Select(static p => p.Annotate(Syntax.Parameter(p.TypeName, p.GetIndexName(Receiver))));
         var indexer = IndexerDeclaration(Syntax.Type(type))
             .WithModifiers(Syntax.Modifiers(SyntaxKind.PublicKeyword))
             .WithParameterList(Syntax.BracketedParameters(parameters));
@@ -417,7 +417,6 @@ internal sealed partial class InterfaceEmitter
 
     private sealed record PropertySignature(string Type, IReadOnlyList<SignatureParameter> Index)
     {
-        public bool Matches(PropertySignature other) =>
-            Type == other.Type && Index.Count == other.Index.Count && Index.Zip(other.Index).All(static pair => pair.First.TypeName == pair.Second.TypeName);
+        public bool Matches(PropertySignature other) => Type == other.Type && SignatureParameter.HaveSameTypes(Index, other.Index);
     }
 }

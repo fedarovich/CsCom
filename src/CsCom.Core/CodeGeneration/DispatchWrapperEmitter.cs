@@ -207,7 +207,7 @@ internal sealed class DispatchWrapperEmitter
         {
             int dispId = (getter ?? setter)!.MemberId;
             string id = DispId(dispId);
-            string index = string.Concat(property.Index.Select(static p => ", " + IndexArgument(p)));
+            string index = string.Concat(property.Index.Select(static p => ", " + Syntax.Escape(p.GetIndexName())));
             string? get = getterSignature is null ? null : property.Type.FromObject($"InvokeGet({id}{index})");
             string? set = setterSignature is null ? null : $"{(setter == put ? "InvokePut" : "InvokePutRef")}({id}, value{index})";
             var accessors = new[] { getterSignature is null ? null : getter, setterSignature is null ? null : setter }
@@ -222,7 +222,7 @@ internal sealed class DispatchWrapperEmitter
             }
             else if (!hasIndexer && dispId == DispIdValue)
             {
-                var parameters = property.Index.Select(static p => p.Annotate(Syntax.Parameter(p.TypeName, IndexParameterName(p.Definition.Name).TrimStart('@'))));
+                var parameters = property.Index.Select(static p => p.Annotate(Syntax.Parameter(p.TypeName, p.GetIndexName())));
                 var indexer = IndexerDeclaration(Syntax.Type(property.Type.Name))
                     .WithModifiers(Syntax.Modifiers(SyntaxKind.PublicKeyword))
                     .WithParameterList(Syntax.BracketedParameters(parameters));
@@ -271,7 +271,7 @@ internal sealed class DispatchWrapperEmitter
 
         if (setter is not null && signatures.MapLateBoundSignature(setter).Parameters is var setterParameters
             && setterParameters.Count > 1 && !setterParameters.Any(static p => p.IsByRef)
-            && (index is null || (setterParameters[^1].TypeName == valueType!.Name && SameTypes(index, setterParameters[..^1]))))
+            && (index is null || (setterParameters[^1].TypeName == valueType!.Name && SignatureParameter.HaveSameTypes(index, setterParameters[..^1]))))
         {
             index ??= setterParameters[..^1];
             valueType ??= new LateBoundType(setterParameters[^1].TypeName, static x => x);
@@ -299,9 +299,6 @@ internal sealed class DispatchWrapperEmitter
             setter is null ? null : SignatureBuilder.GetMethodName(setter),
             (getter ?? setter)!.Documentation,
             [.. new[] { getter, setter }.OfType<MethodDefinition>()]);
-
-        static bool SameTypes(IReadOnlyList<SignatureParameter> first, IReadOnlyList<SignatureParameter> second) =>
-            first.Count == second.Count && first.Zip(second).All(static pair => pair.First.TypeName == pair.Second.TypeName);
     }
 
     // An indexer is compiled into a property named Item, which conflicts with the members named Item, get_Item or set_Item,
@@ -383,15 +380,10 @@ internal sealed class DispatchWrapperEmitter
     private static string Argument(SignatureParameter parameter) =>
         parameter.IsOptionalVariant ? $"{parameter.Name} ?? global::System.Reflection.Missing.Value" : parameter.Name;
 
-    private static string IndexArgument(SignatureParameter parameter) => IndexParameterName(parameter.Definition.Name);
-
-    private static string IndexParameterName(string name) => name is "value" ? name + "_" : Syntax.Escape(name);
-
     private static string DispId(int dispId) => dispId.ToString(CultureInfo.InvariantCulture);
 
     private sealed record PropertySignature(LateBoundType Type, IReadOnlyList<SignatureParameter> Index)
     {
-        public bool Matches(PropertySignature other) =>
-            Type.Name == other.Type.Name && Index.Count == other.Index.Count && Index.Zip(other.Index).All(static pair => pair.First.TypeName == pair.Second.TypeName);
+        public bool Matches(PropertySignature other) => Type.Name == other.Type.Name && SignatureParameter.HaveSameTypes(Index, other.Index);
     }
 }
