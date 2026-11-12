@@ -49,9 +49,31 @@ public sealed partial class AliasResolver : IModelTransformer
             throw new InvalidOperationException($"The type alias '{alias.Name}' is recursive.");
         }
 
-        target = alias.Target is UserDefinedTypeReference { Definition: AliasDefinition inner } ? Resolve(inner, resolved, visiting) : alias.Target;
+        target = ResolveTarget(alias.Target, resolved, visiting);
         resolved[alias] = target;
         return target;
+    }
+
+    // Resolves the aliases in the target of an alias, which can be a pointer to or an array of another alias, e.g.
+    // typedef Item* PItem: the references that are rewritten first take the target as it is here.
+    private static TypeReference ResolveTarget(TypeReference type, Dictionary<AliasDefinition, TypeReference> resolved, HashSet<AliasDefinition> visiting)
+    {
+        switch (type)
+        {
+            case UserDefinedTypeReference { Definition: AliasDefinition alias }:
+                return Resolve(alias, resolved, visiting);
+            case PointerTypeReference pointer:
+                var pointee = ResolveTarget(pointer.ElementType, resolved, visiting);
+                return ReferenceEquals(pointee, pointer.ElementType) ? pointer : pointer with { ElementType = pointee };
+            case SafeArrayTypeReference array:
+                var element = ResolveTarget(array.ElementType, resolved, visiting);
+                return ReferenceEquals(element, array.ElementType) ? array : array with { ElementType = element };
+            case FixedArrayTypeReference array:
+                var fixedElement = ResolveTarget(array.ElementType, resolved, visiting);
+                return ReferenceEquals(fixedElement, array.ElementType) ? array : array with { ElementType = fixedElement };
+            default:
+                return type;
+        }
     }
 
     private static bool IsAnonymous(TypeDefinition definition) =>
