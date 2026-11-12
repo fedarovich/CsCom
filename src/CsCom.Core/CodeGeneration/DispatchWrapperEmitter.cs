@@ -144,7 +144,13 @@ internal sealed class DispatchWrapperEmitter
             Syntax.Statement($"object?[] __args = [{string.Join(", ", parameters.Select(static p => p.Modifier == SyntaxKind.OutKeyword ? "null" : Argument(p)))}];"),
         };
 
-        string invoke = $"InvokeMethodByRef({id}, __args, [{string.Join(", ", parameters.Select(static p => p.IsByRef ? "true" : "false"))}])";
+        // Accessors are invoked with the flags of properties too. The arguments keep the declaration order, in which the value of
+        // a setter is the last one: the runtime passes it as the DISPID_PROPERTYPUT named argument. Dispatch is qualified, since
+        // a parameter can have its name.
+        string byRef = $"[{string.Join(", ", parameters.Select(static p => p.IsByRef ? "true" : "false"))}]";
+        string invoke = PropertyFlags(method.InvokeKind) is { } flags
+            ? $"InvokeByRef(this.Dispatch, {id}, {flags}, __args, {byRef})"
+            : $"InvokeMethodByRef({id}, __args, {byRef})";
         statements.Add(Syntax.Statement(returnType.IsVoid ? $"{invoke};" : $"object? __result = {invoke};"));
 
         var lateBoundTypes = parameters.Select(p => signatures.Mapper.WithMarshalling(p.Definition.Marshalling).MapLateBound(p.ValueType)).ToList();
@@ -162,6 +168,19 @@ internal sealed class DispatchWrapperEmitter
         }
 
         return _context.Annotations.Annotate(declaration.WithBody(Block(statements)).WithDocumentation(method.Documentation), method);
+    }
+
+    // The flags of the invocation of a property accessor, the same as InvokeGet, InvokePut and InvokePutRef use, or null for a method.
+    private string? PropertyFlags(InvokeKind kind)
+    {
+        string flags = $"{_context.Support}.DispatchFlags";
+        return kind switch
+        {
+            InvokeKind.PropertyGet => $"{flags}.PropertyGet | {flags}.Method",
+            InvokeKind.PropertyPut => $"{flags}.PropertyPut",
+            InvokeKind.PropertyPutRef => $"{flags}.PropertyPutRef",
+            _ => null,
+        };
     }
 
     // Emits a property or the indexer, and the accessors that they do not cover as methods. Returns whether a property or the
