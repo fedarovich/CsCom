@@ -53,6 +53,42 @@ public sealed class SafeArrayTests
     }
 
     [TestMethod]
+    [DataRow(new byte[] { 1, 200 }, VarEnum.VT_UI1)]
+    [DataRow(new sbyte[] { 1, -56 }, VarEnum.VT_I1)]
+    [DataRow(new ushort[] { 1, 60000 }, VarEnum.VT_UI2)]
+    [DataRow(new short[] { 1, -2 }, VarEnum.VT_I2)]
+    [DataRow(new uint[] { 1, 4000000000 }, VarEnum.VT_UI4)]
+    [DataRow(new int[] { 1, -2 }, VarEnum.VT_I4)]
+    [DataRow(new ulong[] { 1, ulong.MaxValue }, VarEnum.VT_UI8)]
+    [DataRow(new long[] { 1, -2 }, VarEnum.VT_I8)]
+    public void OneDimensionalArraysOfIntegersKeepTheirSignedness(Array array, VarEnum elementType)
+    {
+        // The runtime considers a byte[] to be an sbyte[] as well, but it is a SAFEARRAY of VT_UI1.
+        var variant = VariantMarshaller.ConvertToUnmanaged(array);
+        try
+        {
+            Assert.AreEqual(VarEnum.VT_ARRAY | elementType, variant.VarType);
+            var result = (Array)VariantMarshaller.ConvertToManaged(variant)!;
+            Assert.AreEqual(array.GetType(), result.GetType());
+            CollectionAssert.AreEqual(array, result);
+        }
+        finally
+        {
+            variant.Dispose();
+        }
+    }
+
+    [TestMethod]
+    public void WrappersOfUnsignedArraysHaveUnsignedElements()
+    {
+        using var array = ComSafeArray<byte>.Create([1, 200])!;
+
+        Assert.AreEqual(VarEnum.VT_UI1, array.ElementType);
+        CollectionAssert.AreEqual(new byte[] { 1, 200 }, array.ToArray());
+        CollectionAssert.AreEqual(new byte[] { 1, 200 }, array.AsSpan().ToArray());
+    }
+
+    [TestMethod]
     public void ElementsKeepTheirIndices()
     {
         var matrix = new[,] { { 1, 2, 3 }, { 4, 5, 6 } };

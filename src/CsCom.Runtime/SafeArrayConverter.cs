@@ -154,41 +154,86 @@ internal static unsafe class SafeArrayConverter
             return (elementType.Value, CreateObjects(array, elementType.Value));
         }
 
-        switch (array)
+        // The exact array types are compared: the runtime also treats an array of integers as an array of the integers of
+        // the same size and the other signedness, and as an array of the enumerations based on them, so that a byte[] would
+        // match sbyte[] and become a SAFEARRAY of VT_I1.
+        Type arrayType = array.GetType();
+        if (arrayType == typeof(object[]))
         {
-            case object?[] objects when array.GetType() == typeof(object[]):
-                return (VarEnum.VT_VARIANT, CreateVariants(objects));
-            case string?[] strings:
-                return (VarEnum.VT_BSTR, CreateStrings(strings));
-            case bool[] booleans:
-                return (VarEnum.VT_BOOL, CreateBooleans(booleans));
-            case DateTime[] dates:
-                return (VarEnum.VT_DATE, CreateDates(dates));
-            case sbyte[] values:
-                return (VarEnum.VT_I1, Create(VarEnum.VT_I1, values));
-            case byte[] values:
-                return (VarEnum.VT_UI1, Create(VarEnum.VT_UI1, values));
-            case short[] values:
-                return (VarEnum.VT_I2, Create(VarEnum.VT_I2, values));
-            case ushort[] values:
-                return (VarEnum.VT_UI2, Create(VarEnum.VT_UI2, values));
-            case int[] values:
-                return (VarEnum.VT_I4, Create(VarEnum.VT_I4, values));
-            case uint[] values:
-                return (VarEnum.VT_UI4, Create(VarEnum.VT_UI4, values));
-            case long[] values:
-                return (VarEnum.VT_I8, Create(VarEnum.VT_I8, values));
-            case ulong[] values:
-                return (VarEnum.VT_UI8, Create(VarEnum.VT_UI8, values));
-            case float[] values:
-                return (VarEnum.VT_R4, Create(VarEnum.VT_R4, values));
-            case double[] values:
-                return (VarEnum.VT_R8, Create(VarEnum.VT_R8, values));
-            case decimal[] values:
-                return (VarEnum.VT_DECIMAL, Create(VarEnum.VT_DECIMAL, values));
+            return (VarEnum.VT_VARIANT, CreateVariants((object?[])array));
         }
 
-        Type type = array.GetType().GetElementType()!;
+        if (arrayType == typeof(string[]))
+        {
+            return (VarEnum.VT_BSTR, CreateStrings((string?[])array));
+        }
+
+        if (arrayType == typeof(bool[]))
+        {
+            return (VarEnum.VT_BOOL, CreateBooleans((bool[])array));
+        }
+
+        if (arrayType == typeof(DateTime[]))
+        {
+            return (VarEnum.VT_DATE, CreateDates((DateTime[])array));
+        }
+
+        if (arrayType == typeof(sbyte[]))
+        {
+            return (VarEnum.VT_I1, Create(VarEnum.VT_I1, (sbyte[])array));
+        }
+
+        if (arrayType == typeof(byte[]))
+        {
+            return (VarEnum.VT_UI1, Create(VarEnum.VT_UI1, (byte[])array));
+        }
+
+        if (arrayType == typeof(short[]))
+        {
+            return (VarEnum.VT_I2, Create(VarEnum.VT_I2, (short[])array));
+        }
+
+        if (arrayType == typeof(ushort[]))
+        {
+            return (VarEnum.VT_UI2, Create(VarEnum.VT_UI2, (ushort[])array));
+        }
+
+        if (arrayType == typeof(int[]))
+        {
+            return (VarEnum.VT_I4, Create(VarEnum.VT_I4, (int[])array));
+        }
+
+        if (arrayType == typeof(uint[]))
+        {
+            return (VarEnum.VT_UI4, Create(VarEnum.VT_UI4, (uint[])array));
+        }
+
+        if (arrayType == typeof(long[]))
+        {
+            return (VarEnum.VT_I8, Create(VarEnum.VT_I8, (long[])array));
+        }
+
+        if (arrayType == typeof(ulong[]))
+        {
+            return (VarEnum.VT_UI8, Create(VarEnum.VT_UI8, (ulong[])array));
+        }
+
+        if (arrayType == typeof(float[]))
+        {
+            return (VarEnum.VT_R4, Create(VarEnum.VT_R4, (float[])array));
+        }
+
+        if (arrayType == typeof(double[]))
+        {
+            return (VarEnum.VT_R8, Create(VarEnum.VT_R8, (double[])array));
+        }
+
+        if (arrayType == typeof(decimal[]))
+        {
+            return (VarEnum.VT_DECIMAL, Create(VarEnum.VT_DECIMAL, (decimal[])array));
+        }
+
+        Type type = arrayType.GetElementType()!;
         if (type.IsEnum)
         {
             return CreateEnums(array, Type.GetTypeCode(type));
