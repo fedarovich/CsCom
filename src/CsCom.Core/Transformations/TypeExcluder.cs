@@ -118,12 +118,14 @@ public sealed partial class TypeExcluder : IModelTransformer
         _ => false,
     };
 
-    // A structure or union used by value: not through a pointer, which can be replaced by void*.
+    // A structure or union used by value: not through a pointer to it, which can be replaced by void*. The elements of an
+    // array passed by pointer, e.g. of a SAFEARRAY(Record)* retval, are used by value too.
     private static RecordDefinition? FindRecordByValue(TypeReference type, HashSet<TypeDefinition> excluded) => type switch
     {
         UserDefinedTypeReference { Definition: RecordDefinition record } when excluded.Contains(record) => record,
         SafeArrayTypeReference array => FindRecordByValue(array.ElementType, excluded),
         FixedArrayTypeReference array => FindRecordByValue(array.ElementType, excluded),
+        PointerTypeReference { ElementType: not UserDefinedTypeReference } pointer => FindRecordByValue(pointer.ElementType, excluded),
         _ => null,
     };
 
