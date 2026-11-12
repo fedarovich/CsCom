@@ -530,6 +530,8 @@ and, for [known ranks](#known-ranks), by the configuration file:
   e.g. a `string[,]` to a `SAFEARRAY(BSTR)`.
 - **Other places:** `SAFEARRAY(IUnknown*)` stays `object?[]` (`UnknownSafeArrayMarshaller`) in the `array` and `sysarray` modes.
   Late-bound wrappers use `System.Array?` in all modes other than `array`.
+- **Late-bound wrappers and dispinterface events** in the `array` mode use `T[]?` too, enums included (`Color[]?`), and convert
+  the elements, since servers often return other element types, e.g. a `SAFEARRAY` of `VARIANT`s for a `SAFEARRAY(BSTR)`.
 - <a id="known-ranks"></a>**Known ranks:** when the rank of a parameter is known, the `SetSafeArrayRank` element of the [configuration file](#model-transformers)
   gives `T[,]` or `T[,,]` instead of `T[]` in the `array` mode, also in late-bound wrappers and events:
 

@@ -90,6 +90,35 @@ public sealed unsafe class EventRuntimeTests
     }
 
     [TestMethod]
+    public void ConvertsArraysToTheExactElementType()
+    {
+        // The CLR also considers an int[] to be a TestColor[] and a string[] to be an object[], so the arrays are copied: the
+        // elements of a string[] seen as an object[] could not be set to other objects.
+        var variants = stackalloc ComVariant[2];
+        variants[1] = VariantMarshaller.ConvertToUnmanaged(new[] { 1, 2 });
+        variants[0] = VariantMarshaller.ConvertToUnmanaged(new[] { "a", "b" });
+        var parameters = new DispParams { rgvarg = variants, cArgs = 2 };
+        try
+        {
+            var arguments = new EventArguments(&parameters, null);
+
+            var colors = arguments.GetArray<TestColor>(0)!;
+            Assert.AreEqual(typeof(TestColor[]), colors.GetType());
+            CollectionAssert.AreEqual(new[] { TestColor.Red, (TestColor)2 }, colors);
+
+            var objects = arguments.GetArray<object?>(1)!;
+            Assert.AreEqual(typeof(object[]), objects.GetType());
+            objects[0] = 1;
+            CollectionAssert.AreEqual(new object?[] { 1, "b" }, objects);
+        }
+        finally
+        {
+            variants[0].Dispose();
+            variants[1].Dispose();
+        }
+    }
+
+    [TestMethod]
     public void WritesBackByReferenceArguments()
     {
         short flag = 0;

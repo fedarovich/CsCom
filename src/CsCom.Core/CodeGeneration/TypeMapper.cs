@@ -240,22 +240,23 @@ internal sealed class TypeMapper
             case SafeArrayTypeReference array:
             {
                 LateBoundType element = MapLateBound(array.ElementType);
-                bool isPrimitive = element.Name is "object?" or "string?" or "bool" or "sbyte" or "byte" or "short" or "ushort" or "int" or "uint"
-                    or "long" or "ulong" or "float" or "double" or "decimal" or "global::System.DateTime";
-                if (array.Rank is 2 or 3 && (isPrimitive || array.ElementType is UserDefinedTypeReference { Definition: EnumDefinition }))
+                bool isConvertible = IsEnum(array.ElementType) || element.Name is "object?" or "string?" or "bool" or "sbyte" or "byte" or "short" or "ushort"
+                    or "int" or "uint" or "long" or "ulong" or "float" or "double" or "decimal" or "global::System.DateTime";
+                if (!isConvertible)
                 {
-                    // Multidimensional arrays are converted element by element, e.g. VT_I4 elements to an enum.
-                    string method = array.Rank == 2 ? "ToArray2D" : "ToArray3D";
-                    return new LateBoundType($"{element.Name}{RankSpecifier(array.Rank.Value)}?", x => $"{method}<{element.Name}>({x})");
+                    return new LateBoundType("global::System.Array?", static x => $"(global::System.Array?){x}");
                 }
 
-                if (isPrimitive)
+                // The arrays are converted element by element, e.g. VT_I4 elements to an enum, since servers often return a
+                // SAFEARRAY of VARIANTs, e.g. for a SAFEARRAY(BSTR) of VB or script.
+                string method = array.Rank switch
                 {
-                    // Converted too, since servers often return a SAFEARRAY of VARIANTs, e.g. for a SAFEARRAY(BSTR) of VB or script.
-                    return new LateBoundType($"{element.Name}[]?", x => $"ToArray<{element.Name}>({x})");
-                }
-
-                return new LateBoundType("global::System.Array?", static x => $"(global::System.Array?){x}");
+                    2 => "ToArray2D",
+                    3 => "ToArray3D",
+                    _ => "ToArray",
+                };
+                string rank = array.Rank is 2 or 3 ? RankSpecifier(array.Rank.Value) : "[]";
+                return new LateBoundType($"{element.Name}{rank}?", x => $"{method}<{element.Name}>({x})");
             }
 
             default:
@@ -470,6 +471,13 @@ internal sealed class TypeMapper
                 return LateBoundType.Object;
         }
     }
+
+    private static bool IsEnum(TypeReference type) => type switch
+    {
+        UserDefinedTypeReference { Definition: EnumDefinition } => true,
+        UserDefinedTypeReference { Definition: AliasDefinition alias } => IsEnum(alias.Target),
+        _ => false,
+    };
 
     private static LateBoundType MapLateBoundPrimitive(VarEnum vt) => vt switch
     {

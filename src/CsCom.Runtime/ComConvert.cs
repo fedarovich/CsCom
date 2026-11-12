@@ -88,6 +88,9 @@ internal static class ComConvert
         return (T)value;
     }
 
+    // The arrays are only returned as is when their type is exactly the requested one: the CLR also considers an int[] to be a
+    // Color[] (an enum of int) and a string[] to be an object[], whose elements could then not be set to other objects.
+
     /// <summary>Converts a one-dimensional array to an array of <typeparamref name="T"/>, converting the elements with <see cref="To{T}"/>.</summary>
     public static T[]? ToArray<T>(object? value)
     {
@@ -95,7 +98,7 @@ internal static class ComConvert
         {
             case null:
                 return null;
-            case T[] typed:
+            case T[] typed when typed.GetType() == typeof(T[]):
                 return typed;
             case Array { Rank: 1 } array:
             {
@@ -121,7 +124,7 @@ internal static class ComConvert
         {
             case null:
                 return null;
-            case T[,] typed when typed.GetLowerBound(0) == 0 && typed.GetLowerBound(1) == 0:
+            case T[,] typed when typed.GetType() == typeof(T[,]) && typed.GetLowerBound(0) == 0 && typed.GetLowerBound(1) == 0:
                 return typed;
             case Array { Rank: 2 } array:
             {
@@ -151,7 +154,7 @@ internal static class ComConvert
         {
             case null:
                 return null;
-            case T[,,] typed when typed.GetLowerBound(0) == 0 && typed.GetLowerBound(1) == 0 && typed.GetLowerBound(2) == 0:
+            case T[,,] typed when typed.GetType() == typeof(T[,,]) && typed.GetLowerBound(0) == 0 && typed.GetLowerBound(1) == 0 && typed.GetLowerBound(2) == 0:
                 return typed;
             case Array { Rank: 3 } array:
             {
