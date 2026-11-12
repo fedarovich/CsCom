@@ -459,6 +459,36 @@ public sealed class CodeGenerationTests : VerifyBase
     }
 
     [TestMethod]
+    public void TypesUnsignedVariantConstantsLikeIntegerLiterals()
+    {
+        // The VT_UI4 and VT_UI8 values of VARIANT constants get the first of int, uint, long and ulong that can hold them, like
+        // C# integer literals; the other integers stay int. The generated code is compiled to catch constants that do not fit.
+        var variant = new PrimitiveTypeReference(System.Runtime.InteropServices.VarEnum.VT_VARIANT);
+        var module = new ModuleDefinition { Name = "Limits", OriginalName = "Limits" };
+        (string Name, object Value)[] constants = [("Small", 5u), ("Mask", 0xFFFFFFFFu), ("Large", 5_000_000_000ul), ("All", ulong.MaxValue), ("Byte", (byte)255), ("Signed", -1)];
+        foreach (var (name, value) in constants)
+        {
+            module.Constants.Add(new ConstantDefinition { Name = name, Type = variant, Value = value });
+        }
+
+        var library = new TypeLibrary { Name = "Synthetic" };
+        library.Types.Add(module);
+
+        string text = new InteropPipeline()
+            .GenerateCode(library, new CodeGenerationOptions { Namespace = "Test", SingleFile = true, SingleFileName = "Test.cs" })
+            .Single()
+            .GetText();
+        TestCompiler.Compile("Limits", text);
+
+        StringAssert.Contains(text, "public const int Small = 5;");
+        StringAssert.Contains(text, "public const uint Mask = 4294967295;");
+        StringAssert.Contains(text, "public const long Large = 5000000000;");
+        StringAssert.Contains(text, "public const ulong All = 18446744073709551615;");
+        StringAssert.Contains(text, "public const int Byte = 255;");
+        StringAssert.Contains(text, "public const int Signed = -1;");
+    }
+
+    [TestMethod]
     [DataRow(InterfaceKind.Vtable)]
     [DataRow(InterfaceKind.Dispatch)]
     public void DefaultOverloadsPassMissingOnlyForOptionalVariants(InterfaceKind kind)

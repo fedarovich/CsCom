@@ -265,6 +265,7 @@ internal sealed partial class TypeEmitters
                 float => "float",
                 decimal => "decimal",
                 long => "long",
+                uint or ulong => IntegerLiteralType(Convert.ToUInt64(constant.Value, CultureInfo.InvariantCulture)),
                 _ => "int",
             },
             _ => signatures.Mapper.MapValue(constant.Type) is { Marshalling: null, IsReference: false, IsPointer: false, IsVoid: false } mapped
@@ -278,6 +279,16 @@ internal sealed partial class TypeEmitters
         }
 
         return ParseMember($"public const {type} {name} = {value};").WithDocumentation(constant.Documentation);
+
+        // The type of an unsigned VARIANT value, like the type of a C# integer literal: the first of int, uint, long and ulong
+        // that can hold the value, so that the smaller values keep the int type of the other VARIANT integers.
+        static string IntegerLiteralType(ulong value) => value switch
+        {
+            <= int.MaxValue => "int",
+            <= uint.MaxValue => "uint",
+            <= long.MaxValue => "long",
+            _ => "ulong",
+        };
     }
 
     private MethodDeclarationSyntax EmitFunction(MethodDefinition function, SignatureBuilder signatures, ref bool isUnsafe)
