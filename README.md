@@ -445,6 +445,8 @@ foreach (object? key in dictionary)                 // _NewEnum via IEnumVARIANT
 - **Interfaces and dual interfaces** become `[GeneratedComInterface]` interfaces. HRESULTs are translated to exceptions and
   `[retval]` parameters to return values; methods that do not return an HRESULT get `[PreserveSig]`. Dual interfaces derive from
   `IDispatch`, so that the vtable slots match.
+- **Pointer parameters** are `out` (`[out]`), `ref` (`[in, out]`) or, for `[in]` pointers to `VARIANT`s, `SAFEARRAY`s,
+  structures and GUIDs, `in` parameters. A pointer without a direction, as old type libraries have them, is a `ref` parameter.
 - **Properties** cannot be declared by source-generated COM interfaces, so they are generated as `get_X`, `set_X` (`propput`) and
   `putref_X` (`propputref`) methods. A static `<Interface>Extensions` class adds C# 14 extension properties for them and a
   `GetEnumerator` extension for collections. With C# 15, the default parameterized property (`DISPID_VALUE`, usually `Item`)

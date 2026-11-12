@@ -696,6 +696,40 @@ public sealed class CodeGenerationTests : VerifyBase
     }
 
     [TestMethod]
+    [DataRow(InterfaceKind.Vtable, "] ref object? result, [|] in object? source);")]
+    [DataRow(InterfaceKind.Dispatch, "public void Read(ref object? result, object? source)")]
+    public void PointersWithoutADirectionArePassedByReference(InterfaceKind kind, string parameters)
+    {
+        // Old type libraries have pointers without [in] and [out], which can return values, so they are ref parameters like
+        // those of TlbImp; an [in] pointer to a VARIANT is not.
+        var pointer = new PointerTypeReference(new PrimitiveTypeReference(System.Runtime.InteropServices.VarEnum.VT_VARIANT));
+        bool isDispatch = kind == InterfaceKind.Dispatch;
+        var read = Method("Read", 3);
+        read.ReturnType = new PrimitiveTypeReference(isDispatch ? System.Runtime.InteropServices.VarEnum.VT_VOID : System.Runtime.InteropServices.VarEnum.VT_HRESULT);
+        read.Parameters.Add(new ParameterDefinition { Name = "result", Type = pointer, Flags = ParameterFlags.None });
+        read.Parameters.Add(new ParameterDefinition { Name = "source", Type = pointer, Flags = ParameterFlags.In });
+        var @interface = new InterfaceDefinition
+        {
+            Name = "IReader",
+            OriginalName = "IReader",
+            Guid = Guid.NewGuid(),
+            InterfaceKind = kind,
+            BaseInterface = isDispatch ? new PrimitiveTypeReference(System.Runtime.InteropServices.VarEnum.VT_DISPATCH) : null,
+            BaseVtableSlots = isDispatch ? 7 : 3,
+        };
+        @interface.Methods.Add(read);
+        var library = new TypeLibrary { Name = "Synthetic" };
+        library.Types.Add(@interface);
+
+        string text = new InteropPipeline().GenerateCode(library, new CodeGenerationOptions { Namespace = "Test" }).Single(static d => d.RelativePath == "IReader.cs").GetText();
+
+        foreach (string expected in parameters.Split('|'))
+        {
+            StringAssert.Contains(text, expected);
+        }
+    }
+
+    [TestMethod]
     public void InterfacesDerivedFromIEnumVariantHaveItAsTheBase()
     {
         // The methods follow those of IEnumVARIANT in the vtable, so the interface derives from it.

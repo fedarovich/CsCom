@@ -240,11 +240,13 @@ internal sealed partial class SignatureBuilder
                     continue;
                 }
 
+                // A pointer without a direction, as old type libraries have them, can return a value, so it is passed by
+                // reference like TlbImp does; only an [in] pointer to a value that is not changed is an `in` parameter.
                 bool isOut = parameter.Flags.HasFlag(ParameterFlags.Out);
                 bool isIn = parameter.Flags.HasFlag(ParameterFlags.In);
                 SyntaxKind modifier = isOut
                     ? isIn ? SyntaxKind.RefKeyword : SyntaxKind.OutKeyword
-                    : IsPassedAsIn(element) ? SyntaxKind.InKeyword : SyntaxKind.RefKeyword;
+                    : isIn && IsPassedAsIn(element) ? SyntaxKind.InKeyword : SyntaxKind.RefKeyword;
                 var type = _mapper.WithMarshalling(parameter.Marshalling).MapValue(element);
                 result.Add(CreateParameter(parameter, element, type.Name, type.Marshalling, modifier));
             }
@@ -275,6 +277,11 @@ internal sealed partial class SignatureBuilder
                 if (parameter.Flags.HasFlag(ParameterFlags.Out))
                 {
                     modifier = parameter.Flags.HasFlag(ParameterFlags.In) ? SyntaxKind.RefKeyword : SyntaxKind.OutKeyword;
+                }
+                else if (!parameter.Flags.HasFlag(ParameterFlags.In))
+                {
+                    // A pointer without a direction can return a value.
+                    modifier = SyntaxKind.RefKeyword;
                 }
             }
 
