@@ -55,6 +55,12 @@ public sealed class BuildPackageTests
         StringAssert.Contains(Build(project), "CsCom: the interop code in");
         Assert.AreEqual(written, File.GetLastWriteTimeUtc(dictionary));
 
+        // The files that the generator read are inputs of the fast up-to-date check of Visual Studio, also the type library
+        // of the ProgID.
+        var inputs = GetItems(project, "UpToDateCheckInput", "-t:_CsComCollectUpToDateCheckInputs").Select(static item => item.Path).ToList();
+        CollectionAssert.Contains(inputs, TestEnvironment.TestTypeLibrary);
+        Assert.IsTrue(inputs.Any(static path => path.EndsWith("scrrun.dll", StringComparison.OrdinalIgnoreCase)), string.Join(Environment.NewLine, inputs));
+
         // Solution Explorer shows the files of the intermediate output under the CsCom folder.
         CollectionAssert.Contains(
             GetItems(project, "Compile"),

@@ -39,6 +39,26 @@
   </ItemGroup>
 
   <!--
+    Visual Studio only runs MSBuild when its fast up-to-date check finds a newer input, so the files that the generator read
+    are inputs of the check: the type libraries, the interop assemblies and the configuration files that the state file
+    records, including those that the generator found itself, e.g. the type library of a ProgID.
+  -->
+  <Target Name="_CsComCollectUpToDateCheckInputs"
+          BeforeTargets="CollectUpToDateCheckInputDesignTime"
+          Condition="'@(CsComReference)' != '' and Exists('$(CsComOutputPath)cscom.state')">
+    <ReadLinesFromFile File="$(CsComOutputPath)cscom.state">
+      <Output TaskParameter="Lines" ItemName="_CsComStateLine" />
+    </ReadLinesFromFile>
+    <ItemGroup>
+      <!-- input=<ticks>|<path> -->
+      <_CsComStateInput Include="@(_CsComStateLine)" Condition="$([System.String]::Copy('%(Identity)').StartsWith('input='))">
+        <InputPath>$([System.String]::Copy('%(Identity)').Substring($([MSBuild]::Add($([System.String]::Copy('%(Identity)').IndexOf('|')), 1))))</InputPath>
+      </_CsComStateInput>
+      <UpToDateCheckInput Include="@(_CsComStateInput->'%(InputPath)')" />
+    </ItemGroup>
+  </Target>
+
+  <!--
     Generates the code before the compilation, also in the design-time builds of Visual Studio, so that IntelliSense sees the
     generated types. The generator only runs when the items, the properties or the files they read changed.
   -->
