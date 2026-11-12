@@ -470,13 +470,34 @@ public sealed partial class TypeLibraryReader
                 Documentation = doc,
             };
 
+            // cParamsOpt counts the trailing optional parameters, which the [lcid] and [retval] parameters and the value of a
+            // property setter follow; type libraries without parameter flags only describe the optional parameters this way.
             int paramCount = func->cParams;
-            int firstOptional = func->cParamsOpt > 0 ? paramCount - func->cParamsOpt : paramCount;
+            var optional = new bool[paramCount];
+            bool skipValue = method.InvokeKind is Model.InvokeKind.PropertyPut or Model.InvokeKind.PropertyPutRef;
+            for (int i = paramCount - 1, remaining = func->cParamsOpt; i >= 0 && remaining > 0; i--)
+            {
+                var trailing = (ParameterFlags)((ushort)func->lprgelemdescParam[i].paramdesc.wParamFlags & 0x3F);
+                if ((trailing & (ParameterFlags.Lcid | ParameterFlags.Retval)) != 0)
+                {
+                    continue;
+                }
+
+                if (skipValue)
+                {
+                    skipValue = false;
+                    continue;
+                }
+
+                optional[i] = true;
+                remaining--;
+            }
+
             for (int i = 0; i < paramCount; i++)
             {
                 ELEMDESC* elem = &func->lprgelemdescParam[i];
                 var flags = (ParameterFlags)((ushort)elem->paramdesc.wParamFlags & 0x3F);
-                if (i >= firstOptional)
+                if (optional[i])
                 {
                     flags |= ParameterFlags.Optional;
                 }
