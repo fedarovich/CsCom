@@ -45,9 +45,25 @@ public sealed class NameSelector
     /// <summary>
     /// Gets the new name of a matching name: the matches of the regular expression replaced like
     /// <see cref="Regex.Replace(string, string)"/>, which supports substitutions such as <c>$1</c>, or the new name as is for
-    /// an exact name.
+    /// an exact name. The empty match that directly follows another match is not replaced.
     /// </summary>
-    public string Replace(string name, string newName) => Pattern?.Replace(name, newName) ?? newName;
+    public string Replace(string name, string newName)
+    {
+        if (Pattern is null)
+        {
+            return newName;
+        }
+
+        // A pattern that can match nothing, e.g. (.*), also matches the empty string at the end of its own match, which
+        // would add the new name a second time.
+        int end = -1;
+        return Pattern.Replace(name, match =>
+        {
+            bool repeated = match.Length == 0 && match.Index == end;
+            end = match.Index + match.Length;
+            return repeated ? string.Empty : match.Result(newName);
+        });
+    }
 
     /// <inheritdoc/>
     public override string ToString() => Pattern?.ToString() ?? Name!;

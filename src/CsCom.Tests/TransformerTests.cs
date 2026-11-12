@@ -93,6 +93,20 @@ public sealed class TransformerTests
     }
 
     [TestMethod]
+    [DataRow("(.*)", "$1Async", "Load", "LoadAsync")]
+    [DataRow(".*", "X", "Load", "X")]
+    [DataRow("^", "I", "Load", "ILoad")]
+    [DataRow("$", "Async", "Load", "LoadAsync")]
+    [DataRow("_", "", "a_b_c", "abc")]
+    [DataRow("^_(.*)$", "$1", "_Application", "Application")]
+    [DataRow("x*", "-", "xab", "-a-b-")]
+    public void RegularExpressionsDoNotReplaceTheEmptyMatchAfterAMatch(string pattern, string newName, string name, string expected)
+    {
+        // (.*) matches the name and then the empty string at its end, which would add the new name twice.
+        Assert.AreEqual(expected, NameSelector.FromPattern(new System.Text.RegularExpressions.Regex(pattern)).Replace(name, newName));
+    }
+
+    [TestMethod]
     public void NameSanitizerRenamesMembersThatClashWithTheWrapperBaseClass()
     {
         var library = new TypeLibraryReader().Read(TestEnvironment.TestTypeLibrary);
