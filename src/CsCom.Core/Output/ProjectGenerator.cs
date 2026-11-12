@@ -152,6 +152,14 @@ public sealed partial class ProjectGenerator
     }
 
     /// <summary>
+    /// Gets the package source as nuget.config takes it: the URL of a feed as it is, or the full path to a folder.
+    /// </summary>
+    internal static string ResolvePackageSource(string packageSource) =>
+        Uri.TryCreate(packageSource, UriKind.Absolute, out var uri) && uri.Scheme is "http" or "https"
+            ? packageSource
+            : Path.GetFullPath(packageSource);
+
+    /// <summary>
     /// Writes a project with the generated files into the directory.
     /// </summary>
     internal string WriteProject(
@@ -186,7 +194,7 @@ public sealed partial class ProjectGenerator
         {
             File.WriteAllText(
                 Path.Combine(directory, "nuget.config"),
-                ProjectFile.CreateNuGetConfig(packageSource is null ? null : Path.GetFullPath(packageSource), globalPackagesFolder is null ? null : Path.GetFullPath(globalPackagesFolder)));
+                ProjectFile.CreateNuGetConfig(packageSource is null ? null : ResolvePackageSource(packageSource), globalPackagesFolder is null ? null : Path.GetFullPath(globalPackagesFolder)));
         }
 
         manifest.Write(directory);

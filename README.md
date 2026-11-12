@@ -97,7 +97,7 @@ into nested namespaces (`<Namespace>.<Library>`), are converted by `project upda
 | `--dynamic`, `-d` | Generates the late binding with C# `dynamic`: `CreateDynamic()` of the coclasses and the support of CsCom.Runtime.Dynamic, see [Late binding with `dynamic`](#late-binding-with-dynamic). |
 | `-c`, `--config <[LIBRARY=]PATH>` | An XML file that adds and configures the model and syntax transformers of a library, e.g. `Excel=excel.cscom.xml`; can be specified multiple times. Without a library name, the file of a single source. See [Configuration file](#configuration-file). |
 | `--reference-path <PATH>` | For interop assemblies: an assembly they reference, or a directory of such assemblies; can be specified multiple times, see [Interop assemblies](#interop-assemblies). |
-| `--package-source <PATH>` | An additional NuGet source with the CsCom.Runtime and CsCom.Runtime.Dynamic packages, e.g. when they are not available on nuget.org. |
+| `--package-source <PATH>` | An additional NuGet source, a folder or the URL of a feed, with the CsCom.Runtime and CsCom.Runtime.Dynamic packages, e.g. when they are not available on nuget.org. |
 | `--keep-temp` | `assembly build` and `assembly pack` only: keeps the temporary project used to build the assembly. |
 | `--package-version <VERSION>` | `assembly pack` only: the version of the package and the assembly. `<major>.<minor>.0` of the type library by default with a single source, `1.0.0` with several sources. |
 | `-p`, `--property <NAME=VALUE>` | `assembly build` and `assembly pack` only: an MSBuild property of the temporary project, e.g. `Version=1.2.3`, `Company=Contoso` or `PackageLicenseExpression=MIT`; can be specified multiple times. |

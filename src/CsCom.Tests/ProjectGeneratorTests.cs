@@ -35,6 +35,14 @@ public sealed class ProjectGeneratorTests
     }
 
     [TestMethod]
+    public void PackageSourcesCanBeFeedsOrFolders()
+    {
+        Assert.AreEqual("https://pkgs.example/v3/index.json", ProjectGenerator.ResolvePackageSource("https://pkgs.example/v3/index.json"));
+        Assert.AreEqual(Path.GetFullPath("packages"), ProjectGenerator.ResolvePackageSource("packages"));
+        Assert.AreEqual(@"C:\packages", ProjectGenerator.ResolvePackageSource(@"C:\packages"));
+    }
+
+    [TestMethod]
     public void CreatesProjectWithOptions()
     {
         string directory = TestEnvironment.CreateDirectory("options");
