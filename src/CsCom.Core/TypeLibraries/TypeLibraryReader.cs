@@ -530,7 +530,15 @@ public sealed partial class TypeLibraryReader
             switch (vt)
             {
                 case VarEnum.VT_PTR:
-                    return new PointerTypeReference(ConvertType(typeInfo, desc->lptdesc));
+                {
+                    // A pointer to an interface that a library declares with the identifier of IUnknown or IDispatch is the
+                    // interface pointer that VT_UNKNOWN and VT_DISPATCH are, not a pointer to it.
+                    TypeReference pointee = ConvertType(typeInfo, desc->lptdesc);
+                    return (VarEnum)desc->lptdesc->vt == VarEnum.VT_USERDEFINED && pointee is PrimitiveTypeReference { VarType: VarEnum.VT_UNKNOWN or VarEnum.VT_DISPATCH }
+                        ? pointee
+                        : new PointerTypeReference(pointee);
+                }
+
                 case VarEnum.VT_SAFEARRAY:
                     return new SafeArrayTypeReference(ConvertType(typeInfo, desc->lptdesc));
                 case VarEnum.VT_CARRAY:
