@@ -127,6 +127,21 @@ public sealed unsafe partial class DynamicNamedArgumentTests
         Assert.AreEqual(3, recorder.Calls.Count);
     }
 
+    [TestMethod]
+    public void ReadsAPropertyAgainAfterTheObjectDidNotHaveIt()
+    {
+        // An object can report DISP_E_MEMBERNOTFOUND for a property that it cannot read at the moment.
+        var recorder = new Recorder(LoadShapeEvents()) { Failure = static (dispId, _) => dispId == 13 ? unchecked((int)0x80020003) : 0 };
+        dynamic shape = ((IDispatch)recorder).AsDynamic();
+
+        _ = shape.Title;
+        Assert.AreEqual(0, recorder.Calls.Count);
+
+        recorder.Failure = null;
+        _ = shape.Title;
+        AssertCall(recorder.Calls.Single(), 13, DispatchFlags.PropertyGet | DispatchFlags.Method, [], []);
+    }
+
     private static void AssertCall(Call call, int dispId, DispatchFlags flags, object?[] positional, (int DispId, object? Value)[] named)
     {
         Assert.AreEqual((dispId, flags), (call.DispId, call.Flags));

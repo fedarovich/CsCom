@@ -116,7 +116,12 @@ public sealed class DynamicDispatchObject : DynamicObject, IDispatchProvider, IE
                 throw ComDispatch.CreateInvocationException(hr, member.DispId, binder.Name, DispatchFlags.PropertyGet | DispatchFlags.Method, 0, argument);
             }
 
-            _members[binder.Name] = member with { IsIndexed = true };
+            // The number of the arguments of a member does not change, but an object can report that it has no such member
+            // for a property that it cannot read at the moment, so only the former is remembered.
+            if (hr != DISP_E_MEMBERNOTFOUND)
+            {
+                _members[binder.Name] = member with { IsIndexed = true };
+            }
         }
 
         result = new IndexedProperty(this, member.DispId, binder.Name);
