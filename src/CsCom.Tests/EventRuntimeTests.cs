@@ -239,6 +239,18 @@ public sealed unsafe class EventRuntimeTests
     }
 
     [TestMethod]
+    public void OptionalVariantsAreNullWhenTheArgumentIsOmitted()
+    {
+        // A COM caller of an interface implemented in .NET omits the argument: it is not the integer of the error code.
+        var omitted = OptionalVariantMarshaller.ConvertToUnmanaged(null);
+        Assert.AreEqual(VarEnum.VT_ERROR, omitted.VarType);
+        Assert.IsNull(OptionalVariantMarshaller.ConvertToManaged(omitted));
+
+        var value = OptionalVariantMarshaller.ConvertToUnmanaged(5);
+        Assert.AreEqual(5, OptionalVariantMarshaller.ConvertToManaged(value));
+    }
+
+    [TestMethod]
     public void SetsTheResultIfTheCallerExpectsOne()
     {
         var parameters = new DispParams();
