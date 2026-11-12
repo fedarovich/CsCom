@@ -664,6 +664,9 @@ shape.Move(1, 2, null, label, Color.Blue, 2, f);  // the method itself
 - **Limit:** each overload ends before one of these parameters, so the overloads never accept the same number of arguments. To
   keep the code small, a method gets at most 4 overloads, for its first 4 such parameters.
 - **Temporary strings:** `BSTR` default values are allocated for the call and released afterwards.
+- **`[lcid]` parameters** of interface methods default to `0x0400` (`LOCALE_USER_DEFAULT`), so they do not make the optional
+  parameters before them required. Properties and indexers pass this value to their accessors; the `[lcid]` parameter is not
+  one of their index parameters.
 
 ### Structures
 

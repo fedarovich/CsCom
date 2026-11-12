@@ -534,7 +534,7 @@ namespace Interop.CsComTest
 
         int GetHandle();
 
-        int Locale(int lcid);
+        int Locale(int lcid = 0x0400);
 
         int Keywords(int @params, int @lock, int Value);
 

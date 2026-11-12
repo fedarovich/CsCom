@@ -173,8 +173,8 @@ internal sealed partial class InterfaceEmitter
             }
 
             string? documentation = (getter ?? setterMethod)!.Documentation;
-            string? getExpression = getterSignature is null ? null : $"{ReceiverExpression}.{Syntax.Escape(SignatureBuilder.GetMethodName(getter!))}({Arguments(property.Index)})";
-            string? setExpression = setterSignature is null ? null : $"{ReceiverExpression}.{Syntax.Escape(SignatureBuilder.GetMethodName(setterMethod!))}({Arguments(property.Index, "value")})";
+            string? getExpression = getterSignature is null ? null : $"{ReceiverExpression}.{Syntax.Escape(SignatureBuilder.GetMethodName(getter!))}({Arguments(getterSignature, property.Index)})";
+            string? setExpression = setterSignature is null ? null : $"{ReceiverExpression}.{Syntax.Escape(SignatureBuilder.GetMethodName(setterMethod!))}({Arguments(setterSignature, property.Index, "value")})";
             MethodDefinition?[] accessors = [getterSignature is null ? null : getter, setterSignature is null ? null : setterMethod];
 
             if (property.Index.Count == 0)
@@ -193,7 +193,14 @@ internal sealed partial class InterfaceEmitter
             }
             else if (_context.Options.NamedIndexers != NamedIndexers.None && !methodNames.Contains(group.Key))
             {
-                namedIndexers.Add(new NamedIndexer(group.Key, property, getterSignature is null ? null : getter, setterSignature is null ? null : setterMethod, documentation));
+                namedIndexers.Add(new NamedIndexer(
+                    group.Key,
+                    property,
+                    getterSignature is null ? null : getter,
+                    setterSignature is null ? null : setterMethod,
+                    documentation,
+                    getterSignature?.Parameters,
+                    setterSignature?.Parameters));
             }
         }
 
@@ -215,7 +222,9 @@ internal sealed partial class InterfaceEmitter
                 namedIndexer.Getter is { } getter ? SignatureBuilder.GetMethodName(getter) : null,
                 namedIndexer.Setter is { } setter ? SignatureBuilder.GetMethodName(setter) : null,
                 namedIndexer.Documentation,
-                [.. new[] { namedIndexer.Getter, namedIndexer.Setter }.OfType<MethodDefinition>()]);
+                [.. new[] { namedIndexer.Getter, namedIndexer.Setter }.OfType<MethodDefinition>()],
+                namedIndexer.GetterParameters,
+                namedIndexer.SetterParameters);
             members.Add(member);
             proxyTypes.Add(type);
         }
@@ -336,14 +345,14 @@ internal sealed partial class InterfaceEmitter
             return null;
         }
 
-        var index = signatures.MapParameters(getter.Parameters.Take(getter.Parameters.Count - 1));
-        if (index.Any(static p => p.IsByRef))
+        var parameters = signatures.MapParameters(getter.Parameters.Take(getter.Parameters.Count - 1));
+        if (parameters.Any(static p => p.IsByRef))
         {
             return null;
         }
 
         var type = signatures.Mapper.WithMarshalling(getter.RetvalParameter!.Marshalling).MapValue(retvalType);
-        return type.IsVoid || type.IsPointer ? null : new PropertySignature(type.Name, index);
+        return type.IsVoid || type.IsPointer ? null : PropertySignature.Create(type.Name, parameters);
     }
 
     private static PropertySignature? AnalyzeSetter(MethodDefinition setter, SignatureBuilder signatures)
@@ -359,12 +368,13 @@ internal sealed partial class InterfaceEmitter
             return null;
         }
 
-        return new PropertySignature(parameters[^1].TypeName, parameters.Take(parameters.Count - 1).ToList());
+        return PropertySignature.Create(parameters[^1].TypeName, parameters.Take(parameters.Count - 1).ToList());
     }
 
-    private static string Arguments(IReadOnlyList<SignatureParameter> index, string? value = null)
+    // The arguments of the call of an accessor from the property or the indexer with the index parameters.
+    private static string Arguments(PropertySignature accessor, IReadOnlyList<SignatureParameter> index, string? value = null)
     {
-        var arguments = SignatureParameter.GetIndexNames(index, Receiver).Select(Syntax.Escape).ToList();
+        var arguments = SignatureBuilder.GetAccessorArguments(accessor.Parameters, SignatureParameter.GetIndexNames(index, Receiver).Select(Syntax.Escape).ToList());
         if (value is not null)
         {
             arguments.Add(value);
@@ -424,10 +434,22 @@ internal sealed partial class InterfaceEmitter
     private static partial void LogMissingGuid(ILogger logger, string name);
 
     // A parameterized property that gets a proxy, with the accessors that the proxy calls.
-    private sealed record NamedIndexer(string Name, PropertySignature Property, MethodDefinition? Getter, MethodDefinition? Setter, string? Documentation);
+    private sealed record NamedIndexer(
+        string Name,
+        PropertySignature Property,
+        MethodDefinition? Getter,
+        MethodDefinition? Setter,
+        string? Documentation,
+        IReadOnlyList<SignatureParameter>? GetterParameters,
+        IReadOnlyList<SignatureParameter>? SetterParameters);
 
-    private sealed record PropertySignature(string Type, IReadOnlyList<SignatureParameter> Index)
+    // The type and the index parameters of a property as an accessor declares them. Parameters are the parameters of the
+    // accessor without the value: the index parameters and the [lcid] parameters, for which the property passes the default.
+    private sealed record PropertySignature(string Type, IReadOnlyList<SignatureParameter> Index, IReadOnlyList<SignatureParameter> Parameters)
     {
+        public static PropertySignature Create(string type, IReadOnlyList<SignatureParameter> parameters) =>
+            new(type, parameters.Where(static p => !SignatureBuilder.IsLcid(p)).ToList(), parameters);
+
         public bool Matches(PropertySignature other) => Type == other.Type && SignatureParameter.HaveSameTypes(Index, other.Index);
     }
 }

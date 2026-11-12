@@ -49,6 +49,8 @@ internal static class NamedIndexerEmitter
     /// <param name="setter">The name of the setter method, if the proxy has a setter.</param>
     /// <param name="documentation">The documentation of the property.</param>
     /// <param name="accessors">The accessor methods, which the nodes are associated with.</param>
+    /// <param name="getterParameters">The parameters of the getter when it has <c>[lcid]</c> parameters next to the index parameters.</param>
+    /// <param name="setterParameters">The parameters of the setter without the value, like <paramref name="getterParameters"/>.</param>
     /// <returns>The member that returns the proxy, and the proxy type.</returns>
     public static (MemberDeclarationSyntax Member, TypeDeclarationSyntax Type) Create(
         EmitContext context,
@@ -62,15 +64,19 @@ internal static class NamedIndexerEmitter
         string? getter,
         string? setter,
         string? documentation,
-        IReadOnlyList<MethodDefinition> accessors)
+        IReadOnlyList<MethodDefinition> accessors,
+        IReadOnlyList<SignatureParameter>? getterParameters = null,
+        IReadOnlyList<SignatureParameter>? setterParameters = null)
     {
         bool isClass = context.Options.NamedIndexers == NamedIndexers.ClassProperty;
         string inlining = isClass ? $"[{Inlining}] " : string.Empty;
         // The implicit setter parameter and the field cannot be shadowed by index parameters.
         string[] names = SignatureParameter.GetIndexNames(index, Target);
         var arguments = names.Select(Syntax.Escape).ToList();
-        string? get = getter is null ? null : $"{Target}.{Syntax.Escape(getter)}({string.Join(", ", arguments)})";
-        string? set = setter is null ? null : $"{Target}.{Syntax.Escape(setter)}({string.Join(", ", [.. arguments, "value"])})";
+        var getArguments = getterParameters is null ? arguments : SignatureBuilder.GetAccessorArguments(getterParameters, arguments);
+        var setArguments = setterParameters is null ? arguments : SignatureBuilder.GetAccessorArguments(setterParameters, arguments);
+        string? get = getter is null ? null : $"{Target}.{Syntax.Escape(getter)}({string.Join(", ", getArguments)})";
+        string? set = setter is null ? null : $"{Target}.{Syntax.Escape(setter)}({string.Join(", ", [.. setArguments, "value"])})";
 
         var parameters = index.Select((p, i) =>
         {

@@ -653,6 +653,49 @@ public sealed class CodeGenerationTests : VerifyBase
     }
 
     [TestMethod]
+    [DataRow(15, NamedIndexers.None, "@this")]
+    [DataRow(14, NamedIndexers.StructMethod, "_target")]
+    public void LcidParametersHaveADefaultValueAndAreNotIndexParameters(int languageVersion, NamedIndexers namedIndexers, string target)
+    {
+        var @long = new PrimitiveTypeReference(System.Runtime.InteropServices.VarEnum.VT_I4);
+        var variant = new PrimitiveTypeReference(System.Runtime.InteropServices.VarEnum.VT_VARIANT);
+        var lcid = new ParameterDefinition { Name = "lcid", Type = @long, Flags = ParameterFlags.In | ParameterFlags.Lcid };
+        ParameterDefinition Retval(TypeReference type) => new() { Name = "result", Type = new PointerTypeReference(type), Flags = ParameterFlags.Out | ParameterFlags.Retval };
+
+        // The optional parameter before the [lcid] parameter keeps its default value.
+        var open = Method("Open", 3);
+        open.Parameters.AddRange(
+        [
+            new ParameterDefinition { Name = "name", Type = new PrimitiveTypeReference(System.Runtime.InteropServices.VarEnum.VT_BSTR), Flags = ParameterFlags.In },
+            new ParameterDefinition { Name = "mode", Type = variant, Flags = ParameterFlags.In | ParameterFlags.Optional },
+            lcid,
+            Retval(@long),
+        ]);
+
+        // A property and a parameterized property, whose setter has the [lcid] parameter before the value.
+        var getVisible = Method("Visible", 4, InvokeKind.PropertyGet);
+        getVisible.Parameters.AddRange([lcid, Retval(@long)]);
+        var getItem = Method("Item", 5, InvokeKind.PropertyGet, memberId: 0);
+        getItem.Parameters.AddRange([new ParameterDefinition { Name = "index", Type = @long, Flags = ParameterFlags.In }, lcid, Retval(@long)]);
+        var setItem = Method("Item", 6, InvokeKind.PropertyPut, memberId: 0);
+        setItem.Parameters.AddRange(
+        [
+            new ParameterDefinition { Name = "index", Type = @long, Flags = ParameterFlags.In },
+            lcid,
+            new ParameterDefinition { Name = "value", Type = @long, Flags = ParameterFlags.In },
+        ]);
+
+        // The indexer of C# 15, or the proxy of the parameterized property.
+        string text = GenerateInterface("IWorkbooks", null, 3, languageVersion, namedIndexers, open, getVisible, getItem, setItem);
+
+        StringAssert.Contains(text, "OptionalVariantMarshaller))] object? mode = null, int lcid = 0x0400);");
+        StringAssert.Contains(text, "public int Visible => @this.get_Visible(0x0400);");
+        StringAssert.Contains(text, $"public int this[int index]");
+        StringAssert.Contains(text, $"get => {target}.get_Item(index, 0x0400);");
+        StringAssert.Contains(text, $"set => {target}.set_Item(index, 0x0400, value);");
+    }
+
+    [TestMethod]
     public void InterfacesDerivedFromIEnumVariantHaveItAsTheBase()
     {
         // The methods follow those of IEnumVARIANT in the vtable, so the interface derives from it.

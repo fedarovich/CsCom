@@ -105,6 +105,12 @@ internal sealed partial class SignatureBuilder
     /// <summary>The maximum number of overloads generated per method for default values that C# cannot express.</summary>
     public const int MaxDefaultOverloads = 4;
 
+    /// <summary>
+    /// The default value of the <c>[lcid]</c> parameters: <c>LOCALE_USER_DEFAULT</c>, the locale of the user, like the
+    /// culture of the thread that TlbImp passes.
+    /// </summary>
+    public const string DefaultLcid = "0x0400";
+
     private const string Missing = "global::System.Reflection.Missing.Value";
 
     private readonly EmitContext _context;
@@ -332,9 +338,40 @@ internal sealed partial class SignatureBuilder
     private static bool HasDefaultValue(SignatureParameter parameter) =>
         parameter.Definition.Flags.HasFlag(ParameterFlags.HasDefault) && parameter.Definition.DefaultValue is not null;
 
+    /// <summary>
+    /// Whether the parameter is the <c>[lcid]</c> parameter of a method called through the vtable, for which callers can pass
+    /// <see cref="DefaultLcid"/>.
+    /// </summary>
+    public static bool IsLcid(SignatureParameter parameter) =>
+        parameter.Definition.Flags.HasFlag(ParameterFlags.Lcid) && parameter.Modifier is null && parameter.TypeName is "int" or "uint";
+
+    /// <summary>
+    /// Gets the arguments of a call of a property accessor from a property or an indexer: the names of the index parameters,
+    /// with <see cref="DefaultLcid"/> for the <c>[lcid]</c> parameters, which are not index parameters.
+    /// </summary>
+    /// <param name="parameters">The parameters of the accessor, without the value of a setter.</param>
+    /// <param name="indexNames">The names of the index parameters.</param>
+    public static List<string> GetAccessorArguments(IReadOnlyList<SignatureParameter> parameters, IReadOnlyList<string> indexNames)
+    {
+        var arguments = new List<string>(parameters.Count);
+        int index = 0;
+        foreach (var parameter in parameters)
+        {
+            arguments.Add(IsLcid(parameter) ? DefaultLcid : indexNames[index++]);
+        }
+
+        return arguments;
+    }
+
     // The C# default value of an optional parameter, or null if it has none or C# cannot express it.
     private string? GetConstantDefault(SignatureParameter parameter, bool lateBound)
     {
+        // Callers of IDispatch::Invoke do not pass the [lcid] parameters.
+        if (!lateBound && IsLcid(parameter))
+        {
+            return DefaultLcid;
+        }
+
         if (!CanBeOmitted(parameter))
         {
             return null;
