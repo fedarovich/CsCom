@@ -735,6 +735,9 @@ DShapeEvents events = shape.GetEvents();           // and the late-bound wrapper
   VB's `Set`. A property that requires arguments, or can only be set, can be indexed with its arguments: `dictionary.Item["a"]`,
   `dictionary.Key["a"] = "b"`. A property whose parameters are all optional, such as Excel's `Range.Value`, is read at once, so
   brackets would index its value; pass the arguments in parentheses instead: `range.Value(xlRangeValueMSPersistXML)`.
+- **Named arguments:** they work in invocations and indexes, e.g. `sheet.Cells[ColumnIndex: 2, RowIndex: 1]`. Those of the
+  default member (`d[index: 1]`, `d(index: 1)`) need the type information of the object, which gives the name of the member;
+  without it, they throw `NotSupportedException`.
 - **`ref` and `out` arguments:** they receive the new values. A variable of a COM type is passed as a reference to its type,
   e.g. an `int` as `VT_BYREF | VT_I4`, which typed by-reference parameters such as `long*` require, so its type must match the
   parameter: `int` for `long`, `double` for `double`, `bool` for `VARIANT_BOOL`, `string` for `BSTR`. An `object` or `dynamic`

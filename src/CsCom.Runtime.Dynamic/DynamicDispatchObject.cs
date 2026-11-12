@@ -21,9 +21,10 @@ namespace CsCom.Runtime;
 /// <remarks>
 /// <list type="bullet">
 /// <item><description><c>d.Name</c> and <c>d.Name = value</c> get and set properties.</description></item>
-/// <item><description><c>d.Name(args)</c> invokes methods and parameterized properties, e.g. <c>d.Item(1)</c>; named arguments are supported.</description></item>
+/// <item><description><c>d.Name(args)</c> invokes methods and parameterized properties, e.g. <c>d.Item(1)</c>.</description></item>
 /// <item><description><c>d.Name[args]</c> and <c>d.Name[args] = value</c> get and set parameterized properties, e.g. <c>sheet.Range["A1"]</c>.</description></item>
 /// <item><description><c>d[args]</c>, <c>d[args] = value</c> and <c>d(args)</c> use the default member (<c>DISPID_VALUE</c>).</description></item>
+/// <item><description>Named arguments are supported in invocations and indexes, e.g. <c>d.Cell[column: 2, row: 1]</c>; those of the default member require the type information of the object, which gives its name.</description></item>
 /// <item><description><c>ref</c> and <c>out</c> arguments are passed by reference and receive the new values.</description></item>
 /// <item><description><c>foreach</c> enumerates collections through <c>_NewEnum</c>.</description></item>
 /// <item><description>The object converts to <see cref="IDispatch"/>, to the COM interfaces it implements, to late-bound wrappers and to the value of its default member.</description></item>
@@ -130,7 +131,7 @@ public sealed class DynamicDispatchObject : DynamicObject, IDispatchProvider, IE
             return true;
         }
 
-        return TryGetMember(binder.Name, out Member member) && SetProperty(member.DispId, [value], binder.Name);
+        return TryGetMember(binder.Name, out Member member) && SetProperty(member.DispId, [], [], value, binder.Name);
     }
 
     /// <inheritdoc/>
@@ -149,20 +150,20 @@ public sealed class DynamicDispatchObject : DynamicObject, IDispatchProvider, IE
     /// <inheritdoc/>
     public override bool TryGetIndex(GetIndexBinder binder, object[] indexes, out object? result)
     {
-        result = Invoke(DispIds.Value, DispatchFlags.PropertyGet | DispatchFlags.Method, indexes, [], null, null);
+        result = Invoke(DispIds.Value, DispatchFlags.PropertyGet | DispatchFlags.Method, indexes, GetNamedDispIds(null, binder.CallInfo), null, null);
         return true;
     }
 
     /// <inheritdoc/>
     public override bool TrySetIndex(SetIndexBinder binder, object[] indexes, object? value)
     {
-        return SetProperty(DispIds.Value, [.. indexes, value], null);
+        return SetProperty(DispIds.Value, indexes, GetNamedDispIds(null, binder.CallInfo), value, null);
     }
 
     /// <inheritdoc/>
     public override bool TryInvoke(InvokeBinder binder, object?[]? args, out object? result)
     {
-        result = Invoke(DispIds.Value, DispatchFlags.Method | DispatchFlags.PropertyGet, args ?? [], [], (binder as ByRefInvokeBinder)?.Types, null);
+        result = Invoke(DispIds.Value, DispatchFlags.Method | DispatchFlags.PropertyGet, args ?? [], GetNamedDispIds(null, binder.CallInfo), (binder as ByRefInvokeBinder)?.Types, null);
         return true;
     }
 
@@ -476,17 +477,48 @@ public sealed class DynamicDispatchObject : DynamicObject, IDispatchProvider, IE
         return true;
     }
 
-    // The value is the last argument. Objects are assigned by reference (VB's "Set") when the property supports it;
-    // otherwise, a property put ("Let") assigns the value of their default member.
-    private bool SetProperty(int dispId, object?[] args, string? name)
+    // Gets the DISPIDs of the named arguments of a call, which IDispatch::GetIDsOfNames resolves together with the name of the
+    // member; the name of the default member (name is null) is read from the type information.
+    private int[] GetNamedDispIds(string? name, CallInfo callInfo)
     {
-        if (IsComObject(args[^1])
-            && ComDispatch.TryInvoke(Dispatch, dispId, DispatchFlags.PropertyPutRef, args, [], default, default, out _, out _) >= 0)
+        if (callInfo.ArgumentNames.Count == 0)
+        {
+            return [];
+        }
+
+        name ??= ComDispatch.GetMemberName(Dispatch, DispIds.Value)
+            ?? throw new NotSupportedException("Named arguments cannot be passed to the default member of a COM object that provides no type information.");
+        return TryResolve(name, callInfo, out _, out int[] namedDispIds)
+            ? namedDispIds
+            : throw new ArgumentException($"The COM object has no member named '{name}'.");
+    }
+
+    // Objects are assigned by reference (VB's "Set") when the property supports it; otherwise, a property put ("Let") assigns
+    // the value of their default member. The value follows the indexes; with named indexes, the value is the first named
+    // argument (DISPID_PROPERTYPUT), which IDispatch::Invoke expects in rgvarg[0], followed by the named indexes.
+    private bool SetProperty(int dispId, object[] indexes, int[] namedDispIds, object? value, string? name)
+    {
+        object?[] args;
+        int[] named;
+        if (namedDispIds.Length == 0)
+        {
+            args = [.. indexes, value];
+            named = [];
+        }
+        else
+        {
+            int positional = indexes.Length - namedDispIds.Length;
+            args = [.. indexes.AsSpan(0, positional), value, .. indexes.AsSpan(positional)];
+            named = [DispIds.PropertyPut, .. namedDispIds];
+        }
+
+        if (IsComObject(value)
+            && ComDispatch.TryInvoke(Dispatch, dispId, DispatchFlags.PropertyPutRef, args, named, default, default, out _, out _) >= 0)
         {
             return true;
         }
 
-        ComDispatch.Invoke(Dispatch, dispId, DispatchFlags.PropertyPut, args, memberName: name);
+        ComDispatch.Invoke(Dispatch, dispId, DispatchFlags.PropertyPut, args, named, memberName: name);
         return true;
     }
 
@@ -572,19 +604,18 @@ public sealed class DynamicDispatchObject : DynamicObject, IDispatchProvider, IE
 
         public override bool TryGetIndex(GetIndexBinder binder, object[] indexes, out object? result)
         {
-            result = owner.Invoke(dispId, DispatchFlags.PropertyGet | DispatchFlags.Method, indexes, [], null, _name);
+            result = owner.Invoke(dispId, DispatchFlags.PropertyGet | DispatchFlags.Method, indexes, owner.GetNamedDispIds(_name, binder.CallInfo), null, _name);
             return true;
         }
 
         public override bool TrySetIndex(SetIndexBinder binder, object[] indexes, object? value)
         {
-            return owner.SetProperty(dispId, [.. indexes, value], _name);
+            return owner.SetProperty(dispId, indexes, owner.GetNamedDispIds(_name, binder.CallInfo), value, _name);
         }
 
         public override bool TryInvoke(InvokeBinder binder, object?[]? args, out object? result)
         {
-            owner.TryResolve(_name, binder.CallInfo, out _, out int[] namedDispIds);
-            result = owner.Invoke(dispId, DispatchFlags.Method | DispatchFlags.PropertyGet, args ?? [], namedDispIds, null, _name);
+            result = owner.Invoke(dispId, DispatchFlags.Method | DispatchFlags.PropertyGet, args ?? [], owner.GetNamedDispIds(_name, binder.CallInfo), null, _name);
             return true;
         }
 

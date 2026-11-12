@@ -136,6 +136,17 @@ public static class ComDispatch
     }
 
     /// <summary>
+    /// Gets the name of a member of an object from its type information, e.g. the name of the default member
+    /// (<see cref="DispIds.Value"/>), which <see cref="GetDispIds"/> needs to resolve the names of its parameters.
+    /// </summary>
+    /// <returns>The name, or <see langword="null"/> if the object provides no type information or the type has no such member.</returns>
+    public static string? GetMemberName(IDispatch dispatch, int dispId)
+    {
+        ArgumentNullException.ThrowIfNull(dispatch);
+        return ComTypeInfo.GetTypeInfo(dispatch) is { } typeInfo ? ComTypeInfo.GetMemberName(typeInfo, dispId) : null;
+    }
+
+    /// <summary>
     /// Gets the names of the properties of an object that can be read without arguments, including those of the base
     /// interfaces, except for restricted and hidden ones.
     /// </summary>

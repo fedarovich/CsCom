@@ -322,7 +322,10 @@ internal static unsafe class ComTypeInfo
         }
     }
 
-    private static string? GetMemberName(ITypeInfo typeInfo, int memberId)
+    /// <summary>
+    /// Gets the name of a member, or <see langword="null"/> if the type has no such member.
+    /// </summary>
+    public static string? GetMemberName(ITypeInfo typeInfo, int memberId)
     {
         nint name = 0;
         return typeInfo.GetNames(memberId, &name, 1, out uint count) >= 0 && count > 0 ? TakeString(name) : null;
