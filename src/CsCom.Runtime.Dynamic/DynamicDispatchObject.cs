@@ -52,6 +52,7 @@ public sealed class DynamicDispatchObject : DynamicObject, IDispatchProvider, IE
 
     private readonly ConcurrentDictionary<string, Member> _members = new(StringComparer.OrdinalIgnoreCase);
     private IReadOnlyList<string>? _propertyNames;
+    private string? _defaultMemberName;
     private IReadOnlyList<EventInterface>? _eventInterfaces;
     private Dictionary<Guid, DynamicEventSink>? _eventSinks;
 
@@ -528,11 +529,30 @@ public sealed class DynamicDispatchObject : DynamicObject, IDispatchProvider, IE
             return [];
         }
 
-        name ??= ComDispatch.GetMemberName(Dispatch, DispIds.Value)
-            ?? throw new NotSupportedException("Named arguments cannot be passed to the default member of a COM object that provides no type information.");
+        name ??= GetDefaultMemberName();
         return TryResolve(name, callInfo, out _, out int[] namedDispIds)
             ? namedDispIds
             : throw new ArgumentException($"The COM object has no member named '{name}'.");
+    }
+
+    // Reads the name of the default member from the type information once, rather than for each access with named arguments.
+    private string GetDefaultMemberName()
+    {
+        if (_defaultMemberName is { } name)
+        {
+            return name;
+        }
+
+        name = ComDispatch.GetMemberName(Dispatch, DispIds.Value);
+        if (name is null)
+        {
+            bool hasTypeInfo = Dispatch.GetTypeInfoCount(out uint count) >= 0 && count > 0;
+            throw new NotSupportedException(hasTypeInfo
+                ? "Named arguments cannot be passed to the default member of a COM object whose type information describes no default member (DISPID_VALUE)."
+                : "Named arguments cannot be passed to the default member of a COM object that provides no type information.");
+        }
+
+        return _defaultMemberName = name;
     }
 
     // Objects are assigned by reference (VB's "Set") when the property supports it; otherwise, a property put ("Let") assigns

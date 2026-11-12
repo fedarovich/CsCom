@@ -18,6 +18,7 @@ public sealed unsafe partial class DynamicNamedArgumentTests
     private const int DISP_E_BADPARAMCOUNT = unchecked((int)0x8002000E);
 
     private static readonly Guid DShapeEventsIid = new("6B1F2D2A-4C1E-4B71-9D0B-7B7C2E0A1013");
+    private static readonly Guid ShapeEventsIid = new("6B1F2D2A-4C1E-4B71-9D0B-7B7C2E0A1015");
 
     [TestMethod]
     public void PassesNamedIndexesOfParameterizedProperties()
@@ -59,11 +60,40 @@ public sealed unsafe partial class DynamicNamedArgumentTests
         var recorder = new Recorder(typeInfo: null);
         dynamic shape = ((IDispatch)recorder).AsDynamic();
 
-        Assert.ThrowsExactly<NotSupportedException>(() => shape[index: 3]);
+        var exception = Assert.ThrowsExactly<NotSupportedException>(() => shape[index: 3]);
         Assert.AreEqual(0, recorder.Calls.Count);
 
         _ = shape[3];
         AssertCall(recorder.Calls[^1], DispIds.Value, DispatchFlags.PropertyGet | DispatchFlags.Method, [3], []);
+        StringAssert.Contains(exception.Message, "provides no type information");
+    }
+
+    [TestMethod]
+    public void RejectsNamedArgumentsOfTheDefaultMemberMissingFromTheTypeInformation()
+    {
+        // _ShapeEvents has no member with DISPID_VALUE, so the object has type information, but not the name of the member.
+        var recorder = new Recorder(LoadTypeInfo(ShapeEventsIid));
+        dynamic shape = ((IDispatch)recorder).AsDynamic();
+
+        var exception = Assert.ThrowsExactly<NotSupportedException>(() => shape[index: 3]);
+
+        Assert.AreEqual(0, recorder.Calls.Count);
+        StringAssert.Contains(exception.Message, "whose type information describes no default member");
+    }
+
+    [TestMethod]
+    public void ReadsTheNameOfTheDefaultMemberOnce()
+    {
+        // Out-of-process servers would otherwise be asked for the type information on each access with named arguments.
+        var recorder = new Recorder(LoadShapeEvents());
+        dynamic shape = ((IDispatch)recorder).AsDynamic();
+
+        _ = shape[index: 1];
+        shape[index: 2] = "x";
+        _ = shape(index: 3);
+
+        Assert.AreEqual(3, recorder.Calls.Count);
+        Assert.AreEqual(1, recorder.TypeInfoRequests);
     }
 
     private static void AssertCall(Call call, int dispId, DispatchFlags flags, object?[] positional, (int DispId, object? Value)[] named)
@@ -73,10 +103,11 @@ public sealed unsafe partial class DynamicNamedArgumentTests
         CollectionAssert.AreEqual(named, call.Named);
     }
 
-    private static ComTypes.ITypeInfo LoadShapeEvents()
+    private static ComTypes.ITypeInfo LoadShapeEvents() => LoadTypeInfo(DShapeEventsIid);
+
+    private static ComTypes.ITypeInfo LoadTypeInfo(Guid iid)
     {
         Marshal.ThrowExceptionForHR(LoadTypeLibEx(TestEnvironment.TestTypeLibrary, 0, out ComTypes.ITypeLib typeLibrary));
-        Guid iid = DShapeEventsIid;
         typeLibrary.GetTypeInfoOfGuid(ref iid, out ComTypes.ITypeInfo typeInfo);
         return typeInfo;
     }
@@ -95,6 +126,8 @@ public sealed unsafe partial class DynamicNamedArgumentTests
     {
         public List<Call> Calls { get; } = [];
 
+        public int TypeInfoRequests { get; private set; }
+
         public int GetTypeInfoCount(out uint pctinfo)
         {
             pctinfo = typeInfo is null ? 0u : 1u;
@@ -103,6 +136,7 @@ public sealed unsafe partial class DynamicNamedArgumentTests
 
         public int GetTypeInfo(uint iTInfo, uint lcid, out nint ppTInfo)
         {
+            TypeInfoRequests++;
             ppTInfo = typeInfo is null ? 0 : Marshal.GetComInterfaceForObject<ComTypes.ITypeInfo, ComTypes.ITypeInfo>(typeInfo);
             return typeInfo is null ? unchecked((int)0x8002000B) : 0;
         }
