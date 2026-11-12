@@ -24,6 +24,49 @@ public sealed partial class DynamicEventTests
 
     private delegate string DescribeHandler(object? value, out int length);
 
+    internal enum Tint
+    {
+        Red = 1,
+        Blue = 3,
+    }
+
+    [TestMethod]
+    public void ConvertsArraysToTheParameterTypes()
+    {
+        // The CLR also considers an int[] to be a Tint[] and a string[] to be an object[], so the arrays are copied: the elements
+        // of a string[] seen as an object[] could not be set to other objects. The int arrays are copied to enum arrays as is,
+        // the elements of the others are converted.
+        var source = new EventSource(provideClassInfo: true);
+        dynamic shape = CreateProxy(source);
+        var moves = new List<(object?[] Names, Tint[] Tints)>();
+        Tint[,]? grid = null;
+        shape.Moved += (Action<object?[], Tint[]>)((names, tints) => moves.Add((names, tints)));
+        shape.Renamed += (Action<Tint[,]>)(tints => grid = tints);
+
+        Fire(source, ShapeEventsIid, 1, new[] { "a", "b" }, new[] { 1, 3 });
+        Fire(source, ShapeEventsIid, 1, new object?[] { "c" }, new object?[] { 3, 1 });
+        Fire(source, ShapeEventsIid, 3, new[,] { { 1, 3, 1 }, { 3, 1, 3 } });
+        ComDynamic.RemoveEventHandlers((object)shape);
+
+        Assert.AreEqual(2, moves.Count);
+        Assert.AreEqual(typeof(object[]), moves[0].Names.GetType());
+        moves[0].Names[0] = 1;
+        CollectionAssert.AreEqual(new object?[] { 1, "b" }, moves[0].Names);
+        CollectionAssert.AreEqual(new object?[] { "c" }, moves[1].Names);
+        foreach (var (_, tints) in moves)
+        {
+            Assert.AreEqual(typeof(Tint[]), tints.GetType());
+        }
+
+        CollectionAssert.AreEqual(new[] { Tint.Red, Tint.Blue }, moves[0].Tints);
+        CollectionAssert.AreEqual(new[] { Tint.Blue, Tint.Red }, moves[1].Tints);
+        Assert.AreEqual(typeof(Tint[,]), grid!.GetType());
+        Assert.AreEqual((2, 3), (grid.GetLength(0), grid.GetLength(1)));
+        Assert.AreEqual(Tint.Blue, grid[0, 1]);
+        Assert.AreEqual(Tint.Red, grid[1, 1]);
+        Assert.AreEqual(Tint.Blue, grid[1, 2]);
+    }
+
     [TestMethod]
     public void AddsAndRemovesHandlersWithOperators()
     {

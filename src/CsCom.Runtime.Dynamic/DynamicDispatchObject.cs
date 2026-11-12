@@ -351,7 +351,8 @@ public sealed class DynamicDispatchObject : DynamicObject, IDispatchProvider, IE
 
     /// <summary>
     /// Converts a value to the type of a variable or a parameter, which receives it unboxed: COM objects are wrapped for
-    /// <see cref="object"/> and <c>dynamic</c>, and numbers are converted to other numeric types and enums.
+    /// <see cref="object"/> and <c>dynamic</c>, numbers are converted to other numeric types and enums, and the elements of
+    /// arrays are converted to the element types of array types.
     /// </summary>
     internal static object? ConvertTo(object? value, Type type)
     {
@@ -364,6 +365,14 @@ public sealed class DynamicDispatchObject : DynamicObject, IDispatchProvider, IE
         if (value is null)
         {
             return type.IsValueType && target == type ? Array.CreateInstance(type, 1).GetValue(0) : null;
+        }
+
+        // Like ComConvert.ToArray, the arrays are only kept when their type is exactly the target type: the CLR also considers
+        // an int[] to be a Color[] (an enum of int) and a string[] to be an object[], whose elements could then not be set to
+        // other objects.
+        if (target.IsArray && value is Array array && array.GetType() != target && array.Rank == target.GetArrayRank())
+        {
+            return ConvertArray(array, target.GetElementType()!);
         }
 
         if (target.IsInstanceOfType(value))
@@ -379,6 +388,39 @@ public sealed class DynamicDispatchObject : DynamicObject, IDispatchProvider, IE
         return value is IConvertible && (target.IsPrimitive || target == typeof(string) || target == typeof(decimal) || target == typeof(DateTime))
             ? Convert.ChangeType(value, target, CultureInfo.InvariantCulture)
             : value;
+    }
+
+    // Copies an array into a zero-based array of the same shape whose elements are converted to the element type.
+    private static Array ConvertArray(Array array, Type elementType)
+    {
+        var lengths = new int[array.Rank];
+        for (int i = 0; i < lengths.Length; i++)
+        {
+            lengths[i] = array.GetLength(i);
+        }
+
+        Array result = Array.CreateInstance(elementType, lengths);
+
+        // The elements of the underlying type of an enum, e.g. those of a SAFEARRAY(Color) read as an int[], are copied as a
+        // block. Array.Copy treats the arrays as one-dimensional, from their first elements, whatever their lower bounds.
+        if (elementType.IsEnum && array.GetType().GetElementType() == Enum.GetUnderlyingType(elementType))
+        {
+            Array.Copy(array, result, array.Length);
+            return result;
+        }
+
+        // Arrays enumerate their elements with the last index varying fastest.
+        var indices = new int[lengths.Length];
+        foreach (object? element in array)
+        {
+            result.SetValue(ConvertTo(element, elementType), indices);
+            for (int dimension = indices.Length - 1; dimension >= 0 && ++indices[dimension] == lengths[dimension]; dimension--)
+            {
+                indices[dimension] = 0;
+            }
+        }
+
+        return result;
     }
 
     private bool TryCreateWrapper(Type type, out object? result)
