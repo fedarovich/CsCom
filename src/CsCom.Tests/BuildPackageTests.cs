@@ -154,6 +154,27 @@ public sealed class BuildPackageTests
     }
 
     [TestMethod]
+    public void CompilesAgainWhenTheGeneratorOnlyDeletesFiles()
+    {
+        // The configuration file is not an input of the compiler, and removing a class leaves no file that is newer than the
+        // assembly: the state file that the generator writes makes the compiler run.
+        string project = CreateConsumer("build-package-deleted", """
+            <CsComReference Include="Scripting.Dictionary" Config="cscom.xml" />
+            """, program: """
+            Console.WriteLine(typeof(Interop.Scripting.Dictionary).Assembly.GetType("Interop.Scripting.Encoder") is not null);
+            """);
+        string configuration = Path.Combine(Path.GetDirectoryName(project)!, "cscom.xml");
+        File.WriteAllText(configuration, "<CsCom />");
+        Assert.AreEqual("True", Run(project).Last());
+
+        // The build after the first generation compiles anyway, since its evaluation is the first to include the generated files.
+        Build(project);
+
+        File.WriteAllText(configuration, """<CsCom><ModelTransformers><ExcludeType TypeName="Encoder" /></ModelTransformers></CsCom>""");
+        Assert.AreEqual("False", Run(project).Last());
+    }
+
+    [TestMethod]
     public void GeneratesInternalSupportCode()
     {
         string project = CreateConsumer(

@@ -101,6 +101,11 @@
       <Compile Remove="@(_CsComEvaluatedFile)" />
       <Compile Include="@(_CsComGeneratedFile)" CsComGenerated="true" />
       <FileWrites Include="@(_CsComGeneratedFile);$(CsComOutputPath)cscom.request.json;$(CsComOutputPath)cscom.state" />
+      <!--
+        The generator writes the state file whenever it runs, so the compiler runs again after it, also when it only deleted
+        files or changed the attributes of the assembly, which leaves no file that is newer than the assembly.
+      -->
+      <CustomAdditionalCompileInputs Include="$(CsComOutputPath)cscom.state" />
     </ItemGroup>
 
     <PropertyGroup>
