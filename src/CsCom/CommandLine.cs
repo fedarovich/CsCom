@@ -551,13 +551,15 @@ internal static class CommandLine
     private static int BuildGenerate(ParseResult result)
     {
         var output = result.InvocationConfiguration.Output;
+        var provider = new MSBuildOutput.LoggerProvider(output, LogLevel.Information);
         using var loggerFactory = LoggerFactory.Create(builder => builder
             .SetMinimumLevel(LogLevel.Information)
-            .AddProvider(new MSBuildOutput.LoggerProvider(output, LogLevel.Information)));
+            .AddProvider(provider));
         try
         {
+            // The warnings are recorded with the state: the task reports them again while the code is up to date.
             var request = BuildRequest.Load(result.GetRequiredValue(RequestArgument));
-            new LibrarySetBuild(new InteropPipeline(loggerFactory), loggerFactory).Run(request, result.GetRequiredValue(HashArgument));
+            new LibrarySetBuild(new InteropPipeline(loggerFactory), loggerFactory).Run(request, result.GetRequiredValue(HashArgument), provider.Warnings);
             return 0;
         }
         catch (Exception e)

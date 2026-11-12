@@ -51,6 +51,36 @@ public sealed class LibrarySetBuildTests
     }
 
     [TestMethod]
+    public void TheStateIsOnlyUpToDateWhenItIsCompleteAndTheInputsDidNotChangeDuringTheGeneration()
+    {
+        string project = TestEnvironment.CreateDirectory("build-state");
+        string library = Path.Combine(project, "CsComTest.tlb");
+        File.Copy(TestEnvironment.TestTypeLibrary, library);
+        string state = Path.Combine(project, "obj", "CsCom", LibrarySetBuild.StateFileName);
+
+        // The warnings of the generation are recorded for the builds that do not run the generator.
+        new LibrarySetBuild(new InteropPipeline()).Run(
+            new BuildRequest { ProjectDirectory = project, OutputDirectory = Path.Combine(project, "obj", "CsCom"), References = [new BuildReference { Source = "CsComTest.tlb" }] },
+            "hash1",
+            ["CsCom : warning CSCOM2000: A warning."]);
+        Assert.IsNotNull(BuildState.ReadGeneratedFiles(state, "hash1", out var warnings));
+        CollectionAssert.AreEqual(new[] { "CsCom : warning CSCOM2000: A warning." }, warnings);
+
+        // A state file that was not written to its end is not up to date.
+        string[] lines = File.ReadAllLines(state);
+        Assert.AreEqual("end", lines[^1]);
+        File.WriteAllLines(state, lines[..^1]);
+        Assert.IsNull(BuildState.ReadGeneratedFiles(state, "hash1"));
+        File.WriteAllLines(state, lines[..(lines.Length / 2)]);
+        Assert.IsNull(BuildState.ReadGeneratedFiles(state, "hash1"));
+
+        // An input written after the generation started may have been read before, so the code is generated again.
+        File.SetLastWriteTimeUtc(library, DateTime.UtcNow.AddMinutes(5));
+        Run(project, [new BuildReference { Source = "CsComTest.tlb" }]);
+        Assert.IsNull(BuildState.ReadGeneratedFiles(state, "hash1"));
+    }
+
+    [TestMethod]
     public void RecordsTheRegisteredTypeLibrariesOfImportedTypes()
     {
         // CsComTest uses types of stdole, which are read from its registered type library, e.g. System32\stdole2.tlb.

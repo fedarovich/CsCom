@@ -175,6 +175,30 @@ public sealed class BuildPackageTests
     }
 
     [TestMethod]
+    public void ReportsTheWarningsOfTheGeneratorInEveryBuild()
+    {
+        // The second build does not run the generator, but it reports the warnings again, like the compiler does: with
+        // warnings as errors, it would succeed otherwise.
+        string project = CreateConsumer(
+            "build-package-warnings",
+            """
+            <CsComReference Include="Scripting.Dictionary" />
+            <CsComLibrary Include="Unknown" Namespace="Unknown.Interop" />
+            """,
+            program: """Console.WriteLine(typeof(Interop.Scripting.Dictionary).Name);""");
+        string directory = Path.GetDirectoryName(project)!;
+
+        for (int build = 0; build < 2; build++)
+        {
+            var (exitCode, output) = DotNetCli.Run(["build", project, "-v", "n", "-warnaserror"], directory, NullLogger.Instance);
+            string text = string.Join(Environment.NewLine, output);
+            Assert.AreNotEqual(0, exitCode, text);
+            StringAssert.Contains(text, "CSCOM2000: No generated library is named 'Unknown'");
+            Assert.AreEqual(build == 1, text.Contains("CsCom: the interop code in", StringComparison.Ordinal), text);
+        }
+    }
+
+    [TestMethod]
     public void GeneratesInternalSupportCode()
     {
         string project = CreateConsumer(

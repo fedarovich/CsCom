@@ -13,8 +13,8 @@ namespace CsCom.Build;
 /// </summary>
 /// <remarks>
 /// The task writes the items and the properties into a JSON request file, which the hidden <c>build-generate</c> command of the
-/// tool reads. The tool records the hash of the request, the files it read and the files it generated in a state file; when the
-/// hash is the same and none of these files changed, the tool is not run.
+/// tool reads. The tool records the hash of the request, the files it read, the files it generated and its warnings in a state
+/// file; when the hash is the same and none of these files changed, the tool is not run and the warnings are reported again.
 /// </remarks>
 public sealed class CsComGenerate : ToolTask
 {
@@ -120,7 +120,7 @@ public sealed class CsComGenerate : ToolTask
         string request = CreateRequest(output);
         string hash = ComputeHash(request);
         string statePath = Path.Combine(output, StateFileName);
-        var files = BuildState.ReadGeneratedFiles(statePath, hash);
+        var files = BuildState.ReadGeneratedFiles(statePath, hash, out var warnings);
         if (files is null)
         {
             string requestPath = Path.Combine(output, RequestFileName);
@@ -141,6 +141,13 @@ public sealed class CsComGenerate : ToolTask
         else
         {
             Log.LogMessage(MessageImportance.Normal, "CsCom: the interop code in '{0}' is up to date.", output);
+
+            // The warnings of the generation are reported by every build, like those of the compiler, and not only by the
+            // build that generated the code.
+            foreach (string warning in warnings)
+            {
+                Log.LogMessageFromText(warning, MessageImportance.High);
+            }
         }
 
         GeneratedFiles = [.. files.Select(static f => new TaskItem(f))];

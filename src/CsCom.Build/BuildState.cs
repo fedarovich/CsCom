@@ -5,7 +5,8 @@ namespace CsCom.Build;
 /// <summary>
 /// Reads the state file that the generator writes after a successful generation, see CsCom.LibrarySets.LibrarySetBuild:
 /// <c>hash=</c> the hash of the request, <c>input=</c> the last write time of an input file in ticks, <c>|</c> and its path,
-/// <c>output=</c> the path of a generated file, and <c>end</c>, which completes the file.
+/// <c>output=</c> the path of a generated file, <c>warning=</c> a warning of the generation in the format of MSBuild, and
+/// <c>end</c>, which completes the file.
 /// </summary>
 internal static class BuildState
 {
@@ -14,8 +15,15 @@ internal static class BuildState
     /// the generated files exist.
     /// </summary>
     /// <returns>The generated files, or <see langword="null"/> if the code has to be generated.</returns>
-    public static List<string>? ReadGeneratedFiles(string path, string hash)
+    public static List<string>? ReadGeneratedFiles(string path, string hash) => ReadGeneratedFiles(path, hash, out _);
+
+    /// <summary>
+    /// Gets the generated files if they are up to date, with the warnings of the generation that wrote them.
+    /// </summary>
+    /// <returns>The generated files, or <see langword="null"/> if the code has to be generated.</returns>
+    public static List<string>? ReadGeneratedFiles(string path, string hash, out List<string> warnings)
     {
+        warnings = [];
         if (!File.Exists(path))
         {
             return null;
@@ -30,6 +38,10 @@ internal static class BuildState
             {
                 // A file that was not written to its end, e.g. by a generator that was stopped, is not a state.
                 isComplete = true;
+            }
+            else if (line.StartsWith("warning=", StringComparison.Ordinal))
+            {
+                warnings.Add(line.Substring("warning=".Length));
             }
             else if (line.StartsWith("hash=", StringComparison.Ordinal))
             {

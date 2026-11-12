@@ -42,15 +42,23 @@ public static class MSBuildOutput
     /// </summary>
     public sealed class LoggerProvider(TextWriter writer, LogLevel minimumLevel) : ILoggerProvider
     {
+        private readonly System.Collections.Concurrent.ConcurrentQueue<string> _warnings = new();
+
+        /// <summary>
+        /// Gets the warnings written so far, in the canonical format of MSBuild, which <see cref="LibrarySetBuild"/> records
+        /// so that the task reports them again while the generated code is up to date.
+        /// </summary>
+        public IReadOnlyCollection<string> Warnings => _warnings;
+
         /// <inheritdoc/>
-        public ILogger CreateLogger(string categoryName) => new Logger(writer, minimumLevel);
+        public ILogger CreateLogger(string categoryName) => new Logger(writer, minimumLevel, _warnings);
 
         /// <inheritdoc/>
         public void Dispose()
         {
         }
 
-        private sealed class Logger(TextWriter writer, LogLevel minimumLevel) : ILogger
+        private sealed class Logger(TextWriter writer, LogLevel minimumLevel, System.Collections.Concurrent.ConcurrentQueue<string> warnings) : ILogger
         {
             public IDisposable? BeginScope<TState>(TState state)
                 where TState : notnull => null;
@@ -71,6 +79,11 @@ public static class MSBuildOutput
                     LogLevel.Warning => FormatWarning(message),
                     _ => message,
                 };
+
+                if (logLevel == LogLevel.Warning)
+                {
+                    warnings.Enqueue(line);
+                }
 
                 lock (writer)
                 {

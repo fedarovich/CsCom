@@ -16,8 +16,9 @@ namespace CsCom.LibrarySets;
 /// <remarks>
 /// The state file (<see cref="StateFileName"/>) is a text file with a line per entry: <c>hash=</c> the hash of the request,
 /// <c>input=</c> the last write time of an input file in ticks, <c>|</c> and its path, and <c>output=</c> the path of a
-/// generated file. The <c>end</c> line completes the file. It is written last and replaced as a whole, so it only exists
-/// after a successful generation.
+/// generated file. A <c>warning=</c> line is a warning of the generation in the format of MSBuild, which the task reports
+/// again while the code is up to date, and the <c>end</c> line completes the file. It is written last and replaced as a
+/// whole, so it only exists after a successful generation.
 /// </remarks>
 public sealed partial class LibrarySetBuild
 {
@@ -44,9 +45,13 @@ public sealed partial class LibrarySetBuild
     /// </summary>
     /// <param name="request">The request.</param>
     /// <param name="requestHash">The hash of the request computed by the task, recorded in the state file.</param>
+    /// <param name="warnings">
+    /// The warnings of the generation in the format of MSBuild, as <see cref="MSBuildOutput.LoggerProvider.Warnings"/> collects
+    /// them; they are read after the generation and recorded in the state file.
+    /// </param>
     /// <returns>The paths of the generated files.</returns>
     /// <exception cref="CsComException">The request, a reference or a configuration file is not valid.</exception>
-    public IReadOnlyList<string> Run(BuildRequest request, string requestHash)
+    public IReadOnlyList<string> Run(BuildRequest request, string requestHash, IReadOnlyCollection<string>? warnings = null)
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(requestHash);
@@ -64,7 +69,7 @@ public sealed partial class LibrarySetBuild
         var references = request.References.Select(r => CreateReference(r, request.ProjectDirectory)).ToList();
         var result = new LibrarySetGenerator(_pipeline, _loggerFactory).Generate(references, options);
         var files = GeneratedFiles.WriteFolder(output, result.Documents);
-        WriteState(statePath, requestHash, result.InputFiles, files, started);
+        WriteState(statePath, requestHash, result.InputFiles, files, started, warnings ?? []);
         LogGenerated(files.Count, output);
         return files;
     }
@@ -204,7 +209,8 @@ public sealed partial class LibrarySetBuild
 
     private static string Describe(string name, string? item) => item is null ? name : $"the {name} metadata of the CsComReference '{item}'";
 
-    private static void WriteState(string path, string requestHash, IReadOnlyList<string> inputs, IReadOnlyList<string> outputs, DateTime started)
+    private static void WriteState(
+        string path, string requestHash, IReadOnlyList<string> inputs, IReadOnlyList<string> outputs, DateTime started, IReadOnlyCollection<string> warnings)
     {
         var builder = new StringBuilder();
         builder.Append("hash=").AppendLine(requestHash);
@@ -220,6 +226,11 @@ public sealed partial class LibrarySetBuild
         foreach (string output in outputs)
         {
             builder.Append("output=").AppendLine(output);
+        }
+
+        foreach (string warning in warnings)
+        {
+            builder.Append("warning=").AppendLine(warning);
         }
 
         // The task only accepts a complete file, which replaces the state as a whole.
