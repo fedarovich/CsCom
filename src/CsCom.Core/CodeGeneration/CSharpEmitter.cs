@@ -154,12 +154,7 @@ public sealed class CSharpEmitter
                     public static void Free(nint unmanaged) => {{context.Support}}.SafeArrayMarshaller.Free(unmanaged);
                 }
                 """;
-            var member = ParseMemberDeclaration(text, options: Syntax.ParseOptions);
-            if (member is null || member.ContainsDiagnostics)
-            {
-                throw new InvalidOperationException($"Invalid member generated: {text}");
-            }
-
+            var member = Syntax.Member(text);
             string readable = typeOfArray.StartsWith("global::", StringComparison.Ordinal) ? typeOfArray["global::".Length..] : typeOfArray;
             return member.WithDocumentation($"Marshals the {readable} arrays as SAFEARRAYs.");
         });
