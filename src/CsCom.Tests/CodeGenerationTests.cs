@@ -407,6 +407,58 @@ public sealed class CodeGenerationTests : VerifyBase
     }
 
     [TestMethod]
+    [DataRow(EventStyle.Observable)]
+    [DataRow(EventStyle.Events)]
+    [DataRow(EventStyle.Interface)]
+    public void NamesTheFieldsOfEventSinksWithoutClashes(EventStyle style)
+    {
+        // The observables are stored in fields named after the events, next to the __connection field: the event named
+        // connection, then connection_2, get the next free names. The generated code is compiled to catch duplicate members.
+        var events = new InterfaceDefinition
+        {
+            Name = "DPortEvents",
+            OriginalName = "DPortEvents",
+            Guid = Guid.NewGuid(),
+            InterfaceKind = InterfaceKind.Dispatch,
+            BaseInterface = new PrimitiveTypeReference(System.Runtime.InteropServices.VarEnum.VT_DISPATCH),
+            BaseVtableSlots = 7,
+        };
+        string[] names = ["connection", "connection_2", "Closed"];
+        for (int i = 0; i < names.Length; i++)
+        {
+            events.Methods.Add(new MethodDefinition
+            {
+                Name = names[i],
+                OriginalName = names[i],
+                MemberId = i + 1,
+                InvokeKind = InvokeKind.Method,
+                ReturnType = new PrimitiveTypeReference(System.Runtime.InteropServices.VarEnum.VT_VOID),
+            });
+        }
+
+        var port = new CoClassDefinition { Name = "Port", OriginalName = "Port", Guid = Guid.NewGuid() };
+        port.Interfaces.Add(new CoClassInterface(new UserDefinedTypeReference(events), IsDefault: true, IsSource: true, IsRestricted: false));
+        var library = new TypeLibrary { Name = "Synthetic" };
+        library.Types.Add(events);
+        library.Types.Add(port);
+
+        string text = new InteropPipeline()
+            .GenerateCode(library, new CodeGenerationOptions { Namespace = "Test", EventStyle = style, SingleFile = true, SingleFileName = "Test.cs" })
+            .Single()
+            .GetText();
+        using var runtime = new MemoryStream(File.ReadAllBytes(typeof(CsCom.Runtime.DispatchObject).Assembly.Location));
+        TestCompiler.Compile("Port", text, reference: runtime);
+
+        if (style == EventStyle.Observable)
+        {
+            StringAssert.Contains(text, "private readonly global::CsCom.Runtime.EventConnection __connection;");
+            StringAssert.Contains(text, "global::CsCom.Runtime.EventSubject<DPortEvents_connectionEventArgs> __connection_2 = new();");
+            StringAssert.Contains(text, "global::CsCom.Runtime.EventSubject<DPortEvents_connection_2EventArgs> __connection_2_2 = new();");
+            StringAssert.Contains(text, "global::CsCom.Runtime.EventSubject<DPortEvents_ClosedEventArgs> __Closed = new();");
+        }
+    }
+
+    [TestMethod]
     [DataRow(InterfaceKind.Vtable)]
     [DataRow(InterfaceKind.Dispatch)]
     public void DefaultOverloadsPassMissingOnlyForOptionalVariants(InterfaceKind kind)

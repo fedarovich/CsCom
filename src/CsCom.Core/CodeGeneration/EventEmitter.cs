@@ -23,6 +23,9 @@ internal sealed partial class EventEmitter
     private const string NotImplemented = "unchecked((int)0x80004001)";
     private const string UnknownName = "unchecked((int)0x80020006)";
 
+    // The field of the sink class that holds the connection, next to the fields of the observables (Event.FieldName).
+    private const string ConnectionField = "__connection";
+
     // The members of the sink classes and of object, which the events must not hide.
     private static readonly HashSet<string> ReservedNames = new(StringComparer.Ordinal)
     {
@@ -151,7 +154,9 @@ internal sealed partial class EventEmitter
         return new Source(definition, guid, AssignNames(definition, events), gaps, IsDispatch: false, IsDual: isDual);
     }
 
-    // Makes the names of the handler methods unique and keeps the events from hiding the members of the sink class.
+    // Makes the names of the handler methods unique and keeps the events from hiding the members of the sink class. The fields of
+    // the observables are named after the events, but must not clash with the connection field or the events, e.g. for an event
+    // named connection.
     private static List<Event> AssignNames(InterfaceDefinition definition, List<Event> events)
     {
         var handlerNames = new HashSet<string>(StringComparer.Ordinal);
@@ -169,7 +174,8 @@ internal sealed partial class EventEmitter
             result.Add(@event with { HandlerName = handlerName, Name = Unique(eventName, eventNames) });
         }
 
-        return result;
+        var fieldNames = new HashSet<string>(result.Select(static e => e.Name), StringComparer.Ordinal) { ConnectionField };
+        return [.. result.Select(e => e with { FieldName = Unique("__" + e.Name, fieldNames) })];
 
         static string Unique(string name, HashSet<string> names)
         {
@@ -272,13 +278,13 @@ internal sealed partial class EventEmitter
 
         if (style != EventStyle.Interface)
         {
-            members.Add(ParseMember($"private readonly {support}.EventConnection __connection;"));
+            members.Add(ParseMember($"private readonly {support}.EventConnection {ConnectionField};"));
             if (style == EventStyle.Observable)
             {
-                members.AddRange(source.Events.Select(e => ParseMember($"private readonly {support}.EventSubject<{source.EventArgsName(e)}> __{e.Name} = new();")));
+                members.AddRange(source.Events.Select(e => ParseMember($"private readonly {support}.EventSubject<{source.EventArgsName(e)}> {e.FieldName} = new();")));
             }
 
-            members.Add(ParseMember($"public {source.SinkName}(object source) {{ __connection = Connect(source, this); }}").WithDocumentation(
+            members.Add(ParseMember($"public {source.SinkName}(object source) {{ {ConnectionField} = Connect(source, this); }}").WithDocumentation(
                 $"Connects the sink to the {name} events of a COM object.",
                 ("param name=\"source\"", "The COM object that raises the events.")));
 
@@ -287,12 +293,12 @@ internal sealed partial class EventEmitter
                 string documentation = @event.Method.Documentation ?? $"Occurs when the COM object raises the {@event.Method.OriginalName} event.";
                 var member = style == EventStyle.Events
                     ? ParseMember($"public event {source.DelegateName(@event)}? {Syntax.Escape(@event.Name)};").WithDocumentation(documentation)
-                    : ParseMember($"public global::System.IObservable<{source.EventArgsName(@event)}> {Syntax.Escape(@event.Name)} => __{@event.Name};").WithDocumentation(documentation);
+                    : ParseMember($"public global::System.IObservable<{source.EventArgsName(@event)}> {Syntax.Escape(@event.Name)} => {@event.FieldName};").WithDocumentation(documentation);
                 members.Add(_context.Annotations.Annotate(member, @event.Method, SyntaxRole.Event));
             }
 
-            string completions = style == EventStyle.Observable ? string.Concat(source.Events.Select(static e => $"__{e.Name}.OnCompleted(); ")) : string.Empty;
-            members.Add(ParseMember($"public void Dispose() {{ __connection.Dispose(); {completions}}}").WithDocumentation(style == EventStyle.Observable
+            string completions = style == EventStyle.Observable ? string.Concat(source.Events.Select(static e => $"{e.FieldName}.OnCompleted(); ")) : string.Empty;
+            members.Add(ParseMember($"public void Dispose() {{ {ConnectionField}.Dispose(); {completions}}}").WithDocumentation(style == EventStyle.Observable
                 ? "Disconnects the sink from the events and completes the observables."
                 : "Disconnects the sink from the events."));
         }
@@ -379,11 +385,11 @@ internal sealed partial class EventEmitter
         var byRef = @event.Parameters.Where(static p => p.IsByRef).ToList();
         if (byRef.Count == 0 && @event.IsVoid)
         {
-            return ParseMember($"{signature} => this.__{@event.Name}.OnNext({create});");
+            return ParseMember($"{signature} => this.{@event.FieldName}.OnNext({create});");
         }
 
         string results = string.Concat(byRef.Select(p => $"{p.Name} = __args.{PropertyName(@event, p)}; "));
-        return ParseMember($"{signature} {{ var __args = {create}; this.__{@event.Name}.OnNext(__args); {results}{(@event.IsVoid ? string.Empty : "return __args.Result;")} }}");
+        return ParseMember($"{signature} {{ var __args = {create}; this.{@event.FieldName}.OnNext(__args); {results}{(@event.IsVoid ? string.Empty : "return __args.Result;")} }}");
     }
 
     // Passes the invocations of IDispatch::Invoke to the handler.
@@ -582,6 +588,9 @@ internal sealed partial class EventEmitter
     {
         /// <summary>The name of the .NET event or of the observable of the sink class.</summary>
         public string Name { get; init; } = HandlerName;
+
+        /// <summary>The name of the field of the sink class that holds the observable, see <see cref="AssignNames"/>.</summary>
+        public string FieldName { get; init; } = "__" + HandlerName;
 
         public bool IsVoid => ReturnType == "void";
 
