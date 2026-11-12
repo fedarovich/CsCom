@@ -124,6 +124,30 @@ public sealed unsafe partial class DispatchWrapperTests
     }
 
     [TestMethod]
+    public void AssignsByValueWhenTheObjectHasNoPropertyPutRef()
+    {
+        // An interop assembly does not tell the propput of an object from a propputref, so the wrapper of its dispinterface
+        // assigns by reference first, like the PutProperty of ATL.
+        var dispatch = new PrimitiveTypeReference(VarEnum.VT_DISPATCH);
+        var (wrapper, recorder) = CreateWrapper("Owner", Method("Parent", 1, InvokeKind.PropertyPutRef, Void, Parameter("value", dispatch)));
+        var parent = wrapper.GetType().GetProperty("Parent")!;
+
+        parent.SetValue(wrapper, null);
+        Assert.AreEqual(DispatchFlags.PropertyPutRef, recorder.Calls.Single().Flags);
+
+        recorder.RejectedFlags = DispatchFlags.PropertyPutRef;
+        parent.SetValue(wrapper, null);
+        CollectionAssert.AreEqual(
+            new[] { DispatchFlags.PropertyPutRef, DispatchFlags.PropertyPutRef, DispatchFlags.PropertyPut },
+            recorder.Calls.Select(static c => c.Flags).ToArray());
+
+        // The error of an object that rejects both is that of the assignment by value.
+        recorder.RejectedFlags = DispatchFlags.PropertyPutRef | DispatchFlags.PropertyPut;
+        var exception = Assert.ThrowsExactly<TargetInvocationException>(() => parent.SetValue(wrapper, null));
+        Assert.IsInstanceOfType<COMException>(exception.InnerException);
+    }
+
+    [TestMethod]
     public void ConvertsArraysOfEnums()
     {
         // A SAFEARRAY(Color), here also through an alias of the enum, is a SAFEARRAY of VT_I4. It is converted to a Color[] rather
@@ -239,6 +263,9 @@ public sealed unsafe partial class DispatchWrapperTests
         /// <summary>Gets the new value of an argument passed by reference; by default, its string followed by "!".</summary>
         public Func<object?, object?> ByRefValue { get; set; } = static value => value + "!";
 
+        /// <summary>Gets or sets the kinds of invocations that fail with <c>DISP_E_MEMBERNOTFOUND</c>.</summary>
+        public DispatchFlags RejectedFlags { get; set; }
+
         public int GetTypeInfoCount(out uint pctinfo)
         {
             pctinfo = 0;
@@ -283,6 +310,11 @@ public sealed unsafe partial class DispatchWrapperTests
             }
 
             Calls.Add(new Call(dispIdMember, (DispatchFlags)wFlags, namedDispIds, arguments));
+            if (((DispatchFlags)wFlags & RejectedFlags) != 0)
+            {
+                return unchecked((int)0x80020003);
+            }
+
             if (pVarResult != null)
             {
                 *pVarResult = VariantMarshaller.ConvertToUnmanaged(Result);

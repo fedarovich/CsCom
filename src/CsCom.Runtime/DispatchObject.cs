@@ -63,10 +63,22 @@ public abstract class DispatchObject : IDispatchProvider
         InvokeSetter(dispId, DispatchFlags.PropertyPut, value, args);
     }
 
-    /// <summary>Sets the value of a property by reference.</summary>
+    /// <summary>
+    /// Sets the value of a property by reference, or by value if the object has no such setter
+    /// (<c>DISP_E_MEMBERNOTFOUND</c>): some descriptions of an object, e.g. an interop assembly, do not tell one from the other.
+    /// </summary>
     protected void InvokePutRef(int dispId, object? value, params ReadOnlySpan<object?> args)
     {
-        InvokeSetter(dispId, DispatchFlags.PropertyPutRef, value, args);
+        object?[] allArgs = [.. args, value];
+        int hr = DispatchInvoker.TryInvoke(Dispatch, dispId, DispatchFlags.PropertyPutRef, allArgs, default, default, default, out _, out int argument);
+        if (hr == OleNativeMethods.DISP_E_MEMBERNOTFOUND)
+        {
+            DispatchInvoker.Invoke(Dispatch, dispId, DispatchFlags.PropertyPut, allArgs);
+        }
+        else if (hr < 0)
+        {
+            DispatchInvoker.ThrowInvocationException(hr, dispId, null, DispatchFlags.PropertyPutRef, allArgs.Length, argument);
+        }
     }
 
     /// <summary>Converts an invocation result to a late-bound wrapper.</summary>
