@@ -58,6 +58,25 @@ public sealed class LibrarySetTests : VerifyBase
     }
 
     [TestMethod]
+    public void LeavesNoImportsInTheMergedModels()
+    {
+        // The types that CsComTest and CsComDrawing import from stdole move to the model of stdole, so the models of the
+        // references import nothing, nor list the file of stdole, which is an input of the set instead.
+        var pipeline = new InteropPipeline();
+        Assert.AreNotEqual(0, pipeline.ReadTypeLibrary(TestEnvironment.TestTypeLibrary).ImportedFiles.Count);
+
+        var models = new LibrarySetGenerator(pipeline).Transform(
+            [Reference(TestEnvironment.TestTypeLibrary), Reference(TestEnvironment.DrawingTypeLibrary)],
+            new LibrarySetOptions { ToolVersion = TestEnvironment.ToolVersion });
+
+        CollectionAssert.AreEqual(new[] { "CsComTest", "CsComDrawing", "stdole" }, models.Select(static m => m.Library.Name).ToArray());
+        foreach (var model in models)
+        {
+            Assert.AreEqual((0, 0), (model.Model.ImportedLibraries.Count, model.Model.ImportedFiles.Count), model.Library.Name);
+        }
+    }
+
+    [TestMethod]
     public void UsesTheNamespacesOfTheReferences()
     {
         var result = Generate(Reference(TestEnvironment.TestTypeLibrary), Reference(TestEnvironment.DrawingTypeLibrary, "Drawing.Interop"));

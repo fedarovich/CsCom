@@ -156,9 +156,12 @@ internal sealed partial class LibrarySetMerger
             throw new CsComException($"The library '{library.Name}' is referenced twice: as '{existing.Reference!.Source}' and as '{reference.Source}'.");
         }
 
+        // The imported types move to the models of their libraries, so the model no longer imports anything. The files of the
+        // imported libraries were already collected as inputs of the set.
         var imported = library.Types.Where(static t => t.ImportedFrom is not null).ToList();
         library.Types.RemoveAll(static t => t.ImportedFrom is not null);
         library.ImportedLibraries.Clear();
+        library.ImportedFiles.Clear();
 
         var entry = new LibrarySetEntry
         {
