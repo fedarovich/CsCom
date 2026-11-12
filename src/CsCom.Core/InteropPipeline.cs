@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using CsCom.CodeGeneration;
 using CsCom.Configuration;
 using CsCom.InteropAssemblies;
@@ -102,7 +103,14 @@ public sealed partial class InteropPipeline
         var syntaxContext = new TransformationContext { Options = options, Logger = _loggerFactory.CreateLogger<InteropPipeline>(), Library = library, Annotations = annotations };
         foreach (var transformer in SyntaxTransformers.Concat(configuration.SyntaxTransformers))
         {
-            documents = transformer.Transform(documents, syntaxContext);
+            try
+            {
+                documents = transformer.Transform(documents, syntaxContext);
+            }
+            catch (RegexMatchTimeoutException e)
+            {
+                throw CreateTimeoutException(e);
+            }
         }
 
         return documents;
@@ -134,11 +142,22 @@ public sealed partial class InteropPipeline
 
         foreach (var transformer in modelTransformers)
         {
-            transformer.Transform(library, context);
+            try
+            {
+                transformer.Transform(library, context);
+            }
+            catch (RegexMatchTimeoutException e)
+            {
+                throw CreateTimeoutException(e);
+            }
         }
 
         return context;
     }
+
+    // The regular expressions of configuration files have a time limit, which a pattern with nested quantifiers can exceed.
+    private static CsComException CreateTimeoutException(RegexMatchTimeoutException exception) =>
+        new($"The regular expression '{exception.Pattern}' takes too long to match '{exception.Input}'.", exception);
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Resolved the type library '{Source}' to '{Path}'")]
     private static partial void LogResolved(ILogger logger, string source, string path);

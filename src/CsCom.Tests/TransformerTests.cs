@@ -107,6 +107,24 @@ public sealed class TransformerTests
     }
 
     [TestMethod]
+    public void ReportsTheRegularExpressionThatTakesTooLong()
+    {
+        // The regular expressions of configuration files have a time limit.
+        var pipeline = new InteropPipeline();
+        pipeline.ModelTransformers.Add(new SlowTransformer());
+
+        var exception = Assert.ThrowsExactly<CsComException>(() => pipeline.TransformModel(new TypeLibrary { Name = "Synthetic" }, Context.Options));
+
+        StringAssert.StartsWith(exception.Message, "The regular expression '(a+)+$' takes too long to match 'aaaa");
+    }
+
+    private sealed class SlowTransformer : IModelTransformer
+    {
+        public void Transform(TypeLibrary library, TransformationContext context) =>
+            new System.Text.RegularExpressions.Regex("(a+)+$", System.Text.RegularExpressions.RegexOptions.None, TimeSpan.FromMilliseconds(20)).IsMatch(new string('a', 60) + "b");
+    }
+
+    [TestMethod]
     public void NameSanitizerReportsTheTypesThatItRenames()
     {
         // The copy that another version of the library imported is generated into the namespace of the library too.

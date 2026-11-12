@@ -740,6 +740,12 @@ internal static class CommandLine
             logger.LogError("{Message}", e.Message);
             return 1;
         }
+        catch (System.Text.RegularExpressions.RegexMatchTimeoutException e)
+        {
+            // A regular expression of the command line, e.g. of list --type; those of configuration files are reported by the pipeline.
+            logger.LogError("The regular expression '{Pattern}' takes too long to match '{Input}'.", e.Pattern, e.Input);
+            return 1;
+        }
         catch (Exception e)
         {
             logger.LogCritical(e, "Unexpected error: {Message}", e.Message);
