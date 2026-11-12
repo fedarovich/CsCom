@@ -46,7 +46,7 @@ internal static class GeneratedFiles
             string path = Path.GetFullPath(Path.Combine(root, document.RelativePath));
             if (!path.StartsWith(root.TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
             {
-                throw new InvalidOperationException($"The generated file '{document.RelativePath}' is outside of the folder '{root}'.");
+                throw new CsComException($"The generated file '{document.RelativePath}' is outside of the folder '{root}'.");
             }
 
             string text = document.GetText();
