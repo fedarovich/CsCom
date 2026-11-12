@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using System.Runtime.ExceptionServices;
 
 namespace CsCom.Runtime;
@@ -16,6 +17,10 @@ namespace CsCom.Runtime;
 [RequiresDynamicCode(ComDynamic.RequiresDynamicCodeMessage)]
 internal sealed class DynamicEventSink(object source, EventInterface eventInterface) : IDispatchEventHandler
 {
+    // The signatures of the handlers by delegate type, read once rather than for each event. The table does not keep the
+    // types of collectible assemblies alive.
+    private static readonly ConditionalWeakTable<Type, HandlerSignature> Signatures = new();
+
     private readonly Dictionary<int, List<Delegate>> _handlers = [];
     private EventConnection? _connection;
 
@@ -25,7 +30,7 @@ internal sealed class DynamicEventSink(object source, EventInterface eventInterf
     /// <exception cref="ArgumentException">The handler has more parameters than the event.</exception>
     public void Add(EventMember member, Delegate handler)
     {
-        int count = GetInvokeMethod(handler).GetParameters().Length;
+        int count = GetSignature(handler).Types.Length;
         if (count > member.ParameterCount)
         {
             throw new ArgumentException(
@@ -135,13 +140,11 @@ internal sealed class DynamicEventSink(object source, EventInterface eventInterf
     // parameters and the result.
     private static void Invoke(Delegate handler, EventArguments arguments)
     {
-        MethodInfo method = GetInvokeMethod(handler);
-        ParameterInfo[] parameters = method.GetParameters();
-        var values = new object?[parameters.Length];
-        for (int i = 0; i < parameters.Length; i++)
+        HandlerSignature signature = GetSignature(handler);
+        var values = new object?[signature.Types.Length];
+        for (int i = 0; i < values.Length; i++)
         {
-            Type type = parameters[i].ParameterType;
-            values[i] = DynamicDispatchObject.ConvertTo(arguments.GetValue(i), type.IsByRef ? type.GetElementType()! : type);
+            values[i] = DynamicDispatchObject.ConvertTo(arguments.GetValue(i), signature.Types[i]);
         }
 
         object? result;
@@ -155,22 +158,21 @@ internal sealed class DynamicEventSink(object source, EventInterface eventInterf
             throw;
         }
 
-        for (int i = 0; i < parameters.Length; i++)
+        for (int i = 0; i < values.Length; i++)
         {
-            if (parameters[i].ParameterType.IsByRef)
+            if (signature.IsByRef[i])
             {
                 arguments.Set(i, values[i]);
             }
         }
 
-        if (method.ReturnType != typeof(void))
+        if (signature.ReturnsValue)
         {
             arguments.SetResult(result);
         }
     }
 
-    [UnconditionalSuppressMessage("Trimming", "IL2075", Justification = "The Invoke method of a delegate type is kept with the type.")]
-    private static MethodInfo GetInvokeMethod(Delegate handler) => handler.GetType().GetMethod("Invoke")!;
+    private static HandlerSignature GetSignature(Delegate handler) => Signatures.GetValue(handler.GetType(), HandlerSignature.Create);
 
     private void AddHandler(EventMember member, Delegate handler)
     {
@@ -180,5 +182,30 @@ internal sealed class DynamicEventSink(object source, EventInterface eventInterf
         }
 
         handlers.Add(handler);
+    }
+
+    /// <summary>
+    /// The parameters of the <c>Invoke</c> method of a handler delegate type: the types that the arguments are converted to,
+    /// the element types for <c>ref</c> and <c>out</c> parameters, which of them are passed by reference, and whether the
+    /// handler returns a value.
+    /// </summary>
+    private sealed record HandlerSignature(Type[] Types, bool[] IsByRef, bool ReturnsValue)
+    {
+        [UnconditionalSuppressMessage("Trimming", "IL2070", Justification = "The Invoke method of a delegate type is kept with the type.")]
+        public static HandlerSignature Create(Type delegateType)
+        {
+            MethodInfo method = delegateType.GetMethod("Invoke")!;
+            ParameterInfo[] parameters = method.GetParameters();
+            var types = new Type[parameters.Length];
+            var isByRef = new bool[parameters.Length];
+            for (int i = 0; i < parameters.Length; i++)
+            {
+                Type type = parameters[i].ParameterType;
+                isByRef[i] = type.IsByRef;
+                types[i] = type.IsByRef ? type.GetElementType()! : type;
+            }
+
+            return new HandlerSignature(types, isByRef, method.ReturnType != typeof(void));
+        }
     }
 }
