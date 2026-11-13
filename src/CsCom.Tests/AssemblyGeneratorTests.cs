@@ -19,4 +19,28 @@ public sealed class AssemblyGeneratorTests
     [DataRow(@"C:\Temp\cscom\0123\Generated\Dictionary.cs(12,5): error CS0246: The type or namespace name 'CsCom' could not be found")]
     public void IgnoresOtherErrors(string error) =>
         Assert.IsFalse(AssemblyGenerator.IsRuntimePackageMissing([error]));
+
+    [TestMethod]
+    public void FindsTheDotNetExecutableByItsFullPath()
+    {
+        // Windows looks for a bare name in the current directory first, so the executable is never run by its name.
+        var variables = new Dictionary<string, string?>
+        {
+            ["PATH"] = @".;relative;""C:\Tools"";C:\Program Files\dotnet;C:\Other",
+        };
+        var files = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { @"C:\Program Files\dotnet\dotnet.exe", @"C:\Other\dotnet.exe", @"C:\Sdk\dotnet.exe", @"C:\Host\dotnet.exe" };
+
+        Assert.AreEqual(@"C:\Program Files\dotnet\dotnet.exe", DotNetCli.FindDotNet(variables.GetValueOrDefault, files.Contains));
+
+        variables["DOTNET_ROOT"] = @"C:\Sdk";
+        Assert.AreEqual(@"C:\Sdk\dotnet.exe", DotNetCli.FindDotNet(variables.GetValueOrDefault, files.Contains));
+
+        // The host of the .NET CLI that runs the tool wins; a host that is not a full path or does not exist is ignored.
+        variables["DOTNET_HOST_PATH"] = @"C:\Host\dotnet.exe";
+        Assert.AreEqual(@"C:\Host\dotnet.exe", DotNetCli.FindDotNet(variables.GetValueOrDefault, files.Contains));
+        variables["DOTNET_HOST_PATH"] = "dotnet.exe";
+        Assert.AreEqual(@"C:\Sdk\dotnet.exe", DotNetCli.FindDotNet(variables.GetValueOrDefault, files.Contains));
+
+        Assert.IsNull(DotNetCli.FindDotNet(static _ => null, files.Contains));
+    }
 }

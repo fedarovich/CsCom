@@ -80,7 +80,28 @@ internal static partial class DotNetCli
     }
 
     private static string GetDotNetPath() =>
-        Environment.GetEnvironmentVariable("DOTNET_HOST_PATH") is { Length: > 0 } path && File.Exists(path) ? path : "dotnet";
+        FindDotNet(Environment.GetEnvironmentVariable, File.Exists)
+            ?? throw new CsComException("The dotnet executable of the .NET SDK was not found: it is not in the directories of the PATH variable.");
+
+    /// <summary>
+    /// Finds the <c>dotnet</c> executable: <c>DOTNET_HOST_PATH</c>, which the .NET CLI sets, then <c>DOTNET_ROOT</c>, then the
+    /// directories of <c>PATH</c>. The full path is returned, since Windows looks for a bare name in the current directory
+    /// first, which can be a directory of someone else.
+    /// </summary>
+    internal static string? FindDotNet(Func<string, string?> getVariable, Func<string, bool> exists)
+    {
+        if (getVariable("DOTNET_HOST_PATH") is { Length: > 0 } host && Path.IsPathFullyQualified(host) && exists(host))
+        {
+            return host;
+        }
+
+        IEnumerable<string> directories = (getVariable("PATH") ?? string.Empty).Split(Path.PathSeparator).Prepend(getVariable("DOTNET_ROOT") ?? string.Empty);
+        return directories
+            .Select(static directory => directory.Trim().Trim('"'))
+            .Where(static directory => directory.Length > 0 && Path.IsPathFullyQualified(directory))
+            .Select(static directory => Path.Combine(directory, "dotnet.exe"))
+            .FirstOrDefault(exists);
+    }
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Running dotnet {Arguments}")]
     private static partial void LogRunning(ILogger logger, string arguments);
