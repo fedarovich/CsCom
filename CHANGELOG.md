@@ -48,6 +48,14 @@ same version. The versions before 3.0.0-beta.1 are not described here.
   array of the caller could not be destroyed.
 - The tool ran `dotnet` by its name when `DOTNET_HOST_PATH` was not set, which Windows looks for in the current directory
   first. It is now run by its full path.
+- The file of a type or the folder of a namespace named after a device, e.g. `Aux` or `Con`, could not be written; such
+  files and folders get a trailing underscore, e.g. `Aux_.cs`.
+- A help string with a Unicode line or paragraph separator or a next-line character ended its documentation comment, so
+  the rest of it was generated as code.
+- A dispinterface property that a configuration renamed to the former name of a renamed method got the new name of the
+  method.
+- A `SAFEARRAY` whose number of elements does not fit a .NET array is rejected; the number was computed without a check.
+- Setting a `VARIANT` element of a `SAFEARRAY` whose old value cannot be cleared leaked the new value.
 
 ## 3.0.0-beta.1 - 2026-11-12
 
