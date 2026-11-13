@@ -24,8 +24,9 @@ same version. The versions up to 2.0.0 are not described here.
 - An `object` field without `MarshalAs` of a structure of an interop assembly was read as a `VARIANT`, which gave the
   structure the wrong layout. The runtime marshals it as an `IUnknown` pointer, and so does the generated structure; a field
   with `UnmanagedType.Struct`, which TlbImp writes, stays a `VARIANT`.
-- **CsCom.Build:** the generated files of a project whose path has a `%` followed by two hexadecimal digits, e.g. in a
-  folder named `My%20Project`, were passed to the compiler with the wrong paths.
+- **CsCom.Build:** the generated files of an output folder (`CsComOutputPath`) whose path has a `%` followed by two
+  hexadecimal digits, e.g. `Generated%20Code`, were passed to the compiler with the wrong paths. A project whose own
+  directory has such a name cannot be built anyway: the .NET SDK fails to restore it.
 - An event sink cleared the result variable of the source before it set the result of an event, which fails or frees memory
   that is not allocated when the source did not initialize the variable. The sinks initialize it now, and a handler that
   fails leaves no result behind.
