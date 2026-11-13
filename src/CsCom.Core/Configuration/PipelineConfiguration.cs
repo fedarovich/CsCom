@@ -16,7 +16,7 @@ namespace CsCom.Configuration;
 /// <![CDATA[
 /// <CsCom>
 ///   <ModelTransformers>
-///     <RenameType Name="IShape" NewName="Shape" />
+///     <RenameType TypeName="IShape" NewName="Shape" />
 ///   </ModelTransformers>
 /// </CsCom>
 /// ]]>
