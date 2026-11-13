@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Benchmarks of the generated interop code and of the support code against the built-in COM interop of .NET; the readme
+    describes how to run them.
+
+    The code of CsCom is generated into CsCom.Benchmarks.Interop, which disables runtime marshalling; this assembly keeps it,
+    for the [ComImport] declarations of the built-in COM interop.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <!-- The benchmarks run on each supported .NET version, like the tests. -->
+    <TargetFrameworks>net10.0-windows;net11.0-windows</TargetFrameworks>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="BenchmarkDotNet" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\CsCom.Benchmarks.Interop\CsCom.Benchmarks.Interop.csproj" />
+    <ProjectReference Include="..\CsCom.Runtime\CsCom.Runtime.csproj" />
+    <ProjectReference Include="..\CsCom.Runtime.Dynamic\CsCom.Runtime.Dynamic.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,67 @@
+<Project>
+
+  <!--
+    The interop code that the benchmarks measure: the Microsoft Scripting Runtime (scrrun.dll), an in-process COM server of
+    every Windows installation, generated during the build like the CsCom.Build package does, but with the task, the tool and
+    the support code of this repository instead of the packages. So the benchmarks measure the code of the working tree.
+
+    The code is in its own assembly, because it disables runtime marshalling for the assembly, which the declarations of the
+    built-in COM interop in CsCom.Benchmarks need.
+
+    The SDK is imported explicitly, so that the targets of CsCom.Build are imported after those of the SDK, like the targets
+    of a package.
+  -->
+  <Import Project="Sdk.props" Sdk="Microsoft.NET.Sdk" />
+  <Import Project="..\CsCom.Build\build\CsCom.Build.props" />
+
+  <PropertyGroup>
+    <TargetFrameworks>net10.0-windows;net11.0-windows</TargetFrameworks>
+    <!-- The C# version of each framework, as in the generated projects: the extension indexers need C# 15. -->
+    <LangVersion>default</LangVersion>
+    <RootNamespace>CsCom.Benchmarks.Interop</RootNamespace>
+    <CsComDynamic>true</CsComDynamic>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <CsComReference Include="$(SystemRoot)\System32\scrrun.dll" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\CsCom.Runtime\CsCom.Runtime.csproj" />
+    <ProjectReference Include="..\CsCom.Runtime.Dynamic\CsCom.Runtime.Dynamic.csproj" />
+
+    <!-- The task and the tool that generate the code are built first; they are not references of the assembly. -->
+    <ProjectReference Include="..\CsCom.Build\CsCom.Build.csproj" ReferenceOutputAssembly="false" Private="false" />
+    <ProjectReference Include="..\CsCom\CsCom.csproj" ReferenceOutputAssembly="false" Private="false" />
+  </ItemGroup>
+
+  <Import Project="Sdk.targets" Sdk="Microsoft.NET.Sdk" />
+
+  <!--
+    The task of the working tree, instead of the one in the tasks folder of the package. It runs in a task host process that
+    exits with the build: the MSBuild nodes, which stay alive, would lock the assembly and fail the next build of CsCom.Build.
+  -->
+  <UsingTask TaskName="CsCom.Build.CsComGenerate"
+             AssemblyFile="..\CsCom.Build\bin\$(Configuration)\netstandard2.0\CsCom.Build.dll"
+             TaskFactory="TaskHostFactory"
+             Override="true" />
+  <Import Project="..\CsCom.Build\build\CsCom.Build.targets" />
+
+  <PropertyGroup>
+    <!-- The tool of the working tree, instead of the one in the tools folder of the package. -->
+    <_CsComToolDirectory>$(MSBuildThisFileDirectory)..\CsCom\bin\$(Configuration)\net10.0\</_CsComToolDirectory>
+    <_CsComToolPath>$(_CsComToolDirectory)cscom.dll</_CsComToolPath>
+  </PropertyGroup>
+
+  <!--
+    The task generates the code again when the request or the version of the package changes, which a change of the generator
+    in the working tree does not do, so the state of the generation is deleted when the tool is newer.
+  -->
+  <Target Name="_CsComRegenerateForNewTool"
+          BeforeTargets="CsComGenerate"
+          Inputs="$(_CsComToolPath);$(_CsComToolDirectory)CsCom.Core.dll"
+          Outputs="$(_CsComStatePath)cscom.state">
+    <Delete Files="$(_CsComStatePath)cscom.state" />
+  </Target>
+
+</Project>
