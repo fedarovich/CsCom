@@ -118,10 +118,13 @@ public sealed partial class InteropAssemblyReader
                         _ => GetPrimitive(VarEnum.VT_BSTR),
                     };
                 case "System.Object":
+                    // An object is a VARIANT in COM methods; a field is one with UnmanagedType.Struct and an IUnknown pointer
+                    // by default.
                     return GetPrimitive(unmanaged switch
                     {
                         UnmanagedType.IUnknown or UnmanagedType.Interface => VarEnum.VT_UNKNOWN,
                         UnmanagedType.IDispatch => VarEnum.VT_DISPATCH,
+                        null when position == TypePosition.Field => VarEnum.VT_UNKNOWN,
                         _ => VarEnum.VT_VARIANT,
                     });
                 case "System.Guid":
@@ -366,8 +369,9 @@ public sealed partial class InteropAssemblyReader
                     int characterSize = IsAnsi(charSet) ? 1 : 2;
                     return unmanaged == UnmanagedType.ByValTStr ? ((descriptor!.Value.SizeConst ?? 0) * characterSize, characterSize) : (pointer, pointer);
                 case "System.Object":
-                    // A VARIANT has the size of four pointers on 64-bit and of 16 bytes on 32-bit Windows.
-                    return unmanaged is UnmanagedType.IUnknown or UnmanagedType.IDispatch or UnmanagedType.Interface
+                    // A field without a descriptor is an interface pointer. A VARIANT has the size of three pointers on 64-bit
+                    // and of 16 bytes on 32-bit Windows.
+                    return unmanaged is null or UnmanagedType.IUnknown or UnmanagedType.IDispatch or UnmanagedType.Interface
                         ? (pointer, pointer)
                         : (pointer == 8 ? 24 : 16, 8);
             }

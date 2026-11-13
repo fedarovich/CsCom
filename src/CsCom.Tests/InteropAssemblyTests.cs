@@ -195,6 +195,53 @@ public sealed partial class InteropAssemblyTests : VerifyBase
     }
 
     [TestMethod]
+    public void ReadsObjectFieldsWithoutADescriptorAsInterfacePointers()
+    {
+        // The runtime marshals an object field as an IUnknown pointer by default and as a VARIANT with UnmanagedType.Struct,
+        // which TlbImp writes; a parameter is a VARIANT by default.
+        string path = Path.Combine(TestEnvironment.CreateDirectory("interop-object-fields"), "Holders.dll");
+        Compile(
+            "Holders",
+            """
+            using System.Runtime.InteropServices;
+
+            namespace Holders
+            {
+                public struct Holder
+                {
+                    public int Id;
+                    public object Plain;
+                    [MarshalAs(UnmanagedType.Struct)] public object Variant;
+                    [MarshalAs(UnmanagedType.IDispatch)] public object Dispatch;
+                    public int Last;
+                }
+
+                [ComImport, Guid("0F1D2C3B-0000-4000-8000-000000000040"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+                public interface IHolders
+                {
+                    void Add(Holder holder, object value);
+                }
+            }
+            """,
+            path);
+
+        var library = new InteropAssemblyReader().Read(path);
+
+        var holder = Get<RecordDefinition>(library, "Holder");
+        CollectionAssert.AreEqual(
+            new[] { System.Runtime.InteropServices.VarEnum.VT_I4, System.Runtime.InteropServices.VarEnum.VT_UNKNOWN, System.Runtime.InteropServices.VarEnum.VT_VARIANT, System.Runtime.InteropServices.VarEnum.VT_DISPATCH, System.Runtime.InteropServices.VarEnum.VT_I4 },
+            holder.Fields.Select(static f => ((PrimitiveTypeReference)f.Type).VarType).ToList());
+        var add = Get<InterfaceDefinition>(library, "IHolders").Methods.Single();
+        Assert.AreEqual(System.Runtime.InteropServices.VarEnum.VT_VARIANT, ((PrimitiveTypeReference)add.Parameters[1].Type).VarType);
+
+        // The size is that of the runtime: the fields at 0, 8, 16, 40 and 48 on 64-bit Windows.
+        if (Environment.Is64BitProcess)
+        {
+            Assert.AreEqual(56, holder.Size);
+        }
+    }
+
+    [TestMethod]
     public void ReadsDecimalDefaultValues()
     {
         // C# stores decimal default values with the uint constructor of DecimalConstantAttribute, whose parts of 2^31 and more

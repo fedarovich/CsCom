@@ -19,6 +19,9 @@ same version. The versions up to 2.0.0 are not described here.
 - The types that are generated next to an interface (the extensions class, the event handler interface, the event sink and
   the delegates or the classes of the event arguments) could have the name of a type of the library, e.g. `IShapeExtensions`.
   Such a generated type gets a trailing underscore.
+- An `object` field without `MarshalAs` of a structure of an interop assembly was read as a `VARIANT`, which gave the
+  structure the wrong layout. The runtime marshals it as an `IUnknown` pointer, and so does the generated structure; a field
+  with `UnmanagedType.Struct`, which TlbImp writes, stays a `VARIANT`.
 
 ## 3.0.0-beta.2 - 2026-11-12
 
