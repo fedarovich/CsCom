@@ -160,9 +160,16 @@ public sealed class CsComGenerate : ToolTask
             }
         }
 
-        GeneratedFiles = [.. files.Select(static f => new TaskItem(f))];
+        GeneratedFiles = [.. files.Select(CreateItem)];
         return !Log.HasLoggedErrors;
     }
+
+    /// <summary>
+    /// Creates the item of a file. MSBuild takes the specification of an item for an escaped one and replaces its
+    /// <c>%xx</c> sequences with characters, e.g. in the path of a project in a folder named <c>My%20Project</c>, so the
+    /// percent signs of the path are escaped.
+    /// </summary>
+    internal static ITaskItem CreateItem(string path) => new TaskItem(path.Replace("%", "%25"));
 
     /// <inheritdoc/>
     protected override string GenerateFullPathToTool()

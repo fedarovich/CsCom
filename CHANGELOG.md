@@ -22,6 +22,8 @@ same version. The versions up to 2.0.0 are not described here.
 - An `object` field without `MarshalAs` of a structure of an interop assembly was read as a `VARIANT`, which gave the
   structure the wrong layout. The runtime marshals it as an `IUnknown` pointer, and so does the generated structure; a field
   with `UnmanagedType.Struct`, which TlbImp writes, stays a `VARIANT`.
+- **CsCom.Build:** the generated files of a project whose path has a `%` followed by two hexadecimal digits, e.g. in a
+  folder named `My%20Project`, were passed to the compiler with the wrong paths.
 
 ## 3.0.0-beta.2 - 2026-11-12
 

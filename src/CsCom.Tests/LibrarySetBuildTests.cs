@@ -10,6 +10,18 @@ namespace CsCom.Tests;
 public sealed class LibrarySetBuildTests
 {
     [TestMethod]
+    public void TheItemsOfTheTaskKeepThePercentSignsOfThePaths()
+    {
+        // MSBuild unescapes the specification of an item: without the escaping, the path would become C:\My Project\A.cs.
+        const string Path = @"C:\My%20Project\100%\A.cs";
+
+        var item = CsCom.Build.CsComGenerate.CreateItem(Path);
+
+        Assert.AreEqual(Path, item.ItemSpec);
+        Assert.AreEqual(@"C:\My%2520Project\100%25\A.cs", ((Microsoft.Build.Framework.ITaskItem2)item).EvaluatedIncludeEscaped);
+    }
+
+    [TestMethod]
     public void WritesTheFilesAndTheState()
     {
         string project = TestEnvironment.CreateDirectory("build-run");
