@@ -119,17 +119,45 @@ public sealed partial class DynamicByRefTests
         Assert.AreEqual("output", exception.ParamName);
     }
 
+    [TestMethod]
+    public void PassesArraysAsTypedReferencesWhenTheObjectRejectsVariants()
+    {
+        // Names([in, out] SAFEARRAY(BSTR)* names): the standard dispatch rejects the reference to a VARIANT, which is passed
+        // first for the servers that store SAFEARRAYs of VARIANTs, before it invokes the method.
+        var arrays = new Arrays();
+        IDispatch dispatch = CreateDispatch<IArrays>(arrays);
+        Span<int> ids = stackalloc int[1];
+        Assert.AreEqual(0, ComDispatch.GetDispIds(dispatch, ["Names"], ids));
+        int names = ids[0];
+
+        object?[] args = [new[] { "a", "b" }];
+        DispatchObject.InvokeByRef(dispatch, names, DispatchFlags.Method, args, [VarEnum.VT_ARRAY | VarEnum.VT_BSTR]);
+        CollectionAssert.AreEqual(new[] { "b", "a" }, (string[])args[0]!);
+        Assert.AreEqual(1, arrays.Calls, "The method is only invoked once.");
+
+        // A missing array is a null SAFEARRAY of the declared type.
+        args = [null];
+        DispatchObject.InvokeByRef(dispatch, names, DispatchFlags.Method, args, [VarEnum.VT_ARRAY | VarEnum.VT_BSTR]);
+        CollectionAssert.AreEqual(Array.Empty<string>(), (string[])args[0]!);
+
+        // The reference to a VARIANT alone is rejected.
+        Assert.ThrowsExactly<COMException>(() => DispatchObject.InvokeByRef(dispatch, names, DispatchFlags.Method, new object?[] { new[] { "a" } }, [true]));
+    }
+
     private static dynamic CreateCalculator() => CreateDispatch().AsDynamic();
 
-    private static unsafe IDispatch CreateDispatch()
+    private static IDispatch CreateDispatch() => CreateDispatch<ICalculator>(new Calculator());
+
+    private static unsafe IDispatch CreateDispatch<T>(T instance)
+        where T : class
     {
         Marshal.ThrowExceptionForHR(LoadTypeLibEx(TestEnvironment.TestTypeLibrary, 0, out ComTypes.ITypeLib typeLibrary));
-        Guid iid = typeof(ICalculator).GUID;
+        Guid iid = typeof(T).GUID;
         typeLibrary.GetTypeInfoOfGuid(ref iid, out ComTypes.ITypeInfo typeInfo);
         nint typeInfoPointer = Marshal.GetComInterfaceForObject<ComTypes.ITypeInfo, ComTypes.ITypeInfo>(typeInfo);
 
         // The standard dispatch does not hold a reference to the object, so the interface pointer is kept for the test run.
-        var calculator = (nint)ComInterfaceMarshaller<ICalculator>.ConvertToUnmanaged(new Calculator());
+        var calculator = (nint)ComInterfaceMarshaller<T>.ConvertToUnmanaged(instance);
         try
         {
             Marshal.ThrowExceptionForHR(CreateStdDispatch(0, calculator, typeInfoPointer, out nint unknown));
@@ -159,6 +187,30 @@ public sealed partial class DynamicByRefTests
         void Divide(double a, double b, out double quotient, out double remainder);
 
         void Swap(ref int a, ref int b);
+    }
+
+    /// <summary>The first methods of <c>IArrays</c> of the test type library.</summary>
+    [GeneratedComInterface]
+    [Guid("6B1F2D2A-4C1E-4B71-9D0B-7B7C2E0A1018")]
+    internal partial interface IArrays
+    {
+        nint Matrix(nint values);
+
+        void Names([MarshalUsing(typeof(SafeArrayMarshaller<string>))] ref string?[]? names);
+    }
+
+    [GeneratedComClass]
+    internal sealed partial class Arrays : IArrays
+    {
+        public int Calls { get; private set; }
+
+        public nint Matrix(nint values) => 0;
+
+        public void Names(ref string?[]? names)
+        {
+            Calls++;
+            names = names is null ? [] : [.. names.Reverse()];
+        }
     }
 
     [GeneratedComClass]

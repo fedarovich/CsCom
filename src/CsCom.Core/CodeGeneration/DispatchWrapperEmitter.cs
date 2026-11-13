@@ -396,15 +396,21 @@ internal sealed class DispatchWrapperEmitter
     private static string ReferenceType(SignatureParameter parameter)
     {
         VarEnum type = parameter.IsByRef ? GetVarType(parameter.ValueType) : VarEnum.VT_EMPTY;
-        return $"{Syntax.InteropNamespace}.VarEnum.{type}";
+        string name = $"{Syntax.InteropNamespace}.VarEnum";
+        return (type & VarEnum.VT_ARRAY) != 0 ? $"{name}.VT_ARRAY | {name}.{type & ~VarEnum.VT_ARRAY}" : $"{name}.{type}";
     }
 
-    // The variant type of a value passed by reference. SAFEARRAYs stay references to VARIANTs, in which VB and script
-    // servers store SAFEARRAYs of VARIANTs, whatever the element type that the type library declares.
+    // The variant type of a value passed by reference. The runtime passes a SAFEARRAY as a reference to a VARIANT first, in
+    // which VB and script servers store SAFEARRAYs of VARIANTs whatever the element type that the type library declares, and
+    // as a reference to the SAFEARRAY of the declared type when the object rejects that.
     private static VarEnum GetVarType(TypeReference type)
     {
         switch (type)
         {
+            case SafeArrayTypeReference { ElementType: PrimitiveTypeReference { VarType: VarEnum.VT_VARIANT or VarEnum.VT_DECIMAL } element }:
+                return VarEnum.VT_ARRAY | element.VarType;
+            case SafeArrayTypeReference array when GetVarType(array.ElementType) is var elementType and not VarEnum.VT_VARIANT:
+                return VarEnum.VT_ARRAY | elementType;
             case PrimitiveTypeReference
             {
                 VarType: VarEnum.VT_I1 or VarEnum.VT_UI1 or VarEnum.VT_I2 or VarEnum.VT_UI2 or VarEnum.VT_I4 or VarEnum.VT_UI4

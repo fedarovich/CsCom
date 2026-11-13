@@ -77,6 +77,8 @@ internal static unsafe class DispatchInvoker
     /// <exception cref="COMException">The invocation failed or the COM object raised an exception.</exception>
     public static object? Invoke(IDispatch dispatch, int dispId, DispatchFlags flags, Span<object?> args, ReadOnlySpan<VarEnum> types)
     {
+        // A SAFEARRAY is passed as a reference to a VARIANT first: the VB and script servers store SAFEARRAYs of VARIANTs in
+        // it, whatever the element type that the type library declares.
         var kinds = new ByRefKind[types.Length];
         for (int i = 0; i < kinds.Length; i++)
         {
@@ -84,11 +86,28 @@ internal static unsafe class DispatchInvoker
             {
                 VarEnum.VT_EMPTY => ByRefKind.None,
                 VarEnum.VT_VARIANT => ByRefKind.Variant,
+                var type when (type & VarEnum.VT_ARRAY) != 0 => ByRefKind.Variant,
                 _ => ByRefKind.Typed,
             };
         }
 
         int hr = TryInvoke(dispatch, dispId, flags, args, default, args, kinds, out object? result, out int argument, types);
+
+        // The objects that check the types of the arguments with their type information reject the reference to a VARIANT
+        // before they invoke the member, so the member is invoked again with references to the SAFEARRAYs of the declared types.
+        if (hr == OleNativeMethods.DISP_E_TYPEMISMATCH && argument >= 0 && (types[argument] & VarEnum.VT_ARRAY) != 0)
+        {
+            for (int i = 0; i < kinds.Length; i++)
+            {
+                if ((types[i] & VarEnum.VT_ARRAY) != 0)
+                {
+                    kinds[i] = ByRefKind.Typed;
+                }
+            }
+
+            hr = TryInvoke(dispatch, dispId, flags, args, default, args, kinds, out result, out argument, types);
+        }
+
         if (hr < 0)
         {
             ThrowInvocationException(hr, dispId, null, flags, args.Length, argument);
