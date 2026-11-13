@@ -120,7 +120,8 @@ internal static class Syntax
         if (!string.IsNullOrWhiteSpace(summary))
         {
             builder.Append("/// <summary>").Append(eol);
-            foreach (string line in summary.Trim().Split(["\r\n", "\n", "\r"], StringSplitOptions.None))
+            // A help string can have any of the characters that end a line of C#, which would end the comment.
+            foreach (string line in summary.Trim().Split(["\r\n", "\n", "\r", "\u0085", "\u2028", "\u2029"], StringSplitOptions.None))
             {
                 builder.Append("/// ").Append(SecurityElement.Escape(line.Trim())).Append(eol);
             }

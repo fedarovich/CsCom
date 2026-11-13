@@ -730,6 +730,19 @@ public sealed class CodeGenerationTests : VerifyBase
     }
 
     [TestMethod]
+    public void HelpStringsWithOtherLineSeparatorsStayComments()
+    {
+        // C# also ends a line at the Unicode line and paragraph separators and at the next-line character, which would
+        // end the documentation comment and leave the rest of the help string as code.
+        var method = Method("Run", 3);
+        method.Documentation = "First" + (char)0x2028 + "Second" + (char)0x2029 + "Third" + (char)0x0085 + "Last";
+
+        string text = GenerateInterface("IRunner", null, 3, method);
+
+        StringAssert.Contains(text, "    /// First\r\n    /// Second\r\n    /// Third\r\n    /// Last\r\n    /// </summary>\r\n    void Run();");
+    }
+
+    [TestMethod]
     public void VoidPointerRetvalsStayParameters()
     {
         // HRESULT Read([out, retval] void* buffer): the method fills the buffer of the caller, so it is not a return value,
