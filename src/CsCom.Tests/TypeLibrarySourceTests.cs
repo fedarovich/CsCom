@@ -28,6 +28,21 @@ public sealed class TypeLibrarySourceTests
     public void GetsThePathsOfClassServers(string command, string path) => Assert.AreEqual(path, TypeLibrarySource.GetServerPath(command));
 
     [TestMethod]
+    public void ChoosesTheHighestRegisteredVersionWhoseFileExists()
+    {
+        // The registrations of the 64-bit view of the registry come first, then those of the 32-bit view.
+        (int, int, string)[] registrations = [(1, 0, "x64-1.0"), (2, 0, "x64-2.0"), (2, 0, "x86-2.0"), (3, 0, "x86-3.0"), (4, 0, "gone-4.0")];
+
+        // The highest version wins whichever view it is in; the registration of an uninstalled library is skipped.
+        Assert.AreEqual("x86-3.0", TypeLibrarySource.ChooseRegistration(registrations, static path => !path.StartsWith("gone", StringComparison.Ordinal)));
+        Assert.AreEqual("x64-2.0", TypeLibrarySource.ChooseRegistration(registrations, static path => path.EndsWith("2.0", StringComparison.Ordinal)));
+
+        // Without an existing file, loading the highest version reports the missing file.
+        Assert.AreEqual("gone-4.0", TypeLibrarySource.ChooseRegistration(registrations, static _ => false));
+        Assert.IsNull(TypeLibrarySource.ChooseRegistration([], static _ => true));
+    }
+
+    [TestMethod]
     public void ResolvesFiles()
     {
         string directory = Path.GetDirectoryName(TestEnvironment.TestTypeLibrary)!;

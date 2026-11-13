@@ -190,6 +190,7 @@ public static partial class TypeLibrarySource
 
     private static string? FindRegisteredPath(Guid libraryId, TypeLibraryVersion? version)
     {
+        var registrations = new List<(int Major, int Minor, string Path)>();
         foreach (var view in RegistryViews)
         {
             using var classes = RegistryKey.OpenBaseKey(RegistryHive.ClassesRoot, view);
@@ -199,23 +200,41 @@ public static partial class TypeLibrarySource
                 continue;
             }
 
-            var versions = library.GetSubKeyNames()
-                .Select(static name => (Name: name, Version: TypeLibraryVersion.TryParse(name)))
-                .Where(v => v.Version is { } parsed && (version is null || parsed == version))
-                .OrderByDescending(static v => v.Version)
-                .ToList();
-
-            foreach (var (name, _) in versions)
+            foreach (string name in library.GetSubKeyNames())
             {
-                using var versionKey = library.OpenSubKey(name);
-                if (versionKey is not null && FindPlatformPath(versionKey) is { } path)
+                if (TypeLibraryVersion.TryParse(name) is { } parsed && (version is null || parsed == version))
                 {
-                    return path;
+                    using var versionKey = library.OpenSubKey(name);
+                    if (versionKey is not null && FindPlatformPath(versionKey) is { } path)
+                    {
+                        registrations.Add((parsed.Major, parsed.Minor, path));
+                    }
                 }
             }
         }
 
-        return null;
+        // A path without a directory is found by the search of LoadTypeLib, so only full paths are checked.
+        return ChooseRegistration(registrations, static path => !Path.IsPathRooted(path) || File.Exists(GetFilePath(path)));
+    }
+
+    /// <summary>
+    /// Chooses the registration of a type library: the highest version whose file exists, whichever view of the registry it
+    /// is in, and the first one of that version, i.e. that of the 64-bit view. The registration of a library that was
+    /// uninstalled can remain in the registry. When no file exists, the highest version is returned, whose loading reports
+    /// the missing file.
+    /// </summary>
+    /// <param name="registrations">The registrations, those of the 64-bit view of the registry first.</param>
+    /// <param name="exists">Whether the file of a path exists.</param>
+    internal static string? ChooseRegistration(IReadOnlyList<(int Major, int Minor, string Path)> registrations, Func<string, bool> exists)
+    {
+        var paths = registrations
+            .Select(static (registration, index) => (registration, index))
+            .OrderByDescending(static r => r.registration.Major)
+            .ThenByDescending(static r => r.registration.Minor)
+            .ThenBy(static r => r.index)
+            .Select(static r => r.registration.Path)
+            .ToList();
+        return paths.FirstOrDefault(exists) ?? paths.FirstOrDefault();
     }
 
     // HKCR\TypeLib\{LIBID}\{version}\{LCID}\{win64|win32}, preferring the neutral locale and the platform of the process.
