@@ -753,21 +753,34 @@ internal static class CommandLine
         }
     }
 
-    private static ILoggerFactory CreateLoggerFactory(Verbosity verbosity) => LoggerFactory.Create(builder => builder
-        .SetMinimumLevel(verbosity switch
+    /// <summary>
+    /// A logger provider that also receives the messages of the commands invoked in the current execution context, which are
+    /// otherwise only written to the console; tests set it to report the errors of a command that fails.
+    /// </summary>
+    internal static AsyncLocal<ILoggerProvider?> AdditionalLoggerProvider { get; } = new();
+
+    private static ILoggerFactory CreateLoggerFactory(Verbosity verbosity) => LoggerFactory.Create(builder =>
+    {
+        builder
+            .SetMinimumLevel(verbosity switch
+            {
+                Verbosity.Quiet => LogLevel.Error,
+                Verbosity.Minimal => LogLevel.Warning,
+                Verbosity.Normal => LogLevel.Information,
+                Verbosity.Detailed => LogLevel.Debug,
+                _ => LogLevel.Trace,
+            })
+            .AddConsole(static options =>
+            {
+                options.FormatterName = CompactConsoleFormatter.FormatterName;
+                options.LogToStandardErrorThreshold = LogLevel.Warning;
+            })
+            .AddConsoleFormatter<CompactConsoleFormatter, ConsoleFormatterOptions>();
+        if (AdditionalLoggerProvider.Value is { } provider)
         {
-            Verbosity.Quiet => LogLevel.Error,
-            Verbosity.Minimal => LogLevel.Warning,
-            Verbosity.Normal => LogLevel.Information,
-            Verbosity.Detailed => LogLevel.Debug,
-            _ => LogLevel.Trace,
-        })
-        .AddConsole(static options =>
-        {
-            options.FormatterName = CompactConsoleFormatter.FormatterName;
-            options.LogToStandardErrorThreshold = LogLevel.Warning;
-        })
-        .AddConsoleFormatter<CompactConsoleFormatter, ConsoleFormatterOptions>());
+            builder.AddProvider(provider);
+        }
+    });
 
     /// <summary>
     /// The options that select how DATE, CURRENCY and VARIANT_BOOL values and typed SAFEARRAYs are represented. The options

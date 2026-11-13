@@ -336,11 +336,38 @@ public sealed class BuildPackageTests
             : [];
     }
 
-    private static int RunCommand(params string[] args) => CommandLine.Create().Parse([.. args, "-v", "quiet"]).Invoke(new System.CommandLine.InvocationConfiguration
+    // Runs a command of the tool, which must succeed: its errors, which it only writes to the console, are the message of the
+    // assertion.
+    private static int RunCommand(params string[] args)
     {
-        Output = TextWriter.Null,
-        Error = TextWriter.Null,
-    });
+        var errors = new ErrorCollector();
+        CommandLine.AdditionalLoggerProvider.Value = errors;
+        try
+        {
+            int exitCode = CommandLine.Create().Parse([.. args, "-v", "quiet"]).Invoke(new System.CommandLine.InvocationConfiguration
+            {
+                Output = TextWriter.Null,
+                Error = TextWriter.Null,
+            });
+            Assert.AreEqual(0, exitCode, $"cscom {string.Join(' ', args)}{Environment.NewLine}{string.Join(Environment.NewLine, errors.Logger.Messages)}");
+            return exitCode;
+        }
+        finally
+        {
+            CommandLine.AdditionalLoggerProvider.Value = null;
+        }
+    }
+
+    private sealed class ErrorCollector : Microsoft.Extensions.Logging.ILoggerProvider
+    {
+        public WarningCollector<BuildPackageTests> Logger { get; } = new();
+
+        public Microsoft.Extensions.Logging.ILogger CreateLogger(string categoryName) => Logger;
+
+        public void Dispose()
+        {
+        }
+    }
 
     private static List<string> Run(string project)
     {
