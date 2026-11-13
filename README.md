@@ -46,7 +46,8 @@ A source (`Source`, which can be repeated, see [Several sources](#several-source
 - **A file:** a `.tlb` file, or a `.dll`, `.ocx` or `.exe` file with an embedded type library. A resource index can be appended,
   e.g. `foo.dll\2`.
 - **A registered LIBID:** `{00020813-0000-0000-C000-000000000046}`, optionally with the version as in the registry
-  (`{00020813-0000-0000-C000-000000000046}:1.9`). The highest registered version is used by default.
+  (`{00020813-0000-0000-C000-000000000046}:1.9`). By default, the highest registered version whose file exists is used,
+  whether it is registered for 64-bit or for 32-bit applications.
 - **The ProgID of a registered class,** e.g. `Excel.Application` or `Scripting.Dictionary`, whose type library is used.
 - **A .NET interop assembly,** such as a primary interop assembly or the output of TlbImp, see
   [Interop assemblies](#interop-assemblies).
@@ -64,7 +65,8 @@ cscom project create Excel.Application Scripting.Dictionary -n Office.Interop --
 ```
 
 - **Namespaces:** each library is generated into `Interop.<Library>`, after the name of its type library (e.g. `Interop.Scripting`
-  for `scrrun.dll`), into a folder of the same name in `Generated`, e.g. `Generated/Interop.Scripting/IDictionary.cs`.
+  for `scrrun.dll`), into a folder of the same name in `Generated`, e.g. `Generated/Interop.Scripting/IDictionary.cs`. The file
+  of a type named like a device, which Windows cannot create, gets a trailing underscore, e.g. `Aux_.cs`.
 - **Used libraries:** the types that the sources use from other type libraries are generated into the namespace of their library,
   e.g. `Interop.stdole`, or `Interop.Office` and `Interop.VBIDE` for Excel: only the used types, once for all the sources that use
   them. When the other library is a source too, all its types are generated and the other sources use them.
@@ -97,7 +99,7 @@ into nested namespaces (`<Namespace>.<Library>`), are converted by `project upda
 | `--dynamic`, `-d` | Generates the late binding with C# `dynamic`: `CreateDynamic()` of the coclasses and the support of CsCom.Runtime.Dynamic, see [Late binding with `dynamic`](#late-binding-with-dynamic). |
 | `-c`, `--config <[LIBRARY=]PATH>` | An XML file that adds and configures the model and syntax transformers of a library, e.g. `Excel=excel.cscom.xml`; can be specified multiple times. Without a library name, the file of a single source. See [Configuration file](#configuration-file). |
 | `--reference-path <PATH>` | For interop assemblies: an assembly they reference, or a directory of such assemblies; can be specified multiple times, see [Interop assemblies](#interop-assemblies). |
-| `--package-source <PATH>` | An additional NuGet source, a folder or the URL of a feed, with the CsCom.Runtime and CsCom.Runtime.Dynamic packages, e.g. when they are not available on nuget.org. |
+| `--package-source <PATH>` | An additional NuGet source, a folder or the URL of a feed, with the CsCom.Runtime and CsCom.Runtime.Dynamic packages, e.g. when they are not available on nuget.org. `project create` writes it into a `nuget.config` of the project directory, and fails when the directory already has one. |
 | `--keep-temp` | `assembly build` and `assembly pack` only: keeps the temporary project used to build the assembly. The project of a build that fails is kept in any case. The projects that were kept are deleted by a run of these commands a week later. |
 | `--package-version <VERSION>` | `assembly pack` only: the version of the package and the assembly. `<major>.<minor>.0` of the type library by default with a single source, `1.0.0` with several sources. |
 | `-p`, `--property <NAME=VALUE>` | `assembly build` and `assembly pack` only: an MSBuild property of the temporary project, e.g. `Version=1.2.3`, `Company=Contoso` or `PackageLicenseExpression=MIT`; can be specified multiple times. |
@@ -118,7 +120,8 @@ the assemblies, PDBs and XML documentation (and `CsCom.Runtime.dll`) to the outp
 most one runtime identifier, the files are copied directly into the output directory; otherwise into `<TFM>\<RID>` subfolders.
 `--property` sets MSBuild properties of the project and overrides the ones CsCom sets, e.g. the assembly version (`Version=1.2.3`)
 or a strong name (`SignAssembly=true` and `AssemblyOriginatorKeyFile=<full path>`; relative paths are relative to the temporary
-project).
+project). Ctrl+C stops the build and deletes the temporary project; the project of a build that fails is kept, and its path is
+reported.
 
 `assembly pack` generates the same project and packs it with `dotnet pack` into `<Name>.<Version>.nupkg`, with the assembly and its
 XML documentation in `lib/<TFM>` for each target framework, and `<Name>.<Version>.snupkg` with the PDBs. The package is RID-neutral,
@@ -191,8 +194,8 @@ they and the types they use are imported. The defaults of the built-in COM inter
   interface that names it in `[CoClass]`.
 - **Parameters:** `string`, `object` and `bool` are `BSTR`, `VARIANT` and `VARIANT_BOOL`, arrays are `SAFEARRAY`s, and
   `[MarshalAs(UnmanagedType.LPStruct)] Guid` is a `GUID*`.
-- **Structure fields:** `bool` is a 4-byte `BOOL`, and `string` and `char` follow the `CharSet` of the structure, ANSI by default
-  (`LPSTR` and a 1-byte character).
+- **Structure fields:** `bool` is a 4-byte `BOOL`, `string` and `char` follow the `CharSet` of the structure, ANSI by default
+  (`LPSTR` and a 1-byte character), and `object` is an `IUnknown*`, or a `VARIANT` with `UnmanagedType.Struct`.
 
 What type libraries cannot describe is imported as the closest native type, with a warning: C-style arrays (`LPArray`) and
 `StringBuilder` buffers become pointers to their first elements, delegates, managed classes, generic types and custom marshalers
@@ -446,9 +449,13 @@ foreach (object? key in dictionary)                 // _NewEnum via IEnumVARIANT
 ```
 
 - **Interfaces and dual interfaces** become `[GeneratedComInterface]` interfaces. HRESULTs are translated to exceptions and
-  `[retval]` parameters to return values; methods that do not return an HRESULT get `[PreserveSig]`. Dual interfaces derive from
-  `IDispatch`, so that the vtable slots match. An interface without a GUID cannot be generated: the pointers to it are
+  `[retval]` parameters to return values, except a `[retval] void*`, which stays a parameter; methods that do not return an
+  HRESULT get `[PreserveSig]`. Dual interfaces derive from `IDispatch`, and interfaces derived from `IEnumVARIANT` from
+  `IEnumVARIANT`, so that the vtable slots match. An interface without a GUID cannot be generated: the pointers to it are
   `IUnknown` or `IDispatch` pointers, and the interfaces that derive from it get placeholders for its vtable slots.
+- **Names:** invalid characters become `_`, and a name that clashes gets a trailing `_`: a member named like another member or
+  like its type, and a generated type (`<Interface>Extensions`, the types of the [events](#events)) named like a type of the
+  library.
 - **Pointer parameters** are `out` (`[out]`), `ref` (`[in, out]`) or, for `[in]` pointers to `VARIANT`s, `SAFEARRAY`s,
   structures and GUIDs, `in` parameters. A pointer without a direction, as old type libraries have them, is a `ref` parameter.
 - **Properties** cannot be declared by source-generated COM interfaces, so they are generated as `get_X`, `set_X` (`propput`) and
@@ -675,6 +682,10 @@ shape.Move(1, 2, null, label, Color.Blue, 2, f);  // the method itself
 - **`[lcid]` parameters** of interface methods default to `0x0400` (`LOCALE_USER_DEFAULT`), so they do not make the optional
   parameters before them required. Properties and indexers pass this value to their accessors; the `[lcid]` parameter is not
   one of their index parameters.
+- **Values that do not fit:** a default value outside the range of the type of its parameter is not generated, and the
+  parameter is required. An unsigned value with the bits of a 32-bit value keeps its bits, e.g. `0xFFFFFFFF` is `-1`.
+- **Property setters:** the value of a `set_X` or `putref_X` method follows its index parameters, so they are required in C#.
+  A `null` optional `VARIANT` index is still omitted, as by the getter.
 
 ### Structures
 
@@ -790,6 +801,8 @@ DShapeEvents events = shape.GetEvents();           // and the late-bound wrapper
   `ComDynamic.GetTypeName` returns the name of its type, like VB's `TypeName`.
 - **Errors:** unknown members throw `RuntimeBinderException`. Errors raised by the COM object throw `COMException`, and so do
   failed invocations, with messages that name the member and the argument, e.g. "Type mismatch in argument 2 of 'BuildPath'."
+  As in the late-bound wrappers, an error that only has a 16-bit code, as Basic raises them, has the `HRESULT` that Visual
+  Basic gives it: `0x800A0000` plus the code, e.g. `0x800A000B` for the error 11.
 
 The C# runtime binder requires dynamic code, so `dynamic` cannot be used with Native AOT: the entry points are annotated with
 `[RequiresDynamicCode]`, and the typed interop stays trimming and AOT compatible.
@@ -838,7 +851,9 @@ The source can be any object returned by the generated code: a COM interface, a 
 
 Events are delivered on the threads chosen by COM: a single-threaded apartment (STA) object, such as an Office application,
 delivers them through the message loop of the thread that connected the sink. Dispose the sink on that thread, because
-`IConnectionPoint::Unadvise` must be called from the same apartment; there is no finalizer that disconnects it. An exception thrown
+`IConnectionPoint::Unadvise` must be called from the same apartment; there is no finalizer that disconnects it.
+`EventConnection.Disconnect` returns the `HRESULT` of the disconnection, and a connection that another thread failed to
+disconnect (`RPC_E_WRONG_THREAD`) can still be disconnected from the right one. An exception thrown
 by a handler is returned to the source as `DISP_E_EXCEPTION` with the error information (or as the `HRESULT` for vtable calls),
 and most sources ignore it.
 
@@ -927,11 +942,13 @@ dotnet test src/CsCom.slnx --no-build                                       # al
 
 The [CI workflow](.github/workflows/ci.yml) builds the solution in Release on Windows, runs the unit tests (without the
 `Integration` category) on .NET 10 and .NET 11 and then packs the four packages from the build output for every push and pull
-request; the packages are kept as the `packages` artifact of the run.
+request; the packages are kept as the `packages` artifact of the run. The changes of each version are described in
+[CHANGELOG.md](CHANGELOG.md).
 
 - **Releasing:** push a tag with a semantic version, e.g. `1.2.3` or `1.2.3-beta.1`. The tag sets the version of CsCom,
-  CsCom.Runtime, CsCom.Runtime.Dynamic and CsCom.Build (instead of the `VersionPrefix` of `src/Directory.Build.props`), and the `publish` job pushes
-  them to nuget.org. A tag that is not a semantic version fails the build.
+  CsCom.Runtime, CsCom.Runtime.Dynamic and CsCom.Build (instead of the `VersionPrefix` of `src/Directory.Build.props`). The
+  build of a tag also runs the tests of the CsCom.Build package on the packed packages, and the `publish` job only pushes them
+  to nuget.org when they pass. A tag that is not a semantic version fails the build.
 - **Symbols:** CsCom.Runtime and CsCom.Runtime.Dynamic also have symbols packages (`.snupkg`), which `dotnet nuget push` publishes to the symbol server
   of nuget.org together with the package. With Source Link, debuggers get the sources of the exact commit from GitHub.
 - **Reproducible builds:** the builds are deterministic, and on GitHub Actions `ContinuousIntegrationBuild` maps the source
