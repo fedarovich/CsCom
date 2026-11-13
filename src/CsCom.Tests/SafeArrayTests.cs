@@ -141,6 +141,37 @@ public sealed class SafeArrayTests
         }
     }
 
+    [TestMethod]
+    public unsafe void RejectsArraysWithMoreElementsThanANetArrayCanHave()
+    {
+        // A descriptor without data, as a server could return it: 65536 x 65536 bytes, whose count does not fit an int.
+        Marshal.ThrowExceptionForHR(SafeArrayAllocDescriptor(2, out nint psa));
+        try
+        {
+            // SAFEARRAY: cDims, fFeatures, cbElements, cLocks, pvData, then the bounds (cElements, lLbound) of each dimension.
+            *(uint*)(psa + 4) = 1;
+            var bounds = (int*)(psa + 8 + (2 * nint.Size));
+            bounds[0] = 0x10000;
+            bounds[1] = 0;
+            bounds[2] = 0x10000;
+            bounds[3] = 0;
+
+            using var array = ComSafeArray<byte>.FromPointer(psa, ownsArray: false)!;
+            Assert.AreEqual((0x10000, 0x10000), (array.GetLength(0), array.GetLength(1)));
+            Assert.ThrowsExactly<NotSupportedException>(() => array.Length);
+        }
+        finally
+        {
+            SafeArrayDestroyDescriptor(psa);
+        }
+    }
+
+    [DllImport("oleaut32.dll")]
+    private static extern int SafeArrayAllocDescriptor(uint dimensions, out nint psa);
+
+    [DllImport("oleaut32.dll")]
+    private static extern int SafeArrayDestroyDescriptor(nint psa);
+
     [DllImport("oleaut32.dll")]
     private static extern int SafeArrayLock(nint psa);
 

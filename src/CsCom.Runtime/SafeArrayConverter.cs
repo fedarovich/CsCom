@@ -38,12 +38,7 @@ internal static unsafe class SafeArrayConverter
         }
 
         Marshal.ThrowExceptionForHR(OleNativeMethods.SafeArrayGetVartype(psa, out ushort vtRaw));
-        int length = 1;
-        foreach (int dimension in lengths)
-        {
-            length *= dimension;
-        }
-
+        int length = GetElementCount(lengths);
         Marshal.ThrowExceptionForHR(OleNativeMethods.SafeArrayAccessData(psa, out void* data));
         try
         {
@@ -108,6 +103,25 @@ internal static unsafe class SafeArrayConverter
         }
 
         return result;
+    }
+
+    /// <summary>
+    /// Gets the number of elements of an array with the specified lengths of its dimensions.
+    /// </summary>
+    /// <exception cref="NotSupportedException">The array has more elements than a .NET array can have.</exception>
+    public static int GetElementCount(ReadOnlySpan<int> lengths)
+    {
+        long count = 1;
+        foreach (int length in lengths)
+        {
+            count *= length;
+            if (count > int.MaxValue)
+            {
+                throw new NotSupportedException("The SAFEARRAY has more elements than a .NET array can have.");
+            }
+        }
+
+        return (int)count;
     }
 
     /// <summary>

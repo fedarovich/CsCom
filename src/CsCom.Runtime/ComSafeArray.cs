@@ -95,12 +95,7 @@ public sealed unsafe class ComSafeArray<T> : IDisposable, ISafeArrayProvider
     {
         get
         {
-            int length = 1;
-            foreach (int dimension in SafeArrayConverter.GetLengths(Pointer))
-            {
-                length *= dimension;
-            }
-
+            int length = SafeArrayConverter.GetElementCount(SafeArrayConverter.GetLengths(Pointer));
             GC.KeepAlive(this);
             return length;
         }
