@@ -978,6 +978,10 @@ dotnet test src/CsCom.slnx --no-build                                       # al
   with `build-tlb.ps1`, which requires Visual Studio with the C++ tools. The `.tlb` files are committed.
 - The snapshots of the generated code are in `src/CsCom.Tests/Snapshots`. Verify.MSTest is pinned to 32.0.0, the last version
   without the sponsorship check.
+- The memory leak tests (`MemoryLeakTests`) check the runtime support with `LeakDetector.AssertNoLeaks`, which runs an action
+  several times and fails with the stacks of the allocations if a `BSTR`, a `SAFEARRAY` or other memory of the COM task
+  allocator is not freed, or if the reference count of a COM object changes. It registers an `IMallocSpy` for the test process
+  and disables the `BSTR` cache of OLE Automation.
 
 ### Benchmarks
 
