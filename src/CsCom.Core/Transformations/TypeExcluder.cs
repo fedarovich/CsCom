@@ -74,7 +74,7 @@ public sealed partial class TypeExcluder : IModelTransformer
     internal static TypeExcluder Create(ConfigurationElement element) => new(element.GetTypeSelector(required: true)!);
 
     // Replaces the references to the removed types; a pointer to an interface collapses into IUnknown* or IDispatch*.
-    private static TypeReference Replace(TypeReference type, HashSet<TypeDefinition> excluded)
+    internal static TypeReference Replace(TypeReference type, HashSet<TypeDefinition> excluded)
     {
         switch (type)
         {
@@ -104,7 +104,7 @@ public sealed partial class TypeExcluder : IModelTransformer
         _ => IsDispatchable(definition) ? Dispatch : Unknown,
     };
 
-    private static bool IsDispatchable(TypeDefinition definition) => definition switch
+    internal static bool IsDispatchable(TypeDefinition definition) => definition switch
     {
         InterfaceDefinition { InterfaceKind: InterfaceKind.Dual or InterfaceKind.Dispatch } => true,
         InterfaceDefinition { BaseInterface: PrimitiveTypeReference { VarType: VarEnum.VT_DISPATCH } } => true,

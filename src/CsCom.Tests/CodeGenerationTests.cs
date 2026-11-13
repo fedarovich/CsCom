@@ -730,6 +730,52 @@ public sealed class CodeGenerationTests : VerifyBase
     }
 
     [TestMethod]
+    public void InterfacesWithoutAGuidAreReplacedByIUnknown()
+    {
+        // An interface of a library block without the uuid attribute cannot be generated: the pointers to it are IUnknown
+        // pointers, and an interface that derives from it has placeholders for its vtable slots.
+        var hidden = new InterfaceDefinition { Name = "IHidden", OriginalName = "IHidden", BaseVtableSlots = 3 };
+        hidden.Methods.AddRange([Method("First", 3), Method("Second", 4)]);
+        var hiddenPointer = new PointerTypeReference(new UserDefinedTypeReference(hidden));
+
+        var visible = new InterfaceDefinition
+        {
+            Name = "IVisible",
+            OriginalName = "IVisible",
+            Guid = Guid.NewGuid(),
+            BaseInterface = new UserDefinedTypeReference(hidden),
+            BaseVtableSlots = 5,
+        };
+        var use = Method("Use", 5);
+        use.Parameters.Add(new ParameterDefinition { Name = "item", Type = hiddenPointer, Flags = ParameterFlags.In });
+        var get = Method("Get", 6);
+        get.Parameters.Add(new ParameterDefinition { Name = "result", Type = new PointerTypeReference(hiddenPointer), Flags = ParameterFlags.Out | ParameterFlags.Retval });
+        visible.Methods.AddRange([use, get]);
+
+        var thing = new CoClassDefinition { Name = "Thing", OriginalName = "Thing", Guid = Guid.NewGuid() };
+        thing.Interfaces.Add(new CoClassInterface(new UserDefinedTypeReference(hidden), IsDefault: true, IsSource: false, IsRestricted: false));
+
+        var library = new TypeLibrary { Name = "Synthetic" };
+        library.Types.AddRange([hidden, visible, thing]);
+
+        string text = new InteropPipeline()
+            .GenerateCode(library, new CodeGenerationOptions { Namespace = "Test", SingleFile = true, SingleFileName = "Test.cs" })
+            .Single()
+            .GetText();
+
+        Assert.IsFalse(text.Contains("IHidden", StringComparison.Ordinal), text);
+        StringAssert.Contains(text, "public partial interface IVisible\r\n");
+        StringAssert.Contains(text, "int _VtblGap3();");
+        StringAssert.Contains(text, "int _VtblGap4();");
+        StringAssert.Contains(text, "object? item);");
+        Assert.IsFalse(text.Contains("_VtblGap5", StringComparison.Ordinal));
+
+        // The code compiles: nothing refers to the interface that is not generated.
+        using var runtime = new MemoryStream(File.ReadAllBytes(typeof(CsCom.Runtime.DispatchObject).Assembly.Location));
+        TestCompiler.Compile("Unidentified", text, reference: runtime);
+    }
+
+    [TestMethod]
     public void InterfacesDerivedFromIEnumVariantHaveItAsTheBase()
     {
         // The methods follow those of IEnumVARIANT in the vtable, so the interface derives from it.

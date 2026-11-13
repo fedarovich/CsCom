@@ -146,7 +146,9 @@ public sealed partial class InteropPipeline
             Library = library,
             Libraries = libraries ?? [],
         };
-        IEnumerable<IModelTransformer> modelTransformers = [new AliasResolver(), .. ModelTransformers, .. configuration.ModelTransformers];
+        // The interfaces that cannot be generated are replaced after the transformers of the configuration, which can give them a GUID.
+        IEnumerable<IModelTransformer> modelTransformers =
+            [new AliasResolver(), .. ModelTransformers, .. configuration.ModelTransformers, new UnidentifiedInterfaceReplacer()];
         if (sanitizeNames)
         {
             modelTransformers = modelTransformers.Append(new NameSanitizer());

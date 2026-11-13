@@ -41,7 +41,7 @@ internal sealed partial class InterfaceEmitter
 
         bool isUnsafe = false;
         var members = new List<MemberDeclarationSyntax>();
-        int slot = definition.BaseVtableSlots;
+        int slot = GetFirstSlot(definition);
         foreach (var method in definition.Methods)
         {
             // Placeholders for the missing vtable slots keep the following methods at the right offsets.
@@ -95,7 +95,7 @@ internal sealed partial class InterfaceEmitter
     public static List<int> GetVtableGaps(InterfaceDefinition definition)
     {
         var gaps = new List<int>();
-        int slot = definition.BaseVtableSlots;
+        int slot = GetFirstSlot(definition);
         foreach (var method in definition.Methods)
         {
             for (; method.VtableSlot >= 0 && slot < method.VtableSlot; slot++)
@@ -107,6 +107,23 @@ internal sealed partial class InterfaceEmitter
         }
 
         return gaps;
+    }
+
+    // The first vtable slot of the members of the generated interface: the slot after those of its base interfaces, or an
+    // earlier one when the generated base interface has fewer slots, e.g. when a base interface without a GUID is skipped.
+    private static int GetFirstSlot(InterfaceDefinition definition)
+    {
+        int covered = definition.BaseInterface switch
+        {
+            null => 3,
+            PrimitiveTypeReference { VarType: VarEnum.VT_DISPATCH } or WellKnownTypeReference { Type: WellKnownType.IEnumVariant } => 7,
+            UserDefinedTypeReference { Definition: InterfaceDefinition { InterfaceKind: InterfaceKind.Dispatch } } => 7,
+            UserDefinedTypeReference { Definition: InterfaceDefinition @base } when @base.Methods.All(static m => m.VtableSlot >= 0) =>
+                Math.Max(@base.BaseVtableSlots, @base.Methods.Select(static m => m.VtableSlot + 1).DefaultIfEmpty(0).Max()),
+            _ => definition.BaseVtableSlots,
+        };
+
+        return Math.Min(definition.BaseVtableSlots, covered);
     }
 
     /// <summary>The name of the placeholder method of a vtable slot.</summary>
@@ -430,7 +447,7 @@ internal sealed partial class InterfaceEmitter
         return AccessorList(List(accessors));
     }
 
-    [LoggerMessage(Level = LogLevel.Warning, Message = "Skipping the interface '{Name}', which has no GUID")]
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Skipping the interface '{Name}', which has no GUID; the pointers to it are generated as IUnknown or IDispatch pointers")]
     private static partial void LogMissingGuid(ILogger logger, string name);
 
     // A parameterized property that gets a proxy, with the accessors that the proxy calls.
