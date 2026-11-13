@@ -41,9 +41,10 @@ internal static class GeneratedFiles
     {
         string root = Path.GetFullPath(folder);
         var paths = new List<string>(documents.Count);
+        var relativePaths = new HashSet<string>(documents.Select(static d => d.RelativePath.Replace('\\', '/')), StringComparer.OrdinalIgnoreCase);
         foreach (var document in documents)
         {
-            string path = Path.GetFullPath(Path.Combine(root, document.RelativePath));
+            string path = Path.GetFullPath(Path.Combine(root, GetFilePath(document.RelativePath, relativePaths)));
             if (!path.StartsWith(root.TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
             {
                 throw new CsComException($"The generated file '{document.RelativePath}' is outside of the folder '{root}'.");
@@ -61,6 +62,44 @@ internal static class GeneratedFiles
 
         RemoveStaleFiles(root, paths.ToHashSet(StringComparer.OrdinalIgnoreCase), keepOtherFiles);
         return paths;
+    }
+
+    /// <summary>
+    /// Gets the path of the file of a document: Windows reserves the names of devices, e.g. <c>Aux.cs</c> and the folder
+    /// <c>Con</c>, whatever their extension, so the files and folders named after such types and namespaces get a trailing
+    /// underscore, e.g. <c>Aux_.cs</c>.
+    /// </summary>
+    /// <param name="relativePath">The path of the document.</param>
+    /// <param name="relativePaths">The paths of all the documents, with forward slashes, which the path must not clash with.</param>
+    internal static string GetFilePath(string relativePath, IReadOnlySet<string> relativePaths)
+    {
+        string[] segments = relativePath.Split('/', '\\');
+        if (!segments.Any(IsDeviceName))
+        {
+            return relativePath;
+        }
+
+        for (string suffix = "_"; ; suffix += "_")
+        {
+            string path = string.Join('/', segments.Select(segment =>
+            {
+                int dot = segment.IndexOf('.', StringComparison.Ordinal);
+                return !IsDeviceName(segment) ? segment : dot < 0 ? segment + suffix : segment[..dot] + suffix + segment[dot..];
+            }));
+            if (!relativePaths.Contains(path))
+            {
+                return path;
+            }
+        }
+    }
+
+    // CON, PRN, AUX, NUL, COM1 to COM9 and LPT1 to LPT9, also with an extension.
+    private static bool IsDeviceName(string segment)
+    {
+        int dot = segment.IndexOf('.', StringComparison.Ordinal);
+        string name = (dot < 0 ? segment : segment[..dot]).TrimEnd().ToUpperInvariant();
+        return name is "CON" or "PRN" or "AUX" or "NUL"
+            || (name.Length == 4 && (name.StartsWith("COM", StringComparison.Ordinal) || name.StartsWith("LPT", StringComparison.Ordinal)) && name[3] is >= '1' and <= '9');
     }
 
     /// <summary>

@@ -67,6 +67,36 @@ public sealed class ProjectGeneratorTests
     }
 
     [TestMethod]
+    [DataRow("Aux.cs", "Aux_.cs")]
+    [DataRow("con.cs", "con_.cs")]
+    [DataRow("Con/IShape.cs", "Con_/IShape.cs")]
+    [DataRow("Aux.Interop/Com1.cs", "Aux_.Interop/Com1_.cs")]
+    [DataRow("Nul.cs", "Nul__.cs")]
+    [DataRow("Auxiliary.cs", "Auxiliary.cs")]
+    [DataRow("Interop.Aux/Com10.cs", "Interop.Aux/Com10.cs")]
+    public void FilesAreNotNamedAfterDevices(string relativePath, string expected)
+    {
+        // Windows reserves these names whatever their extension. Nul_.cs is the file of another type.
+        var paths = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { relativePath, "Nul_.cs" };
+
+        Assert.AreEqual(expected, GeneratedFiles.GetFilePath(relativePath, paths));
+    }
+
+    [TestMethod]
+    public void WritesTheFilesOfTypesNamedAfterDevices()
+    {
+        var library = new CsCom.Model.TypeLibrary { Name = "Synthetic" };
+        library.Types.Add(new CsCom.Model.EnumDefinition { Name = "Aux", OriginalName = "Aux" });
+        var documents = new InteropPipeline().GenerateCode(library, new CodeGenerationOptions { Namespace = "Test" });
+        string directory = TestEnvironment.CreateDirectory("device-names");
+
+        var files = GeneratedFiles.WriteFolder(directory, documents);
+
+        CollectionAssert.AreEqual(new[] { Path.Combine(directory, "Aux_.cs") }, files.ToArray());
+        StringAssert.Contains(File.ReadAllText(files[0]), "public enum Aux");
+    }
+
+    [TestMethod]
     public void DoesNotReplaceAnExistingNuGetConfig()
     {
         // The package source is written into a nuget.config, e.g. into that of a repository in whose root the project is created.
