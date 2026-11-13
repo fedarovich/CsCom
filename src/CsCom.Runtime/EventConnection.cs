@@ -16,6 +16,8 @@ namespace CsCom.Runtime;
 /// </remarks>
 public sealed unsafe class EventConnection : IDisposable
 {
+    private const int RPC_E_WRONG_THREAD = unchecked((int)0x8001010E);
+
     private IConnectionPoint? _connectionPoint;
 
     private EventConnection(IConnectionPoint connectionPoint, uint cookie)
@@ -99,13 +101,29 @@ public sealed unsafe class EventConnection : IDisposable
     }
 
     /// <summary>
-    /// Disconnects the sink. Errors are ignored, e.g. when the COM object has already disconnected the sink or has been destroyed.
+    /// Disconnects the sink and returns the <c>HRESULT</c> of <c>IConnectionPoint::Unadvise</c>; <c>S_OK</c> when the sink is
+    /// already disconnected. A call from another thread than that of the connection can fail with <c>RPC_E_WRONG_THREAD</c>:
+    /// the sink then stays connected, and can be disconnected from the right thread.
     /// </summary>
-    public void Dispose()
+    public int Disconnect()
     {
-        if (Interlocked.Exchange(ref _connectionPoint, null) is { } connectionPoint)
+        if (Interlocked.Exchange(ref _connectionPoint, null) is not { } connectionPoint)
         {
-            connectionPoint.Unadvise(Cookie);
+            return 0;
         }
+
+        int hr = connectionPoint.Unadvise(Cookie);
+        if (hr == RPC_E_WRONG_THREAD)
+        {
+            Interlocked.CompareExchange(ref _connectionPoint, connectionPoint, null);
+        }
+
+        return hr;
     }
+
+    /// <summary>
+    /// Disconnects the sink. Errors are ignored, e.g. when the COM object has already disconnected the sink or has been
+    /// destroyed; use <see cref="Disconnect"/> to get the error.
+    /// </summary>
+    public void Dispose() => Disconnect();
 }

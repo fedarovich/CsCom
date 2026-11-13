@@ -86,6 +86,37 @@ public sealed partial class DynamicEventTests
     }
 
     [TestMethod]
+    public void DisconnectsAgainAfterACallFromTheWrongThread()
+    {
+        const int RPC_E_WRONG_THREAD = unchecked((int)0x8001010E);
+        var source = new EventSource(provideClassInfo: true);
+        object shape = CreateProxy(source);
+        var point = source.Points[ShapeEventsIid];
+        var connection = EventConnection.AdviseDispatch(shape, ShapeEventsIid, new IgnoringHandler());
+
+        // The sink stays connected, and the connection can be disposed from the thread that made it.
+        point.UnadviseError = RPC_E_WRONG_THREAD;
+        Assert.AreEqual(RPC_E_WRONG_THREAD, connection.Disconnect());
+        Assert.AreEqual(1, source.Connections);
+
+        Assert.AreEqual(0, connection.Disconnect());
+        Assert.AreEqual(0, source.Connections);
+        Assert.AreEqual(0, connection.Disconnect(), "The sink is already disconnected.");
+
+        // Another error gives the connection up, e.g. when the object has disconnected the sink itself.
+        connection = EventConnection.AdviseDispatch(shape, ShapeEventsIid, new IgnoringHandler());
+        point.UnadviseError = unchecked((int)0x80040200);
+        Assert.AreEqual(unchecked((int)0x80040200), connection.Disconnect());
+        Assert.AreEqual(0, connection.Disconnect());
+        Assert.AreEqual(1, source.Connections);
+    }
+
+    private sealed class IgnoringHandler : IDispatchEventHandler
+    {
+        public bool Invoke(int dispId, EventArguments arguments) => true;
+    }
+
+    [TestMethod]
     public void ReturnsByRefValuesAndResults()
     {
         var source = new EventSource(provideClassInfo: true);
@@ -348,8 +379,18 @@ public sealed partial class DynamicEventTests
             return 0;
         }
 
+        /// <summary>Gets or sets the <c>HRESULT</c> with which the next call of <see cref="Unadvise"/> fails.</summary>
+        public int UnadviseError { get; set; }
+
         public int Unadvise(uint dwCookie)
         {
+            if (UnadviseError != 0)
+            {
+                int error = UnadviseError;
+                UnadviseError = 0;
+                return error;
+            }
+
             if (!Sinks.Remove(dwCookie, out nint sink))
             {
                 return unchecked((int)0x80040200);
