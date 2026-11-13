@@ -278,7 +278,8 @@ internal sealed class DispatchWrapperEmitter
             && setterParameters.Count > 1 && !setterParameters.Any(static p => p.IsByRef)
             && (index is null || (setterParameters[^1].TypeName == valueType!.Name && SignatureParameter.HaveSameTypes(index, setterParameters[..^1]))))
         {
-            index ??= setterParameters[..^1];
+            // The indexer of a property that only has a setter can declare the default values that the setter method cannot.
+            index ??= signatures.MapLateBoundParameters(setter.Parameters.Take(setter.Parameters.Count - 1));
             valueType ??= new LateBoundType(setterParameters[^1].TypeName, static x => x);
         }
         else

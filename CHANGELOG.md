@@ -5,6 +5,11 @@ same version. The versions up to 2.0.0 are not described here.
 
 ## Unreleased
 
+### Changed
+
+- **Named indexers of late-bound wrappers:** the indexer of the proxy of a property that only has a setter declares the
+  default values of its optional indexes, e.g. `sheet.Note["A1"] = text` with an optional second index.
+
 ### Fixed
 
 - **Late-bound calls:** the `COMException` of an error without any code is `DISP_E_EXCEPTION`; since 3.0.0-rc.1 it was

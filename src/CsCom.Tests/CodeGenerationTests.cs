@@ -679,12 +679,14 @@ public sealed class CodeGenerationTests : VerifyBase
             return accessor;
         }
 
-        // Cell has both accessors; the default member only has a setter, which becomes the indexer of the late-bound wrapper.
+        // Cell has both accessors; the default member only has a setter, which becomes the indexer of the late-bound wrapper,
+        // and so has Note, which gets a proxy.
         @interface.Methods.AddRange(
         [
             Accessor("Cell", 5, 3, InvokeKind.PropertyGet),
             Accessor("Cell", 5, 4, InvokeKind.PropertyPut),
             Accessor("Item", 0, 5, InvokeKind.PropertyPutRef),
+            Accessor("Note", 7, 6, InvokeKind.PropertyPut),
         ]);
         var library = new TypeLibrary { Name = "Synthetic" };
         library.Types.Add(@interface);
@@ -700,6 +702,10 @@ public sealed class CodeGenerationTests : VerifyBase
             StringAssert.Contains(text, $"public object? get_Cell(object? row, object? column = null) => InvokeGet(5, row, column ?? {Missing});");
             StringAssert.Contains(text, $"public void set_Cell(object? row, object? column, object? newValue) => InvokePut(5, newValue, row, column ?? {Missing});");
             StringAssert.Contains(text, $"set => InvokePutRef(0, value, row, column ?? {Missing});");
+
+            // The indexer of the proxy of a property that only has a setter declares the default value, which the method cannot.
+            StringAssert.Contains(text, $"public void set_Note(object? row, object? column, object? newValue) => InvokePut(7, newValue, row, column ?? {Missing});");
+            StringAssert.Contains(text, "public object? this[object? row, object? column = null ] { set => _target.set_Note(row, column, value); }");
         }
         else
         {
