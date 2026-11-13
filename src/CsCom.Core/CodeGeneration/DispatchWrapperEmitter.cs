@@ -210,9 +210,11 @@ internal sealed class DispatchWrapperEmitter
             int dispId = (getter ?? setter)!.MemberId;
             string id = DispId(dispId);
             string[] indexNames = SignatureParameter.GetIndexNames(property.Index);
-            string index = string.Concat(Arguments(property.Index, indexNames.Select(Syntax.Escape).ToList()).Select(static a => ", " + a));
-            string? get = getterSignature is null ? null : property.Type.FromObject($"InvokeGet({id}{index})");
-            string? set = setterSignature is null ? null : $"{(setter == put ? "InvokePut" : "InvokePutRef")}({id}, value{index})";
+            // The index parameters have the names of those of the property; a null optional index of a setter is omitted.
+            string Index(PropertySignature accessor) => string.Concat(
+                Arguments(accessor.Index, accessor.Index.Select((p, i) => Argument(p, Syntax.Escape(indexNames[i]))).ToList()).Select(static a => ", " + a));
+            string? get = getterSignature is null ? null : property.Type.FromObject($"InvokeGet({id}{Index(getterSignature)})");
+            string? set = setterSignature is null ? null : $"{(setter == put ? "InvokePut" : "InvokePutRef")}({id}, value{Index(setterSignature)})";
             var accessors = new[] { getterSignature is null ? null : getter, setterSignature is null ? null : setter }
                 .OfType<MethodDefinition>()
                 .Select(a => _context.Annotations.GetAnnotation(a, SyntaxRole.Property))
@@ -358,7 +360,7 @@ internal sealed class DispatchWrapperEmitter
             return null;
         }
 
-        var parameters = signatures.MapLateBoundParameters(setter.Parameters);
+        var parameters = signatures.MapLateBoundParameters(setter.Parameters, setter: true);
         if (parameters.Any(static p => p.IsByRef))
         {
             return null;
@@ -380,8 +382,10 @@ internal sealed class DispatchWrapperEmitter
         return property.WithDocumentation(documentation);
     }
 
-    private static string Argument(SignatureParameter parameter) =>
-        parameter.IsOptionalVariant ? $"{parameter.Name} ?? global::System.Reflection.Missing.Value" : parameter.Name;
+    private static string Argument(SignatureParameter parameter) => Argument(parameter, parameter.Name);
+
+    private static string Argument(SignatureParameter parameter, string name) =>
+        parameter.IsOptionalVariant ? $"{name} ?? global::System.Reflection.Missing.Value" : name;
 
     // The arguments passed to the params parameter of InvokeMethod, InvokeGet, InvokePut and InvokePutRef. A single array is
     // passed as an object, since C# would take an array of reference types for the list of the arguments itself.

@@ -635,6 +635,87 @@ public sealed class CodeGenerationTests : VerifyBase
     }
 
     [TestMethod]
+    [DataRow(InterfaceKind.Vtable)]
+    [DataRow(InterfaceKind.Dispatch)]
+    public void SettersOmitTheOptionalIndexesLikeGetters(InterfaceKind kind)
+    {
+        // The value of a setter follows its index parameters, so they have no default values, but a null optional VARIANT
+        // index is omitted like that of the getter and not passed as an empty VARIANT. A required index keeps its null.
+        bool isDispatch = kind == InterfaceKind.Dispatch;
+        var variant = new PrimitiveTypeReference(System.Runtime.InteropServices.VarEnum.VT_VARIANT);
+        var @interface = new InterfaceDefinition
+        {
+            Name = "ISheet",
+            OriginalName = "ISheet",
+            Guid = Guid.NewGuid(),
+            InterfaceKind = kind,
+            BaseInterface = isDispatch ? new PrimitiveTypeReference(System.Runtime.InteropServices.VarEnum.VT_DISPATCH) : null,
+            BaseVtableSlots = isDispatch ? 7 : 3,
+        };
+
+        MethodDefinition Accessor(string name, int id, int slot, InvokeKind invokeKind)
+        {
+            var accessor = Method(name, slot, invokeKind, id);
+            accessor.Parameters.Add(new ParameterDefinition { Name = "row", Type = variant, Flags = ParameterFlags.In });
+            accessor.Parameters.Add(new ParameterDefinition { Name = "column", Type = variant, Flags = ParameterFlags.In | ParameterFlags.Optional });
+            if (invokeKind != InvokeKind.PropertyGet)
+            {
+                accessor.Parameters.Add(new ParameterDefinition { Name = "newValue", Type = variant, Flags = ParameterFlags.In });
+            }
+            else if (isDispatch)
+            {
+                accessor.ReturnType = variant;
+            }
+            else
+            {
+                accessor.Parameters.Add(new ParameterDefinition { Name = "result", Type = new PointerTypeReference(variant), Flags = ParameterFlags.Out | ParameterFlags.Retval });
+            }
+
+            if (isDispatch && invokeKind != InvokeKind.PropertyGet)
+            {
+                accessor.ReturnType = new PrimitiveTypeReference(System.Runtime.InteropServices.VarEnum.VT_VOID);
+            }
+
+            return accessor;
+        }
+
+        // Cell has both accessors; the default member only has a setter, which becomes the indexer of the late-bound wrapper.
+        @interface.Methods.AddRange(
+        [
+            Accessor("Cell", 5, 3, InvokeKind.PropertyGet),
+            Accessor("Cell", 5, 4, InvokeKind.PropertyPut),
+            Accessor("Item", 0, 5, InvokeKind.PropertyPutRef),
+        ]);
+        var library = new TypeLibrary { Name = "Synthetic" };
+        library.Types.Add(@interface);
+
+        string text = new InteropPipeline()
+            .GenerateCode(library, new CodeGenerationOptions { Namespace = "Test", NamedIndexers = NamedIndexers.StructMethod, SingleFile = true, SingleFileName = "Test.cs" })
+            .Single()
+            .GetText();
+
+        const string Missing = "global::System.Reflection.Missing.Value";
+        if (isDispatch)
+        {
+            StringAssert.Contains(text, $"public object? get_Cell(object? row, object? column = null) => InvokeGet(5, row, column ?? {Missing});");
+            StringAssert.Contains(text, $"public void set_Cell(object? row, object? column, object? newValue) => InvokePut(5, newValue, row, column ?? {Missing});");
+            StringAssert.Contains(text, $"set => InvokePutRef(0, value, row, column ?? {Missing});");
+        }
+        else
+        {
+            // The marshaller of the omitted VARIANTs is that of the index of the getter.
+            const string Optional = "[global::System.Runtime.InteropServices.Marshalling.MarshalUsing(typeof(global::CsCom.Runtime.OptionalVariantMarshaller))] object? column";
+            const string Row = "[global::System.Runtime.InteropServices.Marshalling.MarshalUsing(typeof(global::CsCom.Runtime.VariantMarshaller))] object? row";
+            StringAssert.Contains(text, $"object? get_Cell({Row}, {Optional} = null);");
+            StringAssert.Contains(text, $"void set_Cell({Row}, {Optional}, [");
+            StringAssert.Contains(text, $"void putref_Item({Row}, {Optional}, [");
+        }
+
+        using var runtime = new MemoryStream(File.ReadAllBytes(typeof(CsCom.Runtime.DispatchObject).Assembly.Location));
+        TestCompiler.Compile("Sheet", text, reference: runtime);
+    }
+
+    [TestMethod]
     public void VariantsWithDefaultValuesAreNotOmittedInVtableCalls()
     {
         // Nothing applies the default value of an omitted VARIANT in a call through the vtable, and C# cannot express it as

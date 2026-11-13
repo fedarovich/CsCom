@@ -201,7 +201,7 @@ internal sealed partial class SignatureBuilder
             returnType = ManagedType.Void;
         }
 
-        return (returnType, MapParameters(parameters));
+        return (returnType, MapParameters(parameters, IsSetter(method)));
     }
 
     /// <summary>
@@ -210,7 +210,7 @@ internal sealed partial class SignatureBuilder
     public (LateBoundType ReturnType, List<SignatureParameter> Parameters) MapLateBoundSignature(MethodDefinition method)
     {
         bool hasRetval = HasRetval(method, out var retvalType);
-        var parameters = MapLateBoundParameters(hasRetval ? method.Parameters.Take(method.Parameters.Count - 1) : method.Parameters);
+        var parameters = MapLateBoundParameters(hasRetval ? method.Parameters.Take(method.Parameters.Count - 1) : method.Parameters, IsSetter(method));
         var returnType = hasRetval
             ? _mapper.WithMarshalling(method.RetvalParameter!.Marshalling).MapLateBound(retvalType)
             : method.ReturnsHResult ? LateBoundType.Void : _mapper.WithMarshalling(method.ReturnMarshalling).MapLateBound(method.ReturnType);
@@ -225,9 +225,17 @@ internal sealed partial class SignatureBuilder
         : _mapper.WithMarshalling(getter.ReturnMarshalling).MapLateBound(getter.ReturnType);
 
     /// <summary>
+    /// Whether the last parameter of the method is the value of a property setter, which follows the index parameters.
+    /// </summary>
+    public static bool IsSetter(MethodDefinition method) =>
+        method.InvokeKind is InvokeKind.PropertyPut or InvokeKind.PropertyPutRef && method.RetvalParameter is null;
+
+    /// <summary>
     /// Maps the parameters of a source-generated COM or P/Invoke method.
     /// </summary>
-    public List<SignatureParameter> MapParameters(IEnumerable<ParameterDefinition> parameters)
+    /// <param name="parameters">The parameters.</param>
+    /// <param name="setter">Whether the last parameter is the value of a property setter.</param>
+    public List<SignatureParameter> MapParameters(IEnumerable<ParameterDefinition> parameters, bool setter = false)
     {
         var result = new List<SignatureParameter>();
         foreach (var parameter in parameters)
@@ -257,14 +265,16 @@ internal sealed partial class SignatureBuilder
             }
         }
 
-        ApplyDefaults(result, lateBound: false);
+        ApplyDefaults(result, lateBound: false, setter);
         return result;
     }
 
     /// <summary>
     /// Maps the parameters of a late-bound dispinterface wrapper method.
     /// </summary>
-    public List<SignatureParameter> MapLateBoundParameters(IEnumerable<ParameterDefinition> parameters)
+    /// <param name="parameters">The parameters.</param>
+    /// <param name="setter">Whether the last parameter is the value of a property setter.</param>
+    public List<SignatureParameter> MapLateBoundParameters(IEnumerable<ParameterDefinition> parameters, bool setter = false)
     {
         var result = new List<SignatureParameter>();
         foreach (var parameter in parameters)
@@ -289,7 +299,7 @@ internal sealed partial class SignatureBuilder
             result.Add(CreateParameter(parameter, valueType, type.Name, null, modifier));
         }
 
-        ApplyDefaults(result, lateBound: true);
+        ApplyDefaults(result, lateBound: true, setter);
         return result;
     }
 
@@ -302,14 +312,24 @@ internal sealed partial class SignatureBuilder
             or UserDefinedTypeReference { Definition: RecordDefinition }
             or WellKnownTypeReference { Type: WellKnownType.Guid };
 
-    // C# requires optional parameters to follow the required ones, so only the trailing ones get default values.
-    private void ApplyDefaults(List<SignatureParameter> parameters, bool lateBound)
+    // C# requires optional parameters to follow the required ones, so only the trailing ones get default values. The value of
+    // a property setter follows its index parameters and is required, so they cannot have default values. Their trailing
+    // optional VARIANTs are still omitted when they are null, like the same arguments of the getter: otherwise the setter
+    // would pass an empty VARIANT for the index that the getter omits.
+    private void ApplyDefaults(List<SignatureParameter> parameters, bool lateBound, bool setter = false)
     {
+        bool declare = true;
         for (int i = parameters.Count - 1; i >= 0; i--)
         {
             var parameter = parameters[i];
             if (GetConstantDefault(parameter, lateBound) is not { } defaultValue)
             {
+                if (setter && i == parameters.Count - 1)
+                {
+                    declare = false;
+                    continue;
+                }
+
                 return;
             }
 
@@ -324,7 +344,10 @@ internal sealed partial class SignatureBuilder
                 parameter.IsOptionalVariant = true;
             }
 
-            parameter.DefaultValue = defaultValue;
+            if (declare)
+            {
+                parameter.DefaultValue = defaultValue;
+            }
         }
     }
 

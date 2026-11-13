@@ -379,7 +379,7 @@ internal sealed partial class InterfaceEmitter
             return null;
         }
 
-        var parameters = signatures.MapParameters(setter.Parameters);
+        var parameters = signatures.MapParameters(setter.Parameters, setter: true);
         if (parameters.Any(static p => p.IsByRef) || parameters[^1].TypeName.EndsWith('*'))
         {
             return null;

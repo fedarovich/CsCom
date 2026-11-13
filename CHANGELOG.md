@@ -3,6 +3,15 @@
 The notable changes of CsCom, CsCom.Build, CsCom.Runtime and CsCom.Runtime.Dynamic, which are released together with the
 same version. The versions up to 2.0.0 are not described here.
 
+## Unreleased
+
+### Changed
+
+- **Property setters with optional indexes:** a `null` optional `VARIANT` index of a setter is omitted, like that of the
+  getter; it was passed as an empty `VARIANT`. This applies to the `set_` and `putref_` methods of the interfaces and the
+  late-bound wrappers and to the indexers that call them. The index parameters of the setter methods stay required in C#,
+  since the value follows them.
+
 ## 3.0.0-beta.2 - 2026-11-12
 
 ### Changed
