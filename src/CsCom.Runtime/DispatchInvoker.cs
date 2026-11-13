@@ -140,6 +140,12 @@ internal static unsafe class DispatchInvoker
             throw new ArgumentException("The number of by-reference flags must match the number of arguments.", nameof(byRef));
         }
 
+        // The new values are stored after the call, so the span is checked before the member is invoked.
+        if (!byRef.IsEmpty && output.Length < count)
+        {
+            throw new ArgumentException("The output must have an element for each argument when arguments are passed by reference.", nameof(output));
+        }
+
         if (!types.IsEmpty && types.Length != count)
         {
             throw new ArgumentException("The number of types of the references must match the number of arguments.", nameof(types));

@@ -67,8 +67,15 @@ public static class ComDispatch
     /// <param name="dispId">The dispatch identifier of the member.</param>
     /// <param name="flags">The kind of the invocation.</param>
     /// <param name="args">The arguments, in the declaration order; the named arguments follow the positional ones.</param>
-    /// <param name="namedDispIds">The dispatch identifiers of the trailing named arguments.</param>
-    /// <param name="output">Receives the new values of the by-reference arguments; usually the same span as <paramref name="args"/>.</param>
+    /// <param name="namedDispIds">
+    /// The dispatch identifiers of the trailing named arguments. A property put without named arguments passes its last
+    /// argument, the value, as <see cref="DispIds.PropertyPut"/>; with named arguments, the value must be the first of them,
+    /// with <see cref="DispIds.PropertyPut"/> as its identifier.
+    /// </param>
+    /// <param name="output">
+    /// Receives the new values of the by-reference arguments; usually the same span as <paramref name="args"/>. It must have
+    /// an element for each argument when <paramref name="byRef"/> is not empty.
+    /// </param>
     /// <param name="byRef">For each argument, how it is passed. Empty when all of them are passed by value.</param>
     /// <param name="memberName">The name of the member for error messages, if known.</param>
     /// <returns>The result of the invocation.</returns>

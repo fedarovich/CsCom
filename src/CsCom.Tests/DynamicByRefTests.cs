@@ -104,6 +104,21 @@ public sealed partial class DynamicByRefTests
         Assert.ThrowsExactly<COMException>(() => DispatchObject.InvokeByRef(calculator, divide, DispatchFlags.Method, new object?[] { 7.0, 2.0, null, null }, [false, false, true, true]));
     }
 
+    [TestMethod]
+    public void RequiresTheOutputOfByReferenceArgumentsBeforeTheCall()
+    {
+        // The new values are stored after the call, so a missing output would fail after the member was invoked.
+        IDispatch calculator = CreateDispatch();
+        Span<int> ids = stackalloc int[1];
+        Assert.AreEqual(0, ComDispatch.GetDispIds(calculator, ["Swap"], ids));
+        int swap = ids[0];
+
+        var exception = Assert.ThrowsExactly<ArgumentException>(() =>
+            ComDispatch.Invoke(calculator, swap, DispatchFlags.Method, new object?[] { 1, 2 }, byRef: [DispatchArgumentKind.Typed, DispatchArgumentKind.Typed]));
+
+        Assert.AreEqual("output", exception.ParamName);
+    }
+
     private static dynamic CreateCalculator() => CreateDispatch().AsDynamic();
 
     private static unsafe IDispatch CreateDispatch()
