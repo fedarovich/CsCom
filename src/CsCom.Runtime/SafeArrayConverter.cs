@@ -411,8 +411,15 @@ internal static unsafe class SafeArrayConverter
         {
             case VarEnum.VT_VARIANT:
             {
+                // The previous value cannot always be cleared, e.g. a locked SAFEARRAY: the new value is then released.
                 ComVariant converted = VariantMarshaller.ConvertToUnmanaged(value);
-                Marshal.ThrowExceptionForHR(OleNativeMethods.VariantClear((ComVariant*)element));
+                int hr = OleNativeMethods.VariantClear((ComVariant*)element);
+                if (hr < 0)
+                {
+                    converted.Dispose();
+                    Marshal.ThrowExceptionForHR(hr);
+                }
+
                 *(ComVariant*)element = converted;
                 return;
             }
