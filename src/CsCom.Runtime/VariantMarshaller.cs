@@ -67,6 +67,12 @@ public static unsafe class VariantMarshaller
             return ConvertToManaged(*(ComVariant*)unmanaged.GetRawDataRef<nint>());
         }
 
+        // An object that is a null pointer, like Nothing of Visual Basic, which ComVariantMarshaller does not accept.
+        if (vt is VarEnum.VT_UNKNOWN or VarEnum.VT_DISPATCH && unmanaged.GetRawDataRef<nint>() == 0)
+        {
+            return null;
+        }
+
         return ComVariantMarshaller.ConvertToManaged(unmanaged);
     }
 

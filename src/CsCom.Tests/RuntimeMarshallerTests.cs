@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using System.Runtime.InteropServices.Marshalling;
 using CsCom.Runtime;
 
 namespace CsCom.Tests;
@@ -135,6 +136,27 @@ public sealed class RuntimeMarshallerTests
                 VariantMarshaller.Free(variant);
             }
         }
+    }
+
+    [TestMethod]
+    public void ObjectsThatAreNullPointersAreNull()
+    {
+        // Like Nothing of Visual Basic: a VARIANT with the type of an object and no object.
+        Assert.IsNull(VariantMarshaller.ConvertToManaged(ComVariant.CreateRaw(VarEnum.VT_DISPATCH, (nint)0)));
+        Assert.IsNull(VariantMarshaller.ConvertToManaged(ComVariant.CreateRaw(VarEnum.VT_UNKNOWN, (nint)0)));
+        Assert.IsNull(OptionalVariantMarshaller.ConvertToManaged(ComVariant.CreateRaw(VarEnum.VT_DISPATCH, (nint)0)));
+    }
+
+    [TestMethod]
+    public void InvocationsReturnObjectsThatAreNullPointers()
+    {
+        // The server leaves the objects passed by reference null: it has no object to replace them with.
+        var server = new MemoryLeakTests.Server();
+        object?[] args = [server, null, server, server];
+
+        DispatchObject.InvokeByRef(server, MemoryLeakTests.Server.ReplaceId, DispatchFlags.Method, args, [VarEnum.VT_DISPATCH, VarEnum.VT_DISPATCH, VarEnum.VT_UNKNOWN, VarEnum.VT_VARIANT]);
+
+        CollectionAssert.AreEqual(new object?[] { null, null, null, null }, args);
     }
 
     [TestMethod]

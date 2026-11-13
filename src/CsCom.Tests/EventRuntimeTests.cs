@@ -221,6 +221,8 @@ public sealed unsafe class EventRuntimeTests
         try
         {
             var arguments = new EventArguments(&parameters, null);
+            Assert.IsNull(arguments.GetValue(1), "An object that is a null pointer is read as null.");
+            Assert.IsNull(arguments.GetArray<int>(2));
 
             arguments.Set<string?>(0, null);
             arguments.Set<object?>(1, null);

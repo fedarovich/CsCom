@@ -12,6 +12,9 @@ same version. The versions up to 2.0.0 are not described here.
 
 ### Fixed
 
+- **Null objects in `VARIANT`s:** a `VARIANT` of the type of an object whose pointer is null, like `Nothing` of Visual
+  Basic, is `null`; it failed with an `ArgumentNullException`, e.g. as the result of a late-bound call, as an `out` object
+  that the callee leaves null, or as an argument of an event.
 - **Late-bound calls:** the `COMException` of an error without any code is `DISP_E_EXCEPTION`; since 3.0.0-rc.1 it was
   `0x800A0000`.
 - The class of the marshallers of the arrays with a known rank, `CsComSafeArrayMarshallers`, could have the name of a type
