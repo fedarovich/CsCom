@@ -142,7 +142,9 @@ internal sealed partial class SignatureBuilder
     /// </summary>
     public static bool HasRetval(MethodDefinition method, out TypeReference retvalType)
     {
-        if (method.ReturnsHResult && method.RetvalParameter is { } retval && TypeMapper.TryGetByRefElement(retval.Type, out retvalType))
+        // A [retval] void* is a buffer that the method fills, not the address of a value to return, so it stays a parameter.
+        if (method.ReturnsHResult && method.RetvalParameter is { } retval && TypeMapper.TryGetByRefElement(retval.Type, out retvalType)
+            && retvalType is not PrimitiveTypeReference { VarType: VarEnum.VT_VOID })
         {
             return true;
         }
@@ -191,9 +193,7 @@ internal sealed partial class SignatureBuilder
         }
         else if (HasRetval(method, out var retvalType))
         {
-            returnType = retvalType is PrimitiveTypeReference { VarType: VarEnum.VT_VOID }
-                ? new ManagedType("void*", IsPointer: true)
-                : _mapper.WithMarshalling(method.RetvalParameter!.Marshalling).MapValue(retvalType);
+            returnType = _mapper.WithMarshalling(method.RetvalParameter!.Marshalling).MapValue(retvalType);
             parameters = method.Parameters.Take(method.Parameters.Count - 1);
         }
         else

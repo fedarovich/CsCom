@@ -730,6 +730,25 @@ public sealed class CodeGenerationTests : VerifyBase
     }
 
     [TestMethod]
+    public void VoidPointerRetvalsStayParameters()
+    {
+        // HRESULT Read([out, retval] void* buffer): the method fills the buffer of the caller, so it is not a return value,
+        // for which the generated code would pass the address of a local variable.
+        var @void = new PrimitiveTypeReference(System.Runtime.InteropServices.VarEnum.VT_VOID);
+        var read = Method("Read", 3);
+        read.Parameters.Add(new ParameterDefinition { Name = "buffer", Type = new PointerTypeReference(@void), Flags = ParameterFlags.Out | ParameterFlags.Retval });
+
+        // A void** is the address of a pointer, which is returned.
+        var get = Method("Get", 4);
+        get.Parameters.Add(new ParameterDefinition { Name = "result", Type = new PointerTypeReference(new PointerTypeReference(@void)), Flags = ParameterFlags.Out | ParameterFlags.Retval });
+
+        string text = GenerateInterface("IBuffers", null, 3, read, get);
+
+        StringAssert.Contains(text, "void Read(void* buffer);");
+        StringAssert.Contains(text, "void* Get();");
+    }
+
+    [TestMethod]
     public void InterfacesWithoutAGuidAreReplacedByIUnknown()
     {
         // An interface of a library block without the uuid attribute cannot be generated: the pointers to it are IUnknown
