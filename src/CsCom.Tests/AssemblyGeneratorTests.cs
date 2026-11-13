@@ -32,7 +32,11 @@ public sealed class AssemblyGeneratorTests
 
         Assert.AreEqual(@"C:\Program Files\dotnet\dotnet.exe", DotNetCli.FindDotNet(variables.GetValueOrDefault, files.Contains));
 
+        // DOTNET_ROOT is where the runtime of the tool is, which can be an installation without the SDK, so the directories
+        // of PATH come first and it is only used when they have no dotnet.
         variables["DOTNET_ROOT"] = @"C:\Sdk";
+        Assert.AreEqual(@"C:\Program Files\dotnet\dotnet.exe", DotNetCli.FindDotNet(variables.GetValueOrDefault, files.Contains));
+        variables["PATH"] = @"C:\Tools";
         Assert.AreEqual(@"C:\Sdk\dotnet.exe", DotNetCli.FindDotNet(variables.GetValueOrDefault, files.Contains));
 
         // The host of the .NET CLI that runs the tool wins; a host that is not a full path or does not exist is ignored.
