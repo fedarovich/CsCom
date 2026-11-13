@@ -110,7 +110,28 @@ public sealed partial class LibrarySetGenerator
     /// <returns>The libraries: the references in order, then the libraries they use.</returns>
     /// <exception cref="CsComException">A reference or a configuration file is not valid, or two libraries have the same namespace.</exception>
     public IReadOnlyList<LibrarySetModel> Transform(IReadOnlyList<LibrarySetReference> references, LibrarySetOptions options, bool sanitizeNames = true) =>
-        [.. Prepare(references, options, sanitizeNames).Libraries.Select(static l => new LibrarySetModel(Describe(l.Entry), l.Entry.Library))];
+        Transform(references, options, sanitizeNames, out _);
+
+    /// <summary>
+    /// Reads, merges and transforms the libraries like <see cref="Transform(IReadOnlyList{LibrarySetReference}, LibrarySetOptions, bool)"/>,
+    /// and gets the files that were read, e.g. to check whether the models are up to date.
+    /// </summary>
+    /// <param name="references">The references.</param>
+    /// <param name="options">The options.</param>
+    /// <param name="sanitizeNames">Whether the names are made valid and unique C# identifiers, as for the generated code.</param>
+    /// <param name="inputFiles">
+    /// The files that were read: the type libraries, the interop assemblies and the configuration files, including the files of
+    /// the libraries that the references import, which the merged models no longer list.
+    /// </param>
+    /// <returns>The libraries: the references in order, then the libraries they use.</returns>
+    /// <exception cref="CsComException">A reference or a configuration file is not valid, or two libraries have the same namespace.</exception>
+    public IReadOnlyList<LibrarySetModel> Transform(
+        IReadOnlyList<LibrarySetReference> references, LibrarySetOptions options, bool sanitizeNames, out IReadOnlyList<string> inputFiles)
+    {
+        var set = Prepare(references, options, sanitizeNames);
+        inputFiles = set.InputFiles;
+        return [.. set.Libraries.Select(static l => new LibrarySetModel(Describe(l.Entry), l.Entry.Library))];
+    }
 
     private static LibrarySetLibrary Describe(LibrarySetEntry entry) => new(
         entry.Library.Name,

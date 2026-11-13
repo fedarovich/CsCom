@@ -217,6 +217,8 @@ internal sealed partial class LibrarySetMerger
             }
         }
 
+        // The type is a type of the model of its library now, which imports nothing.
+        type.ImportedFrom = null;
         types.Add(GetTypeKey(type), type);
         entry.Library.Types.Add(type);
     }

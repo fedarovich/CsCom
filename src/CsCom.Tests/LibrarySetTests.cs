@@ -62,17 +62,40 @@ public sealed class LibrarySetTests : VerifyBase
     {
         // The types that CsComTest and CsComDrawing import from stdole move to the model of stdole, so the models of the
         // references import nothing, nor list the file of stdole, which is an input of the set instead.
+        var options = new LibrarySetOptions { ToolVersion = TestEnvironment.ToolVersion };
         var pipeline = new InteropPipeline();
-        Assert.AreNotEqual(0, pipeline.ReadTypeLibrary(TestEnvironment.TestTypeLibrary).ImportedFiles.Count);
-
-        var models = new LibrarySetGenerator(pipeline).Transform(
-            [Reference(TestEnvironment.TestTypeLibrary), Reference(TestEnvironment.DrawingTypeLibrary)],
-            new LibrarySetOptions { ToolVersion = TestEnvironment.ToolVersion });
+        var models = new LibrarySetGenerator(pipeline).Transform([Reference(TestEnvironment.TestTypeLibrary), Reference(TestEnvironment.DrawingTypeLibrary)], options);
 
         CollectionAssert.AreEqual(new[] { "CsComTest", "CsComDrawing", "stdole" }, models.Select(static m => m.Library.Name).ToArray());
-        foreach (var model in models)
+        AssertNoImports(models);
+
+        // The same for an interop assembly, whose imported file is the assembly that it references. The files that were read
+        // are those of the set.
+        string directory = TestEnvironment.CreateDirectory("set-imports");
+        string interop = Path.Combine(directory, Path.GetFileName(TestEnvironment.TestInteropAssembly));
+        File.Copy(TestEnvironment.TestInteropAssembly, interop);
+        string renderer = Path.Combine(directory, "ShapeRenderer.dll");
+        using (var reference = new MemoryStream(File.ReadAllBytes(interop)))
         {
-            Assert.AreEqual((0, 0), (model.Model.ImportedLibraries.Count, model.Model.ImportedFiles.Count), model.Library.Name);
+            TestCompiler.Compile("ShapeRenderer", RendererSource, renderer, reference);
+        }
+
+        Assert.IsTrue(pipeline.ReadTypeLibrary(renderer).ImportedFiles.Contains(interop, StringComparer.OrdinalIgnoreCase));
+
+        models = new LibrarySetGenerator(pipeline).Transform([Reference(renderer)], options, sanitizeNames: true, out var inputFiles);
+
+        CollectionAssert.IsSubsetOf(new[] { "ShapeRenderer", "CsComTest" }, models.Select(static m => m.Library.Name).ToArray());
+        AssertNoImports(models);
+        Assert.IsTrue(inputFiles.Contains(renderer, StringComparer.OrdinalIgnoreCase), string.Join(Environment.NewLine, inputFiles));
+        Assert.IsTrue(inputFiles.Contains(interop, StringComparer.OrdinalIgnoreCase), string.Join(Environment.NewLine, inputFiles));
+
+        static void AssertNoImports(IReadOnlyList<LibrarySetModel> models)
+        {
+            foreach (var model in models)
+            {
+                Assert.AreEqual((0, 0), (model.Model.ImportedLibraries.Count, model.Model.ImportedFiles.Count), model.Library.Name);
+                Assert.IsFalse(model.Model.Types.Any(static t => t.ImportedFrom is not null), model.Library.Name);
+            }
         }
     }
 

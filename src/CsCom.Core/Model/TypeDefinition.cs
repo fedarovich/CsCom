@@ -21,7 +21,7 @@ public abstract class TypeDefinition
     public TypeFlags Flags { get; set; }
 
     /// <summary>The library the type is imported from, or <see langword="null"/> when it belongs to the library being processed.</summary>
-    public TypeLibraryReference? ImportedFrom { get; init; }
+    public TypeLibraryReference? ImportedFrom { get; set; }
 
     /// <summary>The kind of the type.</summary>
     public abstract TypeKind Kind { get; }
