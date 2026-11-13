@@ -410,7 +410,9 @@ internal static unsafe class DispatchInvoker
         string? source = TakeString(ref excepInfo->bstrSource);
         string? description = TakeString(ref excepInfo->bstrDescription);
         string? helpFile = TakeString(ref excepInfo->bstrHelpFile);
-        int errorCode = excepInfo->scode != 0 ? excepInfo->scode : unchecked((int)(0x80040000u | excepInfo->wCode));
+        // An error that only has the 16-bit code, as Basic raises them, has the HRESULT that Visual Basic gives it: the code
+        // with the facility of the controls, e.g. 0x800A000B for the error 11.
+        int errorCode = excepInfo->scode != 0 ? excepInfo->scode : unchecked((int)(0x800A0000u | excepInfo->wCode));
 
         var exception = new COMException(description ?? $"Exception occurred (0x{errorCode:X8}).", errorCode)
         {

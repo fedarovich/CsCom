@@ -11,6 +11,8 @@ same version. The versions up to 2.0.0 are not described here.
   getter; it was passed as an empty `VARIANT`. This applies to the `set_` and `putref_` methods of the interfaces and the
   late-bound wrappers and to the indexers that call them. The index parameters of the setter methods stay required in C#,
   since the value follows them.
+- **Late-bound calls:** the `COMException` of an error that only has a 16-bit code (`wCode`), as Basic raises them, has the
+  `HRESULT` that Visual Basic gives it, e.g. `0x800A000B` for the error 11; it was `0x8004000B`.
 
 ### Fixed
 

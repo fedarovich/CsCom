@@ -198,6 +198,24 @@ public sealed unsafe partial class DispatchWrapperTests
         }
     }
 
+    [TestMethod]
+    public void ExceptionsHaveTheErrorCodesOfTheObject()
+    {
+        var (wrapper, recorder) = CreateWrapper("Calculator", Method("Divide", 1, InvokeKind.Method, Void));
+        var divide = wrapper.GetType().GetMethod("Divide")!;
+
+        // The HRESULT of the exception information is the error code.
+        recorder.Error = (0, unchecked((int)0x80070057));
+        var exception = (COMException)Assert.ThrowsExactly<TargetInvocationException>(() => divide.Invoke(wrapper, [])).InnerException!;
+        Assert.AreEqual(unchecked((int)0x80070057), exception.ErrorCode);
+        Assert.AreEqual("Division by zero", exception.Message);
+
+        // An error that only has the 16-bit code, like the error 11 of Basic, has the HRESULT that Visual Basic gives it.
+        recorder.Error = (11, 0);
+        exception = (COMException)Assert.ThrowsExactly<TargetInvocationException>(() => divide.Invoke(wrapper, [])).InnerException!;
+        Assert.AreEqual(unchecked((int)0x800A000B), exception.ErrorCode);
+    }
+
     private static void AssertCall(Call call, int dispId, DispatchFlags flags, int[] namedDispIds, params object?[] arguments)
     {
         Assert.AreEqual((dispId, flags), (call.DispId, call.Flags));
@@ -266,6 +284,9 @@ public sealed unsafe partial class DispatchWrapperTests
         /// <summary>Gets or sets the kinds of invocations that fail with <c>DISP_E_MEMBERNOTFOUND</c>.</summary>
         public DispatchFlags RejectedFlags { get; set; }
 
+        /// <summary>Gets or sets the codes of the exception that the invocations fail with (<c>DISP_E_EXCEPTION</c>).</summary>
+        public (ushort Code, int SCode)? Error { get; set; }
+
         public int GetTypeInfoCount(out uint pctinfo)
         {
             pctinfo = 0;
@@ -310,6 +331,15 @@ public sealed unsafe partial class DispatchWrapperTests
             }
 
             Calls.Add(new Call(dispIdMember, (DispatchFlags)wFlags, namedDispIds, arguments));
+            if (Error is var (code, scode))
+            {
+                *pExcepInfo = default;
+                pExcepInfo->wCode = code;
+                pExcepInfo->scode = scode;
+                pExcepInfo->bstrDescription = Marshal.StringToBSTR("Division by zero");
+                return unchecked((int)0x80020009);
+            }
+
             if (((DispatchFlags)wFlags & RejectedFlags) != 0)
             {
                 return unchecked((int)0x80020003);
