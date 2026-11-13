@@ -83,7 +83,7 @@ public sealed class CSharpEmitter
 
         if (context.SafeArrayMarshallers.Count > 0)
         {
-            units.Add(new Unit(UniquePath(EmitContext.SafeArrayMarshallersClassName, paths), options.Namespace, [EmitSafeArrayMarshallers(context)], default, null));
+            units.Add(new Unit(UniquePath(context.SafeArrayMarshallersClassName, paths), options.Namespace, [EmitSafeArrayMarshallers(context)], default, null));
         }
 
         if (options.SupportCode != SupportCodeMode.Package && (scope is null || scope.EmitSupportCode))
@@ -159,7 +159,7 @@ public sealed class CSharpEmitter
             return member.WithDocumentation($"Marshals the {readable} arrays as SAFEARRAYs.");
         });
 
-        return ClassDeclaration(Syntax.Identifier(EmitContext.SafeArrayMarshallersClassName))
+        return ClassDeclaration(Syntax.Identifier(context.SafeArrayMarshallersClassName))
             .WithModifiers(Syntax.Modifiers(SyntaxKind.InternalKeyword, SyntaxKind.StaticKeyword))
             .WithMembers(List(members))
             .WithDocumentation("Marshals the multidimensional arrays of the SAFEARRAY parameters whose rank is known, e.g. from the SetSafeArrayRank transformer.");

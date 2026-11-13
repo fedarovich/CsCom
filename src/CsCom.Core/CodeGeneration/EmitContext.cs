@@ -73,9 +73,10 @@ internal sealed class EmitContext
     /// or its event sink: <paramref name="name"/>, with trailing <c>_</c>s while a type of the library or another such type
     /// has the name. The name is taken, so it is requested once per generated type.
     /// </summary>
-    public string GetHelperTypeName(TypeDefinition owner, string name)
+    public string GetHelperTypeName(TypeDefinition owner, string name) => GetHelperTypeName(GetNamespace(owner), name);
+
+    private string GetHelperTypeName(string @namespace, string name)
     {
-        string @namespace = GetNamespace(owner);
         if (!_typeNames.TryGetValue(@namespace, out var names))
         {
             names = new HashSet<string>(Library.Types.Where(t => GetNamespace(t) == @namespace).Select(static t => t.Name), StringComparer.Ordinal);
@@ -90,8 +91,13 @@ internal sealed class EmitContext
         return name;
     }
 
-    /// <summary>The name of the class that contains the marshallers of the multidimensional <c>SAFEARRAY</c> parameters.</summary>
-    public const string SafeArrayMarshallersClassName = "CsComSafeArrayMarshallers";
+    private string? _safeArrayMarshallersClassName;
+
+    /// <summary>
+    /// The name of the class that contains the marshallers of the multidimensional <c>SAFEARRAY</c> parameters:
+    /// <c>CsComSafeArrayMarshallers</c>, with trailing <c>_</c>s while a type of the namespace has the name.
+    /// </summary>
+    public string SafeArrayMarshallersClassName => _safeArrayMarshallersClassName ??= GetHelperTypeName(Options.Namespace, "CsComSafeArrayMarshallers");
 
     /// <summary>
     /// The marshallers of the multidimensional <c>SAFEARRAY</c> parameters, which are generated for their element types: the

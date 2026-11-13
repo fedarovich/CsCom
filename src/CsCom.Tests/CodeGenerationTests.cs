@@ -1034,6 +1034,32 @@ public sealed class CodeGenerationTests : VerifyBase
         TestCompiler.Compile("Clashes", text, reference: runtime);
     }
 
+    [TestMethod]
+    public void TheClassOfTheSafeArrayMarshallersDoesNotClashWithATypeOfTheLibrary()
+    {
+        // The marshallers of the arrays with a known rank are generated into CsComSafeArrayMarshallers, which a type of the
+        // library can be named too.
+        var matrix = new SafeArrayTypeReference(new PrimitiveTypeReference(System.Runtime.InteropServices.VarEnum.VT_R8), 2);
+        var engine = new InterfaceDefinition { Name = "IEngine", OriginalName = "IEngine", Guid = Guid.NewGuid(), BaseVtableSlots = 3 };
+        var put = Method("Put", 3);
+        put.Parameters.Add(new ParameterDefinition { Name = "values", Type = matrix, Flags = ParameterFlags.In });
+        engine.Methods.Add(put);
+        var taken = new EnumDefinition { Name = "CsComSafeArrayMarshallers", OriginalName = "CsComSafeArrayMarshallers" };
+        taken.Members.Add(new EnumMember { Name = "None", Value = 0 });
+        var library = new TypeLibrary { Name = "Synthetic" };
+        library.Types.AddRange([engine, taken]);
+
+        string text = new InteropPipeline()
+            .GenerateCode(library, new CodeGenerationOptions { Namespace = "Test", SingleFile = true, SingleFileName = "Test.cs" })
+            .Single()
+            .GetText();
+
+        StringAssert.Contains(text, "internal static class CsComSafeArrayMarshallers_\r\n");
+        StringAssert.Contains(text, "typeof(global::Test.CsComSafeArrayMarshallers_.double_2D)");
+        using var runtime = new MemoryStream(File.ReadAllBytes(typeof(CsCom.Runtime.DispatchObject).Assembly.Location));
+        TestCompiler.Compile("Marshallers", text, reference: runtime);
+    }
+
     private static MethodDefinition Method(string name, int slot, InvokeKind kind = InvokeKind.Method, int? memberId = null) => new()
     {
         Name = name,

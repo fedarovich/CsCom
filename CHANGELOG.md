@@ -14,6 +14,8 @@ same version. The versions up to 2.0.0 are not described here.
 
 - **Late-bound calls:** the `COMException` of an error without any code is `DISP_E_EXCEPTION`; since 3.0.0-rc.1 it was
   `0x800A0000`.
+- The class of the marshallers of the arrays with a known rank, `CsComSafeArrayMarshallers`, could have the name of a type
+  of the library; it gets a trailing underscore then, like the other generated types.
 
 ## 3.0.0-rc.1 - 2026-11-13
 
