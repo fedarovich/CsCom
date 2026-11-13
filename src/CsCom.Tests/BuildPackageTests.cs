@@ -49,11 +49,15 @@ public sealed class BuildPackageTests
             new[] { "Drawing.Interop", "Interop.CsComTest", "Interop.Scripting", "Ole.Interop" },
             Directory.GetDirectories(generated).Select(Path.GetFileName).ToArray());
 
-        // The second build does not run the generator. Its evaluation includes the generated files, which are compiled once.
+        // The second build does not run the generator. Its evaluation includes the generated files, which are compiled once,
+        // and the compiler does not run again: the generated files were items of the first compilation as well.
         string dictionary = Path.Combine(generated, "Interop.Scripting", "Dictionary.cs");
+        string assembly = Path.Combine(Path.GetDirectoryName(project)!, "obj", "Debug", TestEnvironment.TargetFramework, "Consumer.dll");
         var written = File.GetLastWriteTimeUtc(dictionary);
+        var compiled = File.GetLastWriteTimeUtc(assembly);
         StringAssert.Contains(Build(project), "CsCom: the interop code in");
         Assert.AreEqual(written, File.GetLastWriteTimeUtc(dictionary));
+        Assert.AreEqual(compiled, File.GetLastWriteTimeUtc(assembly), "The second build compiled the project again.");
 
         // The files that the generator read are inputs of the fast up-to-date check of Visual Studio, also the type library
         // of the ProgID.
@@ -174,7 +178,7 @@ public sealed class BuildPackageTests
         File.WriteAllText(configuration, "<CsCom />");
         Assert.AreEqual("True", Run(project).Last());
 
-        // The build after the first generation compiles anyway, since its evaluation is the first to include the generated files.
+        // A build that changes nothing does not compile, so the next one only compiles because of the generator.
         Build(project);
 
         File.WriteAllText(configuration, """<CsCom><ModelTransformers><ExcludeType TypeName="Encoder" /></ModelTransformers></CsCom>""");

@@ -65,9 +65,11 @@
 
   <!--
     Generates the code before the compilation, also in the design-time builds of Visual Studio, so that IntelliSense sees the
-    generated types. The generator only runs when the items, the properties or the files they read changed.
+    generated types. The generator only runs when the items, the properties or the files they read changed. A build runs the
+    target before BeforeCompile, so that the generated files are among the items that the build records for the compiler;
+    otherwise the next build, whose evaluation includes them, would compile again. Design-time builds only run CoreCompile.
   -->
-  <Target Name="CsComGenerate" BeforeTargets="CoreCompile" Condition="'@(CsComReference)' != ''">
+  <Target Name="CsComGenerate" BeforeTargets="BeforeCompile;CoreCompile" Condition="'@(CsComReference)' != ''">
     <!-- The late binding with dynamic of the package support code is in CsCom.Runtime.Dynamic, also when it is referenced transitively. -->
     <ItemGroup>
       <_CsComDynamicReference Include="@(ReferencePath)" Condition="'%(Filename)' == 'CsCom.Runtime.Dynamic'" />
