@@ -40,12 +40,12 @@ public sealed partial class ProjectGenerator
         // The directory is checked before the generation when it is known.
         if ((request.OutputDirectory ?? request.Name) is { } knownDirectory)
         {
-            ThrowIfProjectExists(Path.GetFullPath(knownDirectory));
+            ThrowIfProjectExists(Path.GetFullPath(knownDirectory), request);
         }
 
         var generated = Generate(request);
         string directory = Path.GetFullPath(request.OutputDirectory ?? generated.Manifest.Name);
-        ThrowIfProjectExists(directory);
+        ThrowIfProjectExists(directory, request);
         var manifest = generated.Manifest with
         {
             Sources = ToRecordedSources(directory, generated.Manifest.Sources),
@@ -393,16 +393,26 @@ public sealed partial class ProjectGenerator
         }
     }
 
-    private static void ThrowIfProjectExists(string directory)
+    private static void ThrowIfProjectExists(string directory, CreateProjectRequest request)
     {
-        if (Directory.Exists(directory)
-            && (Directory.EnumerateFiles(directory, "*.csproj").Any() || File.Exists(Path.Combine(directory, CsComManifest.FileName))))
+        if (!Directory.Exists(directory))
+        {
+            return;
+        }
+
+        if (Directory.EnumerateFiles(directory, "*.csproj").Any() || File.Exists(Path.Combine(directory, CsComManifest.FileName)))
         {
             throw new CsComException($"The directory '{directory}' already contains a project. Use 'cscom project update' to update it.");
         }
+
+        // The package source and the packages folder are written into a nuget.config, which must not replace an existing one.
+        string nugetConfig = Path.Combine(directory, "nuget.config");
+        if ((request.PackageSource is not null || request.GlobalPackagesFolder is not null) && File.Exists(nugetConfig))
+        {
+            throw new CsComException($"'{nugetConfig}' already exists: add the package source to it, or create the project in another directory.");
+        }
     }
 
-    // The paths recorded in cscom.json are relative to the project directory.
     // The files of the project directory are recorded by their relative paths, so that the project can be updated from
     // another copy of the directory, e.g. another clone of its repository. The other files keep their full paths, and
     // LIBIDs and ProgIDs are recorded as they are.
@@ -425,6 +435,7 @@ public sealed partial class ProjectGenerator
         return File.Exists(TypeLibrarySource.GetFilePath(path)) ? Path.GetFullPath(path) : source;
     }
 
+    // The paths recorded in cscom.json are relative to the project directory.
     private static List<string>? ToRelativePaths(string directory, IReadOnlyList<string>? paths) =>
         paths?.Select(path => Path.GetRelativePath(directory, path)).ToList();
 

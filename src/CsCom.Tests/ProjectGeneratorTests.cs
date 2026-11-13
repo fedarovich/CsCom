@@ -67,6 +67,30 @@ public sealed class ProjectGeneratorTests
     }
 
     [TestMethod]
+    public void DoesNotReplaceAnExistingNuGetConfig()
+    {
+        // The package source is written into a nuget.config, e.g. into that of a repository in whose root the project is created.
+        string directory = TestEnvironment.CreateDirectory("existing-nuget-config");
+        string nugetConfig = Path.Combine(directory, "nuget.config");
+        File.WriteAllText(nugetConfig, "<configuration />");
+
+        var exception = Assert.ThrowsExactly<CsComException>(() => _generator.CreateProject(new CreateProjectRequest
+        {
+            Sources = [TestEnvironment.TestTypeLibrary],
+            OutputDirectory = directory,
+            PackageSource = TestEnvironment.LocalPackages,
+        }));
+
+        StringAssert.StartsWith(exception.Message, $"'{nugetConfig}' already exists");
+        Assert.AreEqual("<configuration />", File.ReadAllText(nugetConfig));
+        Assert.IsFalse(Directory.Exists(Path.Combine(directory, "Generated")));
+
+        // Without a package source, the project is created and the file is left alone.
+        _generator.CreateProject(new CreateProjectRequest { Sources = [TestEnvironment.TestTypeLibrary], OutputDirectory = directory });
+        Assert.AreEqual("<configuration />", File.ReadAllText(nugetConfig));
+    }
+
+    [TestMethod]
     public void EmptyValuesAreIgnoredOrRejected()
     {
         // An empty configuration file removes the one of a library on update; a new project has none.
