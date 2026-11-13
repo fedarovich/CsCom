@@ -133,11 +133,32 @@ public static class ComSafeArrayMarshaller<T>
                 return _original;
             }
 
-            nint result = _managed is null ? 0 : _managed.OwnsArray ? _managed.Detach() : SafeArrayConverter.Copy(_managed.Pointer);
+            // The array of the caller is only replaced once it is destroyed, which fails while the array is locked: the caller
+            // then keeps it, and the returned array stays owned by its wrapper, or its copy is destroyed.
+            bool detach = _managed is { OwnsArray: true };
+            nint result = _managed is null ? 0 : detach ? _managed.Pointer : SafeArrayConverter.Copy(_managed.Pointer);
             if (_original != 0)
             {
+                try
+                {
+                    SafeArrayConverter.Destroy(_original);
+                }
+                catch
+                {
+                    if (!detach)
+                    {
+                        SafeArrayConverter.Destroy(result);
+                    }
+
+                    throw;
+                }
+
                 _view?.Forget();
-                SafeArrayConverter.Destroy(_original);
+            }
+
+            if (detach)
+            {
+                _managed!.Detach();
             }
 
             return result;

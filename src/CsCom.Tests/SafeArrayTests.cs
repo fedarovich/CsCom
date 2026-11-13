@@ -103,6 +103,51 @@ public sealed class SafeArrayTests
     }
 
     [TestMethod]
+    public void KeepsTheReturnedArrayWhenTheArrayOfTheCallerCannotBeDestroyed()
+    {
+        // A COM object implemented in .NET replaces the array of an [in, out] parameter. The array of the caller is locked,
+        // so it cannot be destroyed: the caller keeps it, and the new array stays owned by its wrapper.
+        nint original = SafeArrayMarshaller<int>.ConvertToUnmanaged([1]);
+        Marshal.ThrowExceptionForHR(SafeArrayLock(original));
+        bool locked = true;
+        using var replacement = ComSafeArray<int>.Create([2, 3]);
+        var marshaller = new ComSafeArrayMarshaller<int>.UnmanagedToManagedRef();
+        marshaller.FromUnmanaged(original);
+        marshaller.FromManaged(replacement);
+        try
+        {
+            Assert.Throws<Exception>(() => marshaller.ToUnmanaged());
+            Assert.IsTrue(replacement.OwnsArray);
+            CollectionAssert.AreEqual(new[] { 2, 3 }, replacement.ToArray());
+            Assert.AreEqual(1, marshaller.ToManaged()!.Length);
+
+            // Once it is unlocked, the array is replaced and the caller owns the new one.
+            Marshal.ThrowExceptionForHR(SafeArrayUnlock(original));
+            locked = false;
+            nint result = marshaller.ToUnmanaged();
+            original = 0;
+            Assert.IsFalse(replacement.OwnsArray);
+            CollectionAssert.AreEqual(new[] { 2, 3 }, SafeArrayMarshaller<int>.ConvertToManaged(result));
+            SafeArrayMarshaller<int>.Free(result);
+        }
+        finally
+        {
+            if (locked)
+            {
+                SafeArrayUnlock(original);
+            }
+
+            SafeArrayMarshaller<int>.Free(original);
+        }
+    }
+
+    [DllImport("oleaut32.dll")]
+    private static extern int SafeArrayLock(nint psa);
+
+    [DllImport("oleaut32.dll")]
+    private static extern int SafeArrayUnlock(nint psa);
+
+    [TestMethod]
     public void WrappersOfUnsignedArraysHaveUnsignedElements()
     {
         using var array = ComSafeArray<byte>.Create([1, 200])!;
