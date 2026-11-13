@@ -221,6 +221,18 @@ public sealed unsafe partial class DispatchWrapperTests
         Assert.AreEqual(unchecked((int)0x80020009), exception.ErrorCode);
     }
 
+    [TestMethod]
+    public void ATypeMismatchWithoutTheTypesOfTheArgumentsIsReported()
+    {
+        // Without the types, all the arguments are passed by value; the rejected argument has no type to look up.
+        var recorder = new Recorder { MismatchedArgument = 0 };
+        object?[] args = ["text"];
+
+        var exception = Assert.ThrowsExactly<COMException>(() => DispatchObject.InvokeByRef(recorder, 1, DispatchFlags.Method, args, ReadOnlySpan<VarEnum>.Empty));
+
+        Assert.AreEqual(unchecked((int)0x80020005), exception.ErrorCode);
+    }
+
     private static void AssertCall(Call call, int dispId, DispatchFlags flags, int[] namedDispIds, params object?[] arguments)
     {
         Assert.AreEqual((dispId, flags), (call.DispId, call.Flags));
@@ -292,6 +304,9 @@ public sealed unsafe partial class DispatchWrapperTests
         /// <summary>Gets or sets the codes of the exception that the invocations fail with (<c>DISP_E_EXCEPTION</c>).</summary>
         public (ushort Code, int SCode)? Error { get; set; }
 
+        /// <summary>Gets or sets the index of the argument that the invocations reject with <c>DISP_E_TYPEMISMATCH</c>.</summary>
+        public uint? MismatchedArgument { get; set; }
+
         public int GetTypeInfoCount(out uint pctinfo)
         {
             pctinfo = 0;
@@ -343,6 +358,12 @@ public sealed unsafe partial class DispatchWrapperTests
                 pExcepInfo->scode = scode;
                 pExcepInfo->bstrDescription = Marshal.StringToBSTR("Division by zero");
                 return unchecked((int)0x80020009);
+            }
+
+            if (MismatchedArgument is { } mismatched)
+            {
+                *puArgErr = mismatched;
+                return unchecked((int)0x80020005);
             }
 
             if (((DispatchFlags)wFlags & RejectedFlags) != 0)

@@ -95,7 +95,8 @@ internal static unsafe class DispatchInvoker
 
         // The objects that check the types of the arguments with their type information reject the reference to a VARIANT
         // before they invoke the member, so the member is invoked again with references to the SAFEARRAYs of the declared types.
-        if (hr == OleNativeMethods.DISP_E_TYPEMISMATCH && argument >= 0 && (types[argument] & VarEnum.VT_ARRAY) != 0)
+        // Without the types, all the arguments are passed by value and there is nothing to pass another way.
+        if (hr == OleNativeMethods.DISP_E_TYPEMISMATCH && argument >= 0 && argument < types.Length && (types[argument] & VarEnum.VT_ARRAY) != 0)
         {
             for (int i = 0; i < kinds.Length; i++)
             {
