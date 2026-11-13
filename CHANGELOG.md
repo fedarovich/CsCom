@@ -3,6 +3,13 @@
 The notable changes of CsCom, CsCom.Build, CsCom.Runtime and CsCom.Runtime.Dynamic, which are released together with the
 same version. The versions up to 2.0.0 are not described here.
 
+## Unreleased
+
+### Fixed
+
+- **Late-bound calls:** the `COMException` of an error without any code is `DISP_E_EXCEPTION`; since 3.0.0-rc.1 it was
+  `0x800A0000`.
+
 ## 3.0.0-rc.1 - 2026-11-13
 
 ### Changed

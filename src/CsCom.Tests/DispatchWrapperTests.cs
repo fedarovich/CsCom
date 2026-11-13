@@ -214,6 +214,11 @@ public sealed unsafe partial class DispatchWrapperTests
         recorder.Error = (11, 0);
         exception = (COMException)Assert.ThrowsExactly<TargetInvocationException>(() => divide.Invoke(wrapper, [])).InnerException!;
         Assert.AreEqual(unchecked((int)0x800A000B), exception.ErrorCode);
+
+        // An error without any code is the failure of the invocation itself, DISP_E_EXCEPTION.
+        recorder.Error = (0, 0);
+        exception = (COMException)Assert.ThrowsExactly<TargetInvocationException>(() => divide.Invoke(wrapper, [])).InnerException!;
+        Assert.AreEqual(unchecked((int)0x80020009), exception.ErrorCode);
     }
 
     private static void AssertCall(Call call, int dispId, DispatchFlags flags, int[] namedDispIds, params object?[] arguments)
