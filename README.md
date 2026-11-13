@@ -835,7 +835,8 @@ DShapeEvents events = shape.GetEvents();           // and the late-bound wrapper
   dispinterfaces are supported; dual and vtable event interfaces need the generated sinks (see [Events](#events)).
 - **Releasing objects:** the COM references are released when the objects are garbage collected, and finalizers do not run
   when the process exits. An Office application exits after `Quit()` only when all its objects are released, so let them go
-  out of scope and call `GC.Collect()` and `GC.WaitForPendingFinalizers()`, otherwise it keeps running for minutes.
+  out of scope and call `GC.Collect()` and `GC.WaitForPendingFinalizers()`, otherwise it keeps running for minutes. This
+  applies to the objects of the generated interfaces and late-bound wrappers too, see [Limitations](#limitations).
 - **Debugger:** the dynamic view of the debugger lists the properties described by the type information of the object, and
   `ComDynamic.GetTypeName` returns the name of its type, like VB's `TypeName`.
 - **Errors:** unknown members throw `RuntimeBinderException`. Errors raised by the COM object throw `COMException`, and so do
@@ -910,6 +911,12 @@ The generated projects disable runtime marshalling, which source-generated COM i
 - Events of the generated interfaces are connected through the sink classes rather than through events of the COM interfaces as
   with TlbImp (`app.WorkbookOpen += ...`), because C# has no extension events; `dynamic` objects support `+=` for the events
   of dispinterfaces.
+- COM objects cannot be released manually: the generated interfaces, the late-bound wrappers and the `dynamic` objects share
+  one wrapper per COM object, whose references are released when it is garbage collected, and `ComObject.FinalRelease()` of
+  .NET only releases unique wrappers, so it does nothing for them. Finalizers do not run when the process exits, and an
+  out-of-process server such as an Office application only exits after `Quit()` once all its objects are released, not only
+  the application object: let them go out of scope and call `GC.Collect()` and `GC.WaitForPendingFinalizers()`.
+  `ComBstr`, `ComSafeArray<T>` and the event sinks are disposable and are released at once.
 - Structures keep the layout of the COM structures, so `VARIANT`, `SAFEARRAY` and interface pointer members are raw values, and
   `BSTR` members are `ComBstrValue` views that the code using the structure allocates and frees; only `DATE`, `CURRENCY` and
   `VARIANT_BOOL` members are converted.
