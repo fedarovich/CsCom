@@ -216,10 +216,17 @@ public sealed partial class InteropAssemblyTests : VerifyBase
                     public int Last;
                 }
 
+                public struct Items
+                {
+                    [MarshalAs(UnmanagedType.ByValArray, SizeConst = 2)] public object[] Plain;
+                    [MarshalAs(UnmanagedType.ByValArray, SizeConst = 2, ArraySubType = UnmanagedType.Struct)] public object[] Variants;
+                }
+
                 [ComImport, Guid("0F1D2C3B-0000-4000-8000-000000000040"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
                 public interface IHolders
                 {
                     void Add(Holder holder, object value);
+                    void AddItems(Items items);
                 }
             }
             """,
@@ -231,13 +238,21 @@ public sealed partial class InteropAssemblyTests : VerifyBase
         CollectionAssert.AreEqual(
             new[] { System.Runtime.InteropServices.VarEnum.VT_I4, System.Runtime.InteropServices.VarEnum.VT_UNKNOWN, System.Runtime.InteropServices.VarEnum.VT_VARIANT, System.Runtime.InteropServices.VarEnum.VT_DISPATCH, System.Runtime.InteropServices.VarEnum.VT_I4 },
             holder.Fields.Select(static f => ((PrimitiveTypeReference)f.Type).VarType).ToList());
-        var add = Get<InterfaceDefinition>(library, "IHolders").Methods.Single();
+        var add = Get<InterfaceDefinition>(library, "IHolders").Methods.Single(static m => m.Name == "Add");
         Assert.AreEqual(System.Runtime.InteropServices.VarEnum.VT_VARIANT, ((PrimitiveTypeReference)add.Parameters[1].Type).VarType);
 
-        // The size is that of the runtime: the fields at 0, 8, 16, 40 and 48 on 64-bit Windows.
+        // The elements of an array of the structure follow the same rule.
+        var items = Get<RecordDefinition>(library, "Items");
+        CollectionAssert.AreEqual(
+            new[] { System.Runtime.InteropServices.VarEnum.VT_UNKNOWN, System.Runtime.InteropServices.VarEnum.VT_VARIANT },
+            items.Fields.Select(static f => ((PrimitiveTypeReference)((FixedArrayTypeReference)f.Type).ElementType).VarType).ToList());
+
+        // The sizes are those of the runtime: the fields of Holder at 0, 8, 16, 40 and 48 on 64-bit Windows, and two pointers
+        // and two VARIANTs in Items.
         if (Environment.Is64BitProcess)
         {
             Assert.AreEqual(56, holder.Size);
+            Assert.AreEqual(64, items.Size);
         }
     }
 
