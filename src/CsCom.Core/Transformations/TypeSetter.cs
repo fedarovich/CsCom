@@ -31,7 +31,10 @@ public sealed partial class TypeSetter : IModelTransformer
     /// <param name="type">Matches the types; all types when <see langword="null"/>.</param>
     /// <param name="member">Matches the names of the members.</param>
     /// <param name="parameter">Matches the names of the parameters; the types of the members change when <see langword="null"/>.</param>
-    /// <param name="to">The name of the new type: an enum, a structure, an interface, a dispinterface or a coclass of the library.</param>
+    /// <param name="to">
+    /// The name of the new type: an enum, a structure, an interface, a dispinterface or a coclass of the library, or of
+    /// another library that is generated with it.
+    /// </param>
     public TypeSetter(TypeSelector? type, NameSelector member, NameSelector? parameter, string to)
     {
         ArgumentNullException.ThrowIfNull(member);
@@ -65,25 +68,27 @@ public sealed partial class TypeSetter : IModelTransformer
     /// <inheritdoc/>
     public void Transform(TypeLibrary library, TransformationContext context)
     {
-        var target = FindTarget(library);
+        // A configuration can be used with versions of a library that have neither the member nor the type, so the type is
+        // only required when something matches.
+        var matches = library.Types
+            .Where(t => ModelSelectors.IsMatch(Type, t))
+            .SelectMany(type => GetTargets(type).Select(target => (Type: type, Target: target)))
+            .ToList();
+        if (matches.Count == 0)
+        {
+            LogNoMatch(context.Logger, ModelSelectors.Describe(Type, ("Member", Member), ("Parameter", Parameter)));
+            return;
+        }
+
+        var target = FindTarget(library, context.Libraries);
         TypeReference value = target is InterfaceDefinition or CoClassDefinition
             ? new PointerTypeReference(new UserDefinedTypeReference(target))
             : new UserDefinedTypeReference(target);
 
-        bool matched = false;
-        foreach (var type in library.Types.Where(t => ModelSelectors.IsMatch(Type, t)))
+        foreach (var (type, (location, get, set, isParameter)) in matches)
         {
-            foreach (var (location, get, set, isParameter) in GetTargets(type).ToList())
-            {
-                matched = true;
-                set(Change(get(), value, type, location, isParameter));
-                LogChanging(context.Logger, location, To);
-            }
-        }
-
-        if (!matched)
-        {
-            LogNoMatch(context.Logger, ModelSelectors.Describe(Type, ("Member", Member), ("Parameter", Parameter)));
+            set(Change(get(), value, type, location, isParameter));
+            LogChanging(context.Logger, location, To);
         }
     }
 
@@ -93,17 +98,28 @@ public sealed partial class TypeSetter : IModelTransformer
         element.GetSelector("Parameter"),
         element.GetRequiredAttribute("To"));
 
-    private TypeDefinition FindTarget(TypeLibrary library)
+    // The type of the library, or of one of the other libraries that are generated with it, whose types are in their own models.
+    private TypeDefinition FindTarget(TypeLibrary library, IReadOnlyList<TypeLibrary> libraries)
     {
-        var targets = library.Types
-            .Where(t => t.Name == To && t is EnumDefinition or RecordDefinition or InterfaceDefinition or CoClassDefinition)
-            .ToList();
+        var targets = Find(library);
+        if (targets.Count == 0)
+        {
+            targets = [.. libraries.Where(other => !ReferenceEquals(other, library)).SelectMany(Find)];
+        }
+
         return targets switch
         {
-            [var target] => target,
+            [var target] => target.Type,
             [] => throw new CsComException($"SetType: the type '{To}' was not found."),
-            _ => throw new CsComException($"SetType: the name '{To}' is ambiguous; it is used by {string.Join(", ", targets.Select(static t => t.ImportedFrom?.Name ?? "the library"))}."),
+            _ => throw new CsComException($"SetType: the name '{To}' is ambiguous; it is used by {string.Join(", ", targets.Select(static t => t.Library))}."),
         };
+
+        List<(TypeDefinition Type, string Library)> Find(TypeLibrary source) =>
+        [
+            .. source.Types
+                .Where(t => t.Name == To && t is EnumDefinition or RecordDefinition or InterfaceDefinition or CoClassDefinition)
+                .Select(t => (t, t.ImportedFrom?.Name ?? (ReferenceEquals(source, library) ? "the library" : source.Name))),
+        ];
     }
 
     // The types to change, with a description of their location and accessors; parameters can be passed by reference.

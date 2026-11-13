@@ -84,6 +84,7 @@ public sealed class ConfigurableTransformerTests
     [DataRow("""<RenameMember Kind="coclass" MemberName="Move" NewName="X" />""", "RenameMember: no member matches MemberName='Move', Kind='coclass'")]
     [DataRow("""<SetSafeArrayRank TypeName="IShape" Rank="2" />""", "SetSafeArrayRank: no SAFEARRAY matches TypeName='IShape'")]
     [DataRow("""<SetType TypeName="IShape" MemberName="Nothing" To="Color" />""", "SetType: nothing matches TypeName='IShape', MemberName='Nothing'")]
+    [DataRow("""<SetType TypeName="IShape" MemberName="Nothing" To="Nope" />""", "SetType: nothing matches TypeName='IShape', MemberName='Nothing'")]
     [DataRow("""<RenameMembersToPascalCase Type="^Nothing$" />""", "RenameMembersToPascalCase: no member matches Type='^Nothing$'")]
     public void WarnsWhenNothingMatches(string transformer, string warning)
     {
@@ -243,7 +244,7 @@ public sealed class ConfigurableTransformerTests
     [DataRow(
         """<SetType TypeName="Point" MemberName="X" To="Number" />""",
         "SetType: 'Point.X' is long, which cannot be changed to 'Number' in a structure, because their layouts differ.")]
-    [DataRow("""<SetType TypeName="IShape" MemberName="Move" To="Nope" />""", "SetType: the type 'Nope' was not found.")]
+    [DataRow("""<SetType TypeName="IShape" MemberName="Area" To="Nope" />""", "SetType: the type 'Nope' was not found.")]
     public void SetTypeKeepsTheLayouts(string transformer, string message)
     {
         var exception = Assert.ThrowsExactly<CsComException>(() => Apply(transformer));

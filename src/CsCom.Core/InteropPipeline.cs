@@ -126,14 +126,26 @@ public sealed partial class InteropPipeline
     /// <param name="sanitizeNames">
     /// Whether the names are made valid and unique C# identifiers; <see langword="false"/> keeps the names that the transformers see.
     /// </param>
+    /// <param name="libraries">The models of the libraries that are generated together with this one, including it, if any.</param>
     /// <returns>The context passed to the transformers.</returns>
-    public TransformationContext TransformModel(TypeLibrary library, CodeGenerationOptions options, PipelineConfiguration? configuration = null, bool sanitizeNames = true)
+    public TransformationContext TransformModel(
+        TypeLibrary library,
+        CodeGenerationOptions options,
+        PipelineConfiguration? configuration = null,
+        bool sanitizeNames = true,
+        IReadOnlyList<TypeLibrary>? libraries = null)
     {
         ArgumentNullException.ThrowIfNull(library);
         ArgumentNullException.ThrowIfNull(options);
         configuration ??= PipelineConfiguration.Empty;
 
-        var context = new TransformationContext { Options = options, Logger = _loggerFactory.CreateLogger<InteropPipeline>(), Library = library };
+        var context = new TransformationContext
+        {
+            Options = options,
+            Logger = _loggerFactory.CreateLogger<InteropPipeline>(),
+            Library = library,
+            Libraries = libraries ?? [],
+        };
         IEnumerable<IModelTransformer> modelTransformers = [new AliasResolver(), .. ModelTransformers, .. configuration.ModelTransformers];
         if (sanitizeNames)
         {

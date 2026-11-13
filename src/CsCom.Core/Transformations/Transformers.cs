@@ -45,6 +45,13 @@ public sealed class TransformationContext
     public TypeLibrary? Library { get; init; }
 
     /// <summary>
+    /// The models of the libraries that are generated together, including <see cref="Library"/>, whose types can use each
+    /// other; empty when a single library is generated. The libraries are transformed in this order, so those that follow
+    /// <see cref="Library"/> are not transformed yet.
+    /// </summary>
+    public IReadOnlyList<TypeLibrary> Libraries { get; init; } = [];
+
+    /// <summary>
     /// Associates the generated syntax nodes with the model elements; empty for the model transformers, which run before the
     /// code is generated.
     /// </summary>

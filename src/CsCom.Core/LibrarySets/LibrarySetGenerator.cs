@@ -176,6 +176,7 @@ public sealed partial class LibrarySetGenerator
         }
 
         var libraries = new List<(LibrarySetEntry Entry, CodeGenerationOptions Options)>();
+        TypeLibrary[] set = [.. entries.Select(static e => e.Library)];
         foreach (var entry in entries)
         {
             var codeOptions = CreateOptions(entry, options, supportNamespace);
@@ -188,7 +189,7 @@ public sealed partial class LibrarySetGenerator
                 LogGeneratingLibrary(entry.Library.Name, entry.Namespace);
             }
 
-            _pipeline.TransformModel(entry.Library, codeOptions, entry.Configuration, sanitizeNames);
+            _pipeline.TransformModel(entry.Library, codeOptions, entry.Configuration, sanitizeNames, set);
             libraries.Add((entry, codeOptions));
         }
 

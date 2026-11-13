@@ -121,6 +121,18 @@ public sealed class LibrarySetTests : VerifyBase
     }
 
     [TestMethod]
+    public void SetTypeFindsTheTypesOfTheOtherLibraries()
+    {
+        // Font is a type of stdole, whose types are in their own model when the libraries are generated together.
+        string configuration = Path.Combine(TestEnvironment.CreateDirectory("set-type"), "cscom.xml");
+        File.WriteAllText(configuration, """<CsCom><ModelTransformers><SetType TypeName="IShape" MemberName="Dispatch" To="Font" /></ModelTransformers></CsCom>""");
+
+        var result = Generate(new LibrarySetReference { Source = TestEnvironment.TestTypeLibrary, ConfigurationPath = configuration });
+
+        StringAssert.Contains(GetText(result, "Interop.CsComTest/IShape.cs"), "global::Interop.stdole.Font? Dispatch(");
+    }
+
+    [TestMethod]
     [DataRow(SupportCodeMode.Public, "public")]
     [DataRow(SupportCodeMode.Internal, "internal")]
     public void GeneratesTheSupportCodeOnce(SupportCodeMode mode, string accessibility)
