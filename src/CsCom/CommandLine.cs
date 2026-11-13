@@ -353,7 +353,7 @@ internal static class CommandLine
         AddCreateOptions(buildAssembly);
         buildAssembly.Options.Add(KeepTempOption);
         buildAssembly.Options.Add(PropertyOption);
-        buildAssembly.SetAction(static result => Run(result, (pipeline, loggerFactory) =>
+        buildAssembly.SetAction(static result => Run(result, (pipeline, loggerFactory) => WithCancellation(cancellationToken =>
             new AssemblyGenerator(pipeline, loggerFactory).BuildAssembly(new BuildAssemblyRequest
             {
                 Sources = result.GetRequiredValue(SourceArgument),
@@ -378,14 +378,14 @@ internal static class CommandLine
                 PackageSource = result.GetValue(PackageSourceOption),
                 KeepTemporaryFiles = result.GetValue(KeepTempOption),
                 Properties = GetProperties(result),
-            })));
+            }, cancellationToken))));
 
         var packAssembly = new Command("pack", "Builds an interop assembly and packs it into a NuGet package with a symbols package.");
         AddCreateOptions(packAssembly, withRuntimes: false);
         packAssembly.Options.Add(KeepTempOption);
         packAssembly.Options.Add(PackageVersionOption);
         packAssembly.Options.Add(PropertyOption);
-        packAssembly.SetAction(static result => Run(result, (pipeline, loggerFactory) =>
+        packAssembly.SetAction(static result => Run(result, (pipeline, loggerFactory) => WithCancellation(cancellationToken =>
             new AssemblyGenerator(pipeline, loggerFactory).PackAssembly(new PackAssemblyRequest
             {
                 Sources = result.GetRequiredValue(SourceArgument),
@@ -410,7 +410,7 @@ internal static class CommandLine
                 KeepTemporaryFiles = result.GetValue(KeepTempOption),
                 PackageVersion = result.GetValue(PackageVersionOption),
                 Properties = GetProperties(result),
-            })));
+            }, cancellationToken))));
 
         var updateProject = new Command("update", "Regenerates the C# files of a project created with 'cscom project create'.")
         {
@@ -735,6 +735,11 @@ internal static class CommandLine
             logger.LogError("{Message}", e.Message);
             return 1;
         }
+        catch (OperationCanceledException)
+        {
+            logger.LogError("The command was cancelled.");
+            return 1;
+        }
         catch (Exception e) when (e is IOException or UnauthorizedAccessException)
         {
             logger.LogError("{Message}", e.Message);
@@ -750,6 +755,40 @@ internal static class CommandLine
         {
             logger.LogCritical(e, "Unexpected error: {Message}", e.Message);
             return 1;
+        }
+    }
+
+    // Runs an action that Ctrl+C cancels: the process keeps running, so that the action can stop the processes that it
+    // started and delete its temporary files. Ctrl+Break still ends the process at once.
+    private static T WithCancellation<T>(Func<CancellationToken, T> action)
+    {
+        using var cancellation = new CancellationTokenSource();
+        void OnCancelKeyPress(object? sender, ConsoleCancelEventArgs e)
+        {
+            if (e.SpecialKey != ConsoleSpecialKey.ControlC)
+            {
+                return;
+            }
+
+            e.Cancel = true;
+            try
+            {
+                cancellation.Cancel();
+            }
+            catch (ObjectDisposedException)
+            {
+                // The action ended while the key was pressed.
+            }
+        }
+
+        Console.CancelKeyPress += OnCancelKeyPress;
+        try
+        {
+            return action(cancellation.Token);
+        }
+        finally
+        {
+            Console.CancelKeyPress -= OnCancelKeyPress;
         }
     }
 

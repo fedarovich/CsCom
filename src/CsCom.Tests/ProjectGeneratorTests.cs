@@ -683,4 +683,24 @@ public sealed class ProjectGeneratorTests
         Assert.AreEqual("'1x' is not a valid MSBuild property name.", buildProperty.Message);
         Assert.IsEmpty(Directory.GetFileSystemEntries(output));
     }
+
+    [TestMethod]
+    public void AssemblyGeneratorDeletesTheOldTemporaryProjects()
+    {
+        // The projects that were kept or left behind are deleted by a later run, a week after they were created.
+        string root = TestEnvironment.CreateDirectory("temporary-projects");
+        string old = Path.Combine(root, "old");
+        string recent = Path.Combine(root, "recent");
+        Directory.CreateDirectory(Path.Combine(old, "obj"));
+        File.WriteAllText(Path.Combine(old, "obj", "project.assets.json"), "{}");
+        Directory.CreateDirectory(recent);
+        var now = DateTime.UtcNow;
+        Directory.SetCreationTimeUtc(old, now - AssemblyGenerator.TemporaryProjectLifetime - TimeSpan.FromHours(1));
+        Directory.SetCreationTimeUtc(recent, now - AssemblyGenerator.TemporaryProjectLifetime + TimeSpan.FromHours(1));
+
+        Assert.AreEqual(1, AssemblyGenerator.DeleteOldDirectories(root, now - AssemblyGenerator.TemporaryProjectLifetime));
+
+        CollectionAssert.AreEqual(new[] { recent }, Directory.GetDirectories(root));
+        Assert.AreEqual(0, AssemblyGenerator.DeleteOldDirectories(Path.Combine(root, "missing"), now));
+    }
 }

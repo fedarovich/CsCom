@@ -60,8 +60,10 @@ public sealed partial class AssemblyGenerator
     /// <summary>
     /// Generates and builds the interop assembly and copies it into the output directory.
     /// </summary>
+    /// <param name="request">The request.</param>
+    /// <param name="cancellationToken">Stops the build and deletes the temporary project when it is cancelled.</param>
     /// <returns>The paths of the copied files.</returns>
-    public IReadOnlyList<string> BuildAssembly(BuildAssemblyRequest request)
+    public IReadOnlyList<string> BuildAssembly(BuildAssemblyRequest request, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
         ValidateProperties(request);
@@ -69,6 +71,7 @@ public sealed partial class AssemblyGenerator
         // The CsCom.Runtime assembly is copied next to the interop assembly, so that both can be referenced directly.
         return RunInTemporaryProject(
             request,
+            cancellationToken,
             (_, manifest) => MergeProperties(
                 manifest.SupportCode == SupportCodeMode.Package ? [new("CopyLocalLockFileAssemblies", "true")] : [],
                 request),
@@ -77,7 +80,7 @@ public sealed partial class AssemblyGenerator
                 IReadOnlyList<string?> runtimes = manifest.RuntimeIdentifiers.Count > 0 ? [.. manifest.RuntimeIdentifiers] : [null];
                 foreach (string? runtime in runtimes)
                 {
-                    RunDotNet("build", projectPath, temp, request.Configuration, runtime);
+                    RunDotNet("build", projectPath, temp, request.Configuration, runtime, cancellationToken);
                 }
 
                 string output = Path.GetFullPath(request.OutputDirectory ?? Environment.CurrentDirectory);
@@ -96,8 +99,10 @@ public sealed partial class AssemblyGenerator
     /// framework, and the symbols package contains the PDBs. With <see cref="SupportCodeMode.Package"/>, the package depends on
     /// the CsCom.Runtime package.
     /// </remarks>
+    /// <param name="request">The request.</param>
+    /// <param name="cancellationToken">Stops the build and deletes the temporary project when it is cancelled.</param>
     /// <returns>The paths of the copied packages.</returns>
-    public IReadOnlyList<string> PackAssembly(PackAssemblyRequest request)
+    public IReadOnlyList<string> PackAssembly(PackAssemblyRequest request, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
         if (request.RuntimeIdentifiers.Count > 0)
@@ -113,11 +118,12 @@ public sealed partial class AssemblyGenerator
         ValidateProperties(request);
         return RunInTemporaryProject(
             request,
+            cancellationToken,
             (result, _) => GetPackageProperties(request, result),
             (manifest, temp, projectPath) =>
             {
                 string packages = Path.Combine(temp, "packages");
-                RunDotNet("pack", projectPath, temp, request.Configuration, runtime: null, "--output", packages);
+                RunDotNet("pack", projectPath, temp, request.Configuration, runtime: null, cancellationToken, "--output", packages);
 
                 string output = Path.GetFullPath(request.OutputDirectory ?? Environment.CurrentDirectory);
                 Directory.CreateDirectory(output);
@@ -178,46 +184,104 @@ public sealed partial class AssemblyGenerator
         return properties;
     }
 
-    // Generates the project in a temporary directory, runs the action and deletes the directory, unless the action failed or
-    // the temporary files are kept.
+    /// <summary>
+    /// The directory of the temporary projects, <c>cscom</c> in the temporary directory of the user by default.
+    /// </summary>
+    internal string TemporaryRoot { get; init; } = Path.Combine(Path.GetTempPath(), "cscom");
+
+    // Generates the project in a temporary directory, runs the action and deletes the directory. The project of a build that
+    // failed is kept, so that it can be examined, and so is any project when the temporary files are kept; a project that
+    // could not be written or whose build was cancelled is deleted.
     private IReadOnlyList<string> RunInTemporaryProject(
         AssemblyRequest request,
+        CancellationToken cancellationToken,
         Func<LibrarySetResult, CsComManifest, IReadOnlyDictionary<string, string>?> getProperties,
         Func<CsComManifest, string, string, IReadOnlyList<string>> action)
     {
         var generated = _projectGenerator.Generate(request);
         var manifest = generated.Manifest;
-        string temp = Path.Combine(Path.GetTempPath(), "cscom", Guid.NewGuid().ToString("N"));
+        cancellationToken.ThrowIfCancellationRequested();
 
-        Directory.CreateDirectory(temp);
-        File.WriteAllText(Path.Combine(temp, "Directory.Build.props"), IsolationBuildProps);
-        File.WriteAllText(Path.Combine(temp, "Directory.Build.targets"), IsolationProps);
-        File.WriteAllText(Path.Combine(temp, "Directory.Packages.props"), IsolationPackagesProps);
-        string projectPath = _projectGenerator.WriteProject(
-            temp, manifest, generated.Documents, generated.RootNamespace, request.PackageSource, request.GlobalPackagesFolder, getProperties(generated.Result, manifest));
+        // The projects that were kept, or left behind by a process that was stopped, do not accumulate.
+        int deleted = DeleteOldDirectories(TemporaryRoot, DateTime.UtcNow - TemporaryProjectLifetime);
+        if (deleted > 0)
+        {
+            LogOldProjectsDeleted(deleted, TemporaryRoot);
+        }
 
-        bool succeeded = false;
+        string temp = Path.Combine(TemporaryRoot, Guid.NewGuid().ToString("N"));
+        bool keep = request.KeepTemporaryFiles;
         try
         {
-            var files = action(manifest, temp, projectPath);
-            succeeded = true;
-            return files;
+            Directory.CreateDirectory(temp);
+            File.WriteAllText(Path.Combine(temp, "Directory.Build.props"), IsolationBuildProps);
+            File.WriteAllText(Path.Combine(temp, "Directory.Build.targets"), IsolationProps);
+            File.WriteAllText(Path.Combine(temp, "Directory.Packages.props"), IsolationPackagesProps);
+            string projectPath = _projectGenerator.WriteProject(
+                temp, manifest, generated.Documents, generated.RootNamespace, request.PackageSource, request.GlobalPackagesFolder, getProperties(generated.Result, manifest));
+
+            try
+            {
+                return action(manifest, temp, projectPath);
+            }
+            catch (Exception e) when (e is not OperationCanceledException)
+            {
+                keep = true;
+                throw;
+            }
         }
         finally
         {
-            if (succeeded && !request.KeepTemporaryFiles)
+            if (keep)
             {
-                TryDelete(temp);
+                LogTemporaryProjectKept(temp);
             }
             else
             {
-                LogTemporaryProjectKept(temp);
+                TryDelete(temp);
             }
         }
     }
 
+    /// <summary>How long the temporary projects that were not deleted are kept.</summary>
+    internal static readonly TimeSpan TemporaryProjectLifetime = TimeSpan.FromDays(7);
+
+    /// <summary>
+    /// Deletes the directories of <paramref name="root"/> that were created before <paramref name="createdBeforeUtc"/>. The
+    /// directories that cannot be deleted, e.g. because a file of them is open, are left for a later run.
+    /// </summary>
+    /// <returns>The number of the deleted directories.</returns>
+    internal static int DeleteOldDirectories(string root, DateTime createdBeforeUtc)
+    {
+        int deleted = 0;
+        try
+        {
+            foreach (var directory in new DirectoryInfo(root).EnumerateDirectories())
+            {
+                try
+                {
+                    if (directory.CreationTimeUtc < createdBeforeUtc)
+                    {
+                        directory.Delete(recursive: true);
+                        deleted++;
+                    }
+                }
+                catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+                {
+                }
+            }
+        }
+        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+        {
+            // The directory does not exist yet, or cannot be read.
+        }
+
+        return deleted;
+    }
+
     // Runs 'dotnet build' or 'dotnet pack' on the temporary project.
-    private void RunDotNet(string command, string projectPath, string workingDirectory, string configuration, string? runtime, params string[] extraArguments)
+    private void RunDotNet(
+        string command, string projectPath, string workingDirectory, string configuration, string? runtime, CancellationToken cancellationToken, params string[] extraArguments)
     {
         List<string> arguments = [command, projectPath, "--configuration", configuration, "-nodeReuse:false", "-p:UseSharedCompilation=false"];
         if (runtime is not null)
@@ -226,7 +290,7 @@ public sealed partial class AssemblyGenerator
         }
 
         arguments.AddRange(extraArguments);
-        var (exitCode, output) = DotNetCli.Run(arguments, workingDirectory, _logger);
+        var (exitCode, output) = DotNetCli.Run(arguments, workingDirectory, _logger, cancellationToken);
         if (exitCode != 0)
         {
             var errors = output.Where(static l => ErrorPattern().IsMatch(l)).Select(static l => l.Trim()).Distinct().ToList();
@@ -281,15 +345,30 @@ public sealed partial class AssemblyGenerator
         return files;
     }
 
+    // The processes of a build that was stopped can keep files open for a moment, so the deletion is tried a few times.
     private void TryDelete(string directory)
     {
-        try
+        for (int attempt = 1; ; attempt++)
         {
-            Directory.Delete(directory, recursive: true);
-        }
-        catch (Exception e) when (e is IOException or UnauthorizedAccessException)
-        {
-            LogDeleteFailed(directory, e.Message);
+            try
+            {
+                if (Directory.Exists(directory))
+                {
+                    Directory.Delete(directory, recursive: true);
+                }
+
+                return;
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+            {
+                if (attempt == 5)
+                {
+                    LogDeleteFailed(directory, e.Message);
+                    return;
+                }
+
+                Thread.Sleep(200);
+            }
         }
     }
 
@@ -330,6 +409,9 @@ public sealed partial class AssemblyGenerator
 
     [LoggerMessage(Level = LogLevel.Information, Message = "The temporary project is kept in '{Directory}'")]
     private partial void LogTemporaryProjectKept(string directory);
+
+    [LoggerMessage(Level = LogLevel.Debug, Message = "Deleted {Count} temporary projects of earlier runs from '{Directory}'")]
+    private partial void LogOldProjectsDeleted(int count, string directory);
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "Failed to delete the temporary directory '{Directory}': {Reason}")]
     private partial void LogDeleteFailed(string directory, string reason);

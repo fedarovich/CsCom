@@ -1459,6 +1459,58 @@ public sealed class IntegrationTests
     }
 
     [TestMethod]
+    public void BuildAssemblyStopsTheBuildAndDeletesTheProjectWhenCancelled()
+    {
+        // The build is cancelled when it starts, as Ctrl+C does: dotnet is stopped and nothing is left behind or copied.
+        string output = TestEnvironment.CreateDirectory("assembly-cancelled");
+        string temporary = TestEnvironment.CreateDirectory("assembly-cancelled-temp");
+        using var cancellation = new CancellationTokenSource();
+        using var loggerFactory = new Microsoft.Extensions.Logging.LoggerFactory([new CancellingLoggerProvider(cancellation)]);
+        var generator = new AssemblyGenerator(_pipeline, loggerFactory) { TemporaryRoot = temporary };
+        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+
+        Assert.Throws<OperationCanceledException>(() => generator.BuildAssembly(
+            new BuildAssemblyRequest
+            {
+                Sources = [TestEnvironment.TestTypeLibrary],
+                OutputDirectory = output,
+                TargetFrameworks = [TestEnvironment.TargetFramework],
+                PackageSource = TestEnvironment.LocalPackages,
+                GlobalPackagesFolder = TestEnvironment.GlobalPackagesFolder,
+            },
+            cancellation.Token));
+
+        Assert.IsTrue(cancellation.IsCancellationRequested, "The build did not start.");
+        Assert.IsEmpty(Directory.GetFileSystemEntries(temporary));
+        Assert.IsEmpty(Directory.GetFileSystemEntries(output));
+        Assert.IsTrue(stopwatch.Elapsed < TimeSpan.FromSeconds(30), $"The build was not stopped: {stopwatch.Elapsed}.");
+    }
+
+    // Cancels when dotnet is about to run.
+    private sealed class CancellingLoggerProvider(CancellationTokenSource cancellation) : Microsoft.Extensions.Logging.ILoggerProvider, Microsoft.Extensions.Logging.ILogger
+    {
+        public Microsoft.Extensions.Logging.ILogger CreateLogger(string categoryName) => this;
+
+        public IDisposable? BeginScope<TState>(TState state)
+            where TState : notnull => null;
+
+        public bool IsEnabled(Microsoft.Extensions.Logging.LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            Microsoft.Extensions.Logging.LogLevel logLevel, Microsoft.Extensions.Logging.EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
+        {
+            if (formatter(state, exception).StartsWith("Running dotnet", StringComparison.Ordinal))
+            {
+                cancellation.Cancel();
+            }
+        }
+
+        public void Dispose()
+        {
+        }
+    }
+
+    [TestMethod]
     public void BuildAssemblyUsesFlatLayoutForSingleTarget()
     {
         string output = TestEnvironment.CreateDirectory("assembly-flat");

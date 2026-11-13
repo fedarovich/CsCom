@@ -16,8 +16,11 @@ internal static partial class DotNetCli
     /// Runs <c>dotnet</c> with the arguments and logs its output.
     /// </summary>
     /// <returns>The exit code and the output lines.</returns>
-    public static (int ExitCode, IReadOnlyList<string> Output) Run(IReadOnlyList<string> arguments, string workingDirectory, ILogger logger)
+    /// <exception cref="OperationCanceledException">The token was cancelled; the process and its child processes are stopped.</exception>
+    public static (int ExitCode, IReadOnlyList<string> Output) Run(
+        IReadOnlyList<string> arguments, string workingDirectory, ILogger logger, CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         var startInfo = new ProcessStartInfo(GetDotNetPath())
         {
             WorkingDirectory = workingDirectory,
@@ -75,8 +78,28 @@ internal static partial class DotNetCli
 
         process.BeginOutputReadLine();
         process.BeginErrorReadLine();
-        process.WaitForExit();
+
+        // A cancelled build is stopped with the compilers and the other processes that it started, which would otherwise
+        // keep the files of the project open.
+        using (cancellationToken.Register(() => Kill(process)))
+        {
+            process.WaitForExit();
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
         return (process.ExitCode, output);
+    }
+
+    private static void Kill(Process process)
+    {
+        try
+        {
+            process.Kill(entireProcessTree: true);
+        }
+        catch (Exception e) when (e is InvalidOperationException or System.ComponentModel.Win32Exception or AggregateException)
+        {
+            // The process has exited, or a child process cannot be stopped.
+        }
     }
 
     private static string GetDotNetPath() =>

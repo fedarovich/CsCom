@@ -13,6 +13,13 @@ same version. The versions up to 2.0.0 are not described here.
   since the value follows them.
 - **Late-bound calls:** the `COMException` of an error that only has a 16-bit code (`wCode`), as Basic raises them, has the
   `HRESULT` that Visual Basic gives it, e.g. `0x800A000B` for the error 11; it was `0x8004000B`.
+- **`assembly build` and `assembly pack`:** Ctrl+C stops the build with the processes that it started and deletes the
+  temporary project, which was left behind. The temporary projects that are kept (`--keep-temp`, or a build that failed)
+  are deleted by a run of these commands a week later.
+
+### Added
+
+- `AssemblyGenerator.BuildAssembly` and `PackAssembly` take a `CancellationToken`.
 
 ### Fixed
 
