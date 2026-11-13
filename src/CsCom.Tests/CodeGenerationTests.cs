@@ -749,6 +749,44 @@ public sealed class CodeGenerationTests : VerifyBase
     }
 
     [TestMethod]
+    public void DefaultValuesThatDoNotFitTheirTypeAreNotGenerated()
+    {
+        // A type library can store the default value of a long or of an enum as an unsigned number with the same bits; a
+        // value that does not fit the type has no C# constant, so the parameter is required.
+        var @long = new PrimitiveTypeReference(System.Runtime.InteropServices.VarEnum.VT_I4);
+        var @short = new PrimitiveTypeReference(System.Runtime.InteropServices.VarEnum.VT_I2);
+        var color = new EnumDefinition { Name = "Color", OriginalName = "Color" };
+        ParameterDefinition Optional(string name, TypeReference type, object value) =>
+            new() { Name = name, Type = type, Flags = ParameterFlags.In | ParameterFlags.Optional | ParameterFlags.HasDefault, DefaultValue = value };
+        MethodDefinition With(string name, int slot, ParameterDefinition parameter)
+        {
+            var method = Method(name, slot);
+            method.Parameters.Add(parameter);
+            return method;
+        }
+
+        var @interface = new InterfaceDefinition { Name = "IDefaults", OriginalName = "IDefaults", Guid = Guid.NewGuid(), BaseVtableSlots = 3 };
+        @interface.Methods.AddRange(
+        [
+            With("Bits", 3, Optional("value", @long, 0xFFFFFFFFu)),
+            With("Large", 4, Optional("value", @long, 5_000_000_000L)),
+            With("Small", 5, Optional("value", @short, 70000)),
+            With("Flag", 6, Optional("value", new UserDefinedTypeReference(color), 0x80000000u)),
+            With("Huge", 7, Optional("value", new UserDefinedTypeReference(color), 5_000_000_000L)),
+        ]);
+        var library = new TypeLibrary { Name = "Synthetic" };
+        library.Types.AddRange([color, @interface]);
+
+        string text = new InteropPipeline().GenerateCode(library, new CodeGenerationOptions { Namespace = "Test" }).Single(static d => d.RelativePath == "IDefaults.cs").GetText();
+
+        StringAssert.Contains(text, "void Bits(int value = -1);");
+        StringAssert.Contains(text, "void Large(int value);");
+        StringAssert.Contains(text, "void Small(short value);");
+        StringAssert.Contains(text, "void Flag(Color value = (Color)(-2147483648));");
+        StringAssert.Contains(text, "void Huge(Color value);");
+    }
+
+    [TestMethod]
     public void InterfacesWithoutAGuidAreReplacedByIUnknown()
     {
         // An interface of a library block without the uuid attribute cannot be generated: the pointers to it are IUnknown

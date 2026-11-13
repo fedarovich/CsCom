@@ -606,7 +606,11 @@ internal sealed partial class SignatureBuilder
 
             if (type is UserDefinedTypeReference { Definition: EnumDefinition enumDefinition })
             {
-                long number = System.Convert.ToInt64(value, CultureInfo.InvariantCulture);
+                if (ToInt32(value) is not { } number)
+                {
+                    return null;
+                }
+
                 string name = _context.GetTypeName(enumDefinition, _namespace);
                 return number < 0 ? $"({name})({number.ToString(CultureInfo.InvariantCulture)})" : $"({name}){number.ToString(CultureInfo.InvariantCulture)}";
             }
@@ -615,8 +619,14 @@ internal sealed partial class SignatureBuilder
             {
                 "bool" => value is bool b ? (b ? "true" : "false") : System.Convert.ToInt64(value, CultureInfo.InvariantCulture) != 0 ? "true" : "false",
                 "string?" or "string" => value is string s ? Syntax.Literal(s) : null,
-                "sbyte" or "short" or "int" or "long" => System.Convert.ToInt64(value, CultureInfo.InvariantCulture).ToString(CultureInfo.InvariantCulture),
-                "byte" or "ushort" or "uint" or "ulong" => System.Convert.ToUInt64(value, CultureInfo.InvariantCulture).ToString(CultureInfo.InvariantCulture),
+                "sbyte" => System.Convert.ToSByte(value, CultureInfo.InvariantCulture).ToString(CultureInfo.InvariantCulture),
+                "short" => System.Convert.ToInt16(value, CultureInfo.InvariantCulture).ToString(CultureInfo.InvariantCulture),
+                "int" => ToInt32(value)?.ToString(CultureInfo.InvariantCulture),
+                "long" => System.Convert.ToInt64(value, CultureInfo.InvariantCulture).ToString(CultureInfo.InvariantCulture),
+                "byte" => System.Convert.ToByte(value, CultureInfo.InvariantCulture).ToString(CultureInfo.InvariantCulture),
+                "ushort" => System.Convert.ToUInt16(value, CultureInfo.InvariantCulture).ToString(CultureInfo.InvariantCulture),
+                "uint" => System.Convert.ToUInt32(value, CultureInfo.InvariantCulture).ToString(CultureInfo.InvariantCulture),
+                "ulong" => System.Convert.ToUInt64(value, CultureInfo.InvariantCulture).ToString(CultureInfo.InvariantCulture),
                 // Type libraries often store double constants as VT_R4; format them with the float precision.
                 "float" => FormatFloating(System.Convert.ToSingle(value, CultureInfo.InvariantCulture), "F"),
                 "double" when value is float single => FormatFloating(single, "D"),
@@ -633,6 +643,16 @@ internal sealed partial class SignatureBuilder
         static bool IsTrue(object value) => value is bool b ? b : System.Convert.ToInt64(value, CultureInfo.InvariantCulture) != 0;
 
         static decimal ToDecimal(object value) => System.Convert.ToDecimal(value, CultureInfo.InvariantCulture);
+
+        // A 32-bit value: a type library can store the default of a long or of an enum as an unsigned number, e.g.
+        // 0xFFFFFFFF for -1, which has the same bits. Other values do not fit and have no constant.
+        static int? ToInt32(object value)
+        {
+            long number = System.Convert.ToInt64(value, CultureInfo.InvariantCulture);
+            return number is >= int.MinValue and <= int.MaxValue ? (int)number
+                : number is > int.MaxValue and <= uint.MaxValue ? unchecked((int)(uint)number)
+                : null;
+        }
 
         static bool IsDefault(VarEnum vt, object value) => vt switch
         {
