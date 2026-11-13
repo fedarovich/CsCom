@@ -16,6 +16,13 @@ same version. The versions up to 2.0.0 are not described here.
   `0x800A0000`.
 - The class of the marshallers of the arrays with a known rank, `CsComSafeArrayMarshallers`, could have the name of a type
   of the library; it gets a trailing underscore then, like the other generated types.
+- An interface that derives from an interface without methods whose own base interface has no GUID got no placeholders for
+  the vtable slots of that base, so its methods were called at the wrong slots.
+- **`assembly build` and `assembly pack`:** since 3.0.0-rc.1, `dotnet` was taken from `DOTNET_ROOT` before the directories
+  of `PATH`, which fails when `DOTNET_ROOT` is an installation without the SDK; `PATH` comes first again. Ctrl+C had no
+  visible effect while the code was generated; a second Ctrl+C now ends the tool at once.
+- `DispatchObject.InvokeByRef` and `InvokeMethodByRef` without the types of the arguments failed with an
+  `IndexOutOfRangeException` when the object rejected an argument with a type mismatch; the `COMException` is thrown again.
 
 ## 3.0.0-rc.1 - 2026-11-13
 

@@ -120,8 +120,8 @@ the assemblies, PDBs and XML documentation (and `CsCom.Runtime.dll`) to the outp
 most one runtime identifier, the files are copied directly into the output directory; otherwise into `<TFM>\<RID>` subfolders.
 `--property` sets MSBuild properties of the project and overrides the ones CsCom sets, e.g. the assembly version (`Version=1.2.3`)
 or a strong name (`SignAssembly=true` and `AssemblyOriginatorKeyFile=<full path>`; relative paths are relative to the temporary
-project). Ctrl+C stops the build and deletes the temporary project; the project of a build that fails is kept, and its path is
-reported.
+project). Ctrl+C stops the build and deletes the temporary project, once the code is generated; a second Ctrl+C ends the tool
+at once. The project of a build that fails is kept, and its path is reported.
 
 `assembly pack` generates the same project and packs it with `dotnet pack` into `<Name>.<Version>.nupkg`, with the assembly and its
 XML documentation in `lib/<TFM>` for each target framework, and `<Name>.<Version>.snupkg` with the PDBs. The package is RID-neutral,
@@ -514,7 +514,10 @@ A pointer parameter is passed by reference, and how depends on how the member is
   - **`SAFEARRAY`s:** the array is first passed as a reference to a `VARIANT`, in which Visual Basic and script servers store
     an array of `VARIANT`s whatever element type the type library declares. When the object rejects that argument with a type
     mismatch, the call is repeated with a reference to the `SAFEARRAY` of the declared type, e.g. `VT_BYREF | VT_ARRAY | VT_I4`.
-    The elements that come back are converted to the element type of the parameter.
+    The elements that come back are converted to the element type of the parameter. The second call needs an array whose
+    element type is exactly the declared one: an `int[]` is a `SAFEARRAY` of `VT_I4`, so it is not passed that way to a
+    parameter declared as `SAFEARRAY(int)` (`VT_INT`) or `SAFEARRAY(unsigned int)`, and neither is an `object[]` to one
+    declared as an array of `IDispatch*` or `IUnknown*`. Such a call fails with the type mismatch of the first one.
   - **`out` arguments** start as a zero or a null pointer of the type of the parameter. A value that cannot be converted to
     that type is passed as a reference to a `VARIANT`.
   - **Properties:** an accessor with by-reference parameters is a `get_X`, `set_X` or `putref_X` method of the wrapper, which
