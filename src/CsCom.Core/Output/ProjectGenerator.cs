@@ -48,6 +48,7 @@ public sealed partial class ProjectGenerator
         ThrowIfProjectExists(directory);
         var manifest = generated.Manifest with
         {
+            Sources = ToRecordedSources(directory, generated.Manifest.Sources),
             Configurations = ToRelativePaths(directory, generated.Manifest.Configurations),
             ReferencePaths = ToRelativePaths(directory, generated.Manifest.ReferencePaths),
         };
@@ -66,7 +67,7 @@ public sealed partial class ProjectGenerator
 
         string directory = Path.GetFullPath(request.ProjectDirectory ?? Environment.CurrentDirectory);
         var manifest = CsComManifest.Read(directory);
-        var sources = request.Sources is { Count: > 0 } requested ? requested : manifest.GetSources();
+        var sources = request.Sources is { Count: > 0 } requested ? requested : [.. manifest.GetSources().Select(source => ResolveRecordedSource(directory, source))];
         if (sources.Count == 0)
         {
             throw new CsComException($"'{Path.Combine(directory, CsComManifest.FileName)}' does not record the sources of the project.");
@@ -130,6 +131,7 @@ public sealed partial class ProjectGenerator
 
         var updated = generated.Manifest with
         {
+            Sources = ToRecordedSources(directory, generated.Manifest.Sources),
             Configurations = ToRelativePaths(directory, generated.Manifest.Configurations),
             ReferencePaths = ToRelativePaths(directory, referencePaths),
         };
@@ -401,6 +403,28 @@ public sealed partial class ProjectGenerator
     }
 
     // The paths recorded in cscom.json are relative to the project directory.
+    // The files of the project directory are recorded by their relative paths, so that the project can be updated from
+    // another copy of the directory, e.g. another clone of its repository. The other files keep their full paths, and
+    // LIBIDs and ProgIDs are recorded as they are.
+    private static List<string> ToRecordedSources(string directory, IReadOnlyList<string> sources)
+    {
+        string root = Path.TrimEndingDirectorySeparator(directory) + Path.DirectorySeparatorChar;
+        return [.. sources.Select(source =>
+            Path.IsPathFullyQualified(source) && source.StartsWith(root, StringComparison.OrdinalIgnoreCase) ? Path.GetRelativePath(directory, source) : source)];
+    }
+
+    // The full path of a file recorded by its path in the project directory; other sources as they are.
+    private static string ResolveRecordedSource(string directory, string source)
+    {
+        if (Path.IsPathFullyQualified(source))
+        {
+            return source;
+        }
+
+        string path = Path.Combine(directory, source);
+        return File.Exists(TypeLibrarySource.GetFilePath(path)) ? Path.GetFullPath(path) : source;
+    }
+
     private static List<string>? ToRelativePaths(string directory, IReadOnlyList<string>? paths) =>
         paths?.Select(path => Path.GetRelativePath(directory, path)).ToList();
 

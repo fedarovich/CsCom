@@ -109,7 +109,8 @@ the sources and the options recorded in `cscom.json`; `Source` arguments replace
 `--config`, which change the recorded values of the libraries they name (`LIBRARY=` removes one, and `--config ""` removes all the
 configuration files), `--csharp-version`, `--single-file [true|false]`, the marshalling options, `--event-style`, `--struct-properties`,
 `--overloads-for-default-values [true|false]`, `--named-indexers`, `--dynamic [true|false]` and `--reference-path` (an empty value removes the paths) to change them. Code outside of
-the `Generated` folder, e.g. partial classes, is not touched. In the project file, the update sets the versions of the CsCom.Runtime
+the `Generated` folder, e.g. partial classes, is not touched. `cscom.json` records the type libraries and interop assemblies of the
+project directory by their relative paths, so the project can be updated from another clone. In the project file, the update sets the versions of the CsCom.Runtime
 packages, and `LangVersion` only with `--csharp-version`; the rest of the file keeps its text and its encoding.
 
 `assembly build` generates the project in a temporary directory, builds it with `dotnet build` once per runtime identifier and copies

@@ -43,6 +43,30 @@ public sealed class ProjectGeneratorTests
     }
 
     [TestMethod]
+    public void RecordsTheSourcesOfTheProjectDirectoryByTheirRelativePaths()
+    {
+        // The project can then be updated from another copy of the directory, e.g. another clone of its repository.
+        string parent = TestEnvironment.CreateDirectory("relative-sources");
+        string directory = Path.Combine(parent, "Project");
+        Directory.CreateDirectory(Path.Combine(directory, "libs"));
+        string library = Path.Combine(directory, "libs", "CsComTest.tlb");
+        File.Copy(TestEnvironment.TestTypeLibrary, library);
+
+        _generator.CreateProject(new CreateProjectRequest { Sources = [library, "Scripting.Dictionary"], OutputDirectory = directory, Name = "Interop.Mixed" });
+
+        CollectionAssert.AreEqual(new[] { @"libs\CsComTest.tlb", "Scripting.Dictionary" }, CsComManifest.Read(directory).Sources.ToArray());
+
+        string moved = Path.Combine(parent, "Moved");
+        Directory.Move(directory, moved);
+        File.Delete(Path.Combine(moved, "Generated", "Interop.CsComTest", "IShape.cs"));
+
+        _generator.UpdateProject(new UpdateProjectRequest { ProjectDirectory = moved });
+
+        Assert.IsTrue(File.Exists(Path.Combine(moved, "Generated", "Interop.CsComTest", "IShape.cs")));
+        CollectionAssert.AreEqual(new[] { @"libs\CsComTest.tlb", "Scripting.Dictionary" }, CsComManifest.Read(moved).Sources.ToArray());
+    }
+
+    [TestMethod]
     public void EmptyValuesAreIgnoredOrRejected()
     {
         // An empty configuration file removes the one of a library on update; a new project has none.
