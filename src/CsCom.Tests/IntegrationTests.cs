@@ -16,6 +16,12 @@ public sealed class IntegrationTests
 {
     private readonly InteropPipeline _pipeline = new();
 
+    // The temporary projects of the assemblies are created in a directory of the test run, which the tests clean up,
+    // rather than in the directory of the tool, where the project of a build that fails is kept.
+    private static readonly string TemporaryProjects = TestEnvironment.CreateDirectory("assembly-projects");
+
+    private AssemblyGenerator CreateAssemblyGenerator() => new(_pipeline) { TemporaryRoot = TemporaryProjects };
+
     [TestMethod]
     [DataRow(SupportCodeMode.Package, false, "default", EventStyle.Events, StructProperties.Auto)]
     [DataRow(SupportCodeMode.Public, false, "default", EventStyle.Events, StructProperties.Auto)]
@@ -1437,7 +1443,7 @@ public sealed class IntegrationTests
     {
         string output = TestEnvironment.CreateDirectory("assembly");
 
-        var files = new AssemblyGenerator(_pipeline).BuildAssembly(new BuildAssemblyRequest
+        var files = CreateAssemblyGenerator().BuildAssembly(new BuildAssemblyRequest
         {
             Sources = [TestEnvironment.TestTypeLibrary],
             OutputDirectory = output,
@@ -1515,7 +1521,7 @@ public sealed class IntegrationTests
     {
         string output = TestEnvironment.CreateDirectory("assembly-flat");
 
-        new AssemblyGenerator(_pipeline).BuildAssembly(new BuildAssemblyRequest
+        CreateAssemblyGenerator().BuildAssembly(new BuildAssemblyRequest
         {
             Sources = [TestEnvironment.TestTypeLibrary],
             OutputDirectory = output,
@@ -1540,7 +1546,7 @@ public sealed class IntegrationTests
     {
         string output = TestEnvironment.CreateDirectory("pack");
 
-        var files = new AssemblyGenerator(_pipeline).PackAssembly(new PackAssemblyRequest
+        var files = CreateAssemblyGenerator().PackAssembly(new PackAssemblyRequest
         {
             Sources = [TestEnvironment.TestTypeLibrary],
             OutputDirectory = output,
@@ -1578,7 +1584,7 @@ public sealed class IntegrationTests
     {
         string output = TestEnvironment.CreateDirectory("pack-default");
 
-        var files = new AssemblyGenerator(_pipeline).PackAssembly(new PackAssemblyRequest
+        var files = CreateAssemblyGenerator().PackAssembly(new PackAssemblyRequest
         {
             Sources = [TestEnvironment.TestTypeLibrary],
             OutputDirectory = output,
@@ -1605,8 +1611,8 @@ public sealed class IntegrationTests
             SupportCode = SupportCodeMode.Internal,
         };
 
-        var exception = Assert.ThrowsExactly<CsComException>(() => new AssemblyGenerator(_pipeline).PackAssembly(request));
-        var files = new AssemblyGenerator(_pipeline).PackAssembly(new PackAssemblyRequest
+        var exception = Assert.ThrowsExactly<CsComException>(() => CreateAssemblyGenerator().PackAssembly(request));
+        var files = CreateAssemblyGenerator().PackAssembly(new PackAssemblyRequest
         {
             Sources = request.Sources,
             OutputDirectory = output,
@@ -1626,7 +1632,7 @@ public sealed class IntegrationTests
     {
         string output = TestEnvironment.CreateDirectory("pack-multi-target");
 
-        var files = new AssemblyGenerator(_pipeline).PackAssembly(new PackAssemblyRequest
+        var files = CreateAssemblyGenerator().PackAssembly(new PackAssemblyRequest
         {
             Sources = [TestEnvironment.TestTypeLibrary],
             OutputDirectory = output,
