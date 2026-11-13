@@ -933,6 +933,38 @@ public sealed class CodeGenerationTests : VerifyBase
     }
 
     [TestMethod]
+    public void PlaceholdersFollowAnEmptyInterfaceWhoseBaseHasNoGuid()
+    {
+        // IMiddle has no methods, so it gets no placeholders for the slots of IHidden, which is not generated: the generated
+        // IMiddle only has the slots of IUnknown, and the interface that derives from it gets the placeholders.
+        var hidden = new InterfaceDefinition { Name = "IHidden", OriginalName = "IHidden", BaseVtableSlots = 3 };
+        hidden.Methods.AddRange([Method("First", 3), Method("Second", 4)]);
+        var middle = new InterfaceDefinition
+        {
+            Name = "IMiddle", OriginalName = "IMiddle", Guid = Guid.NewGuid(), BaseInterface = new UserDefinedTypeReference(hidden), BaseVtableSlots = 5,
+        };
+        var derived = new InterfaceDefinition
+        {
+            Name = "IDerived", OriginalName = "IDerived", Guid = Guid.NewGuid(), BaseInterface = new UserDefinedTypeReference(middle), BaseVtableSlots = 5,
+        };
+        derived.Methods.Add(Method("Use", 5));
+        var library = new TypeLibrary { Name = "Synthetic" };
+        library.Types.AddRange([hidden, middle, derived]);
+
+        var documents = new InteropPipeline().GenerateCode(library, new CodeGenerationOptions { Namespace = "Test" });
+
+        string middleText = documents.Single(static d => d.RelativePath == "IMiddle.cs").GetText();
+        string derivedText = documents.Single(static d => d.RelativePath == "IDerived.cs").GetText();
+        Assert.IsFalse(middleText.Contains("_VtblGap", StringComparison.Ordinal), middleText);
+        StringAssert.Contains(derivedText, "public unsafe partial interface IDerived : IMiddle");
+        Assert.IsTrue(
+            derivedText.IndexOf("int _VtblGap3();", StringComparison.Ordinal) is var first and >= 0
+            && derivedText.IndexOf("int _VtblGap4();", StringComparison.Ordinal) is var second && second > first
+            && derivedText.IndexOf("void Use();", StringComparison.Ordinal) > second,
+            derivedText);
+    }
+
+    [TestMethod]
     public void InterfacesDerivedFromIEnumVariantHaveItAsTheBase()
     {
         // The methods follow those of IEnumVARIANT in the vtable, so the interface derives from it.

@@ -118,8 +118,11 @@ internal sealed partial class InterfaceEmitter
             null => 3,
             PrimitiveTypeReference { VarType: VarEnum.VT_DISPATCH } or WellKnownTypeReference { Type: WellKnownType.IEnumVariant } => 7,
             UserDefinedTypeReference { Definition: InterfaceDefinition { InterfaceKind: InterfaceKind.Dispatch } } => 7,
+            // A base interface without methods has no placeholders, so it only covers the slots that its own generated base
+            // interfaces cover, which are fewer than its base slots when one of them was skipped.
+            UserDefinedTypeReference { Definition: InterfaceDefinition { Methods.Count: 0 } @base } => GetFirstSlot(@base),
             UserDefinedTypeReference { Definition: InterfaceDefinition @base } when @base.Methods.All(static m => m.VtableSlot >= 0) =>
-                Math.Max(@base.BaseVtableSlots, @base.Methods.Select(static m => m.VtableSlot + 1).DefaultIfEmpty(0).Max()),
+                Math.Max(@base.BaseVtableSlots, @base.Methods.Select(static m => m.VtableSlot + 1).Max()),
             _ => definition.BaseVtableSlots,
         };
 
