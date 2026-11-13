@@ -295,6 +295,37 @@ public sealed unsafe class EventRuntimeTests
     }
 
     [TestMethod]
+    public void InvokeHandlerDoesNotReadTheResultVariableOfTheCaller()
+    {
+        // The result is an [out] parameter, so the caller may pass a variable that is not initialized. Clearing a VARIANT
+        // with this invalid type fails; one with a pointer in it would free memory that is not allocated.
+        var parameters = new DispParams();
+        var handler = new TestHandler();
+        ComVariant result;
+        new Span<byte>(&result, sizeof(ComVariant)).Fill(0);
+        *(ushort*)&result = 0xFF;
+
+        Assert.AreEqual(0, DispatchEventSink.InvokeHandler(handler, 4, &parameters, &result, null));
+        try
+        {
+            Assert.AreEqual("done", result.As<string>());
+        }
+        finally
+        {
+            result.Dispose();
+        }
+
+        // An event without a result returns an empty VARIANT, and so does a handler that fails after it set the result.
+        *(ushort*)&result = 0xFF;
+        Assert.AreEqual(0, DispatchEventSink.InvokeHandler(handler, 1, &parameters, &result, null));
+        Assert.AreEqual(VarEnum.VT_EMPTY, result.VarType);
+
+        *(ushort*)&result = 0xFF;
+        Assert.AreEqual(new InvalidOperationException().HResult, DispatchEventSink.InvokeHandler(handler, 5, &parameters, &result, null));
+        Assert.AreEqual(VarEnum.VT_EMPTY, result.VarType);
+    }
+
+    [TestMethod]
     public void EventSubjectPushesValuesToTheSubscribersInOrder()
     {
         var subject = new EventSubject<int>();
@@ -364,8 +395,16 @@ public sealed unsafe class EventRuntimeTests
             {
                 1 => true,
                 3 => throw new InvalidOperationException("boom"),
+                4 => SetResult(arguments, "done"),
+                5 => SetResult(arguments, "lost") ? throw new InvalidOperationException("boom") : false,
                 _ => false,
             };
+        }
+
+        private static bool SetResult(EventArguments arguments, string value)
+        {
+            arguments.SetResult(value);
+            return true;
         }
     }
 

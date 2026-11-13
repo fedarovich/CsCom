@@ -24,6 +24,9 @@ same version. The versions up to 2.0.0 are not described here.
   with `UnmanagedType.Struct`, which TlbImp writes, stays a `VARIANT`.
 - **CsCom.Build:** the generated files of a project whose path has a `%` followed by two hexadecimal digits, e.g. in a
   folder named `My%20Project`, were passed to the compiler with the wrong paths.
+- An event sink cleared the result variable of the source before it set the result of an event, which fails or frees memory
+  that is not allocated when the source did not initialize the variable. The sinks initialize it now, and a handler that
+  fails leaves no result behind.
 
 ## 3.0.0-beta.2 - 2026-11-12
 

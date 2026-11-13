@@ -35,12 +35,26 @@ public sealed unsafe partial class DispatchEventSink : IDispatch, ICustomQueryIn
     public static int InvokeHandler(IDispatchEventHandler handler, int dispId, DispParams* parameters, ComVariant* result, ExcepInfo* excepInfo)
     {
         ArgumentNullException.ThrowIfNull(handler);
+
+        // The result is an [out] parameter, so the variable of the caller may not be initialized: it is not read or cleared.
+        if (result is not null)
+        {
+            *result = default;
+        }
+
         try
         {
             return handler.Invoke(dispId, new EventArguments(parameters, result)) ? OleNativeMethods.S_OK : OleNativeMethods.DISP_E_MEMBERNOTFOUND;
         }
         catch (Exception e)
         {
+            // A failed invocation has no result, and the caller does not release one.
+            if (result is not null)
+            {
+                result->Dispose();
+                *result = default;
+            }
+
             if (excepInfo is null)
             {
                 return e.HResult;

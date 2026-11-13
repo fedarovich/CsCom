@@ -35,7 +35,11 @@ public readonly unsafe ref struct EventArguments
     /// Initializes a new instance of the <see cref="EventArguments"/> structure.
     /// </summary>
     /// <param name="parameters">The arguments; can be <see langword="null"/>.</param>
-    /// <param name="result">The variable that receives the result; <see langword="null"/> if the caller expects none.</param>
+    /// <param name="result">
+    /// The variable that receives the result; <see langword="null"/> if the caller expects none. It must be initialized,
+    /// since <see cref="SetResult"/> clears its value; <see cref="DispatchEventSink.InvokeHandler"/> initializes the variable
+    /// of the caller of <c>IDispatch::Invoke</c>, which may not be.
+    /// </param>
     public EventArguments(DispParams* parameters, ComVariant* result)
     {
         _parameters = parameters;
