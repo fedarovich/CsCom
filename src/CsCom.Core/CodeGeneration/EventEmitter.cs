@@ -110,6 +110,7 @@ internal sealed partial class EventEmitter
         // The sink implements the methods of the base interfaces as well.
         var hierarchy = new List<InterfaceDefinition>();
         bool isDual = false;
+        bool isEnumerator = false;
         for (InterfaceDefinition? current = definition; current is not null;)
         {
             hierarchy.Insert(0, current);
@@ -120,6 +121,11 @@ internal sealed partial class EventEmitter
                     break;
                 case UserDefinedTypeReference or PrimitiveTypeReference { VarType: VarEnum.VT_DISPATCH }:
                     isDual = true;
+                    current = null;
+                    break;
+                case WellKnownTypeReference { Type: WellKnownType.IEnumVariant }:
+                    // The generated interface derives from IEnumVARIANT, like its vtable.
+                    isEnumerator = true;
                     current = null;
                     break;
                 default:
@@ -152,7 +158,7 @@ internal sealed partial class EventEmitter
         }
 
         var gaps = hierarchy.SelectMany(InterfaceEmitter.GetVtableGaps).ToList();
-        return new Source(definition, guid, AssignNames(definition, events), gaps, IsDispatch: false, IsDual: isDual);
+        return new Source(definition, guid, AssignNames(definition, events), gaps, IsDispatch: false, IsDual: isDual) { IsEnumerator = isEnumerator };
     }
 
     // Makes the names of the handler methods unique and keeps the events from hiding the members of the sink class. The fields of
@@ -499,6 +505,17 @@ internal sealed partial class EventEmitter
                 $"{support}.DispatchEventSink.InvokeHandler(__dispatch, dispIdMember, pDispParams, pVarResult, pExcepInfo);"));
         }
 
+        if (source.IsEnumerator)
+        {
+            // An event source does not enumerate its sink, so the inherited methods of IEnumVARIANT are not implemented.
+            string enumerator = $"{support}.IEnumVARIANT";
+            members.Add(Syntax.Member(
+                $"int {enumerator}.Next(uint celt, {Syntax.MarshallingNamespace}.ComVariant* rgVar, uint* pCeltFetched) {{ if (pCeltFetched != null) {{ *pCeltFetched = 0; }} return {NotImplemented}; }}"));
+            members.Add(Syntax.Member($"int {enumerator}.Skip(uint celt) => {NotImplemented};"));
+            members.Add(Syntax.Member($"int {enumerator}.Reset() => {NotImplemented};"));
+            members.Add(Syntax.Member($"int {enumerator}.Clone(out {enumerator}? ppEnum) {{ ppEnum = null; return {NotImplemented}; }}"));
+        }
+
         var modifiers = new List<SyntaxKind> { SyntaxKind.PrivateKeyword, SyntaxKind.SealedKeyword };
         if (source.IsDual || source.IsUnsafe)
         {
@@ -607,7 +624,10 @@ internal sealed partial class EventEmitter
 
         public string SinkName => Definition.Name + "Sink";
 
-        public bool IsUnsafe => Events.Any(static e => e.HasPointers);
+        /// <summary>Whether the interface derives from <c>IEnumVARIANT</c>, whose methods the sink has to implement too.</summary>
+        public bool IsEnumerator { get; init; }
+
+        public bool IsUnsafe => IsEnumerator || Events.Any(static e => e.HasPointers);
 
         public string DelegateName(Event @event) => $"{Definition.Name}_{@event.Name}EventHandler";
 

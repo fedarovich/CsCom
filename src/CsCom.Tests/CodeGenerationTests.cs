@@ -855,6 +855,41 @@ public sealed class CodeGenerationTests : VerifyBase
         Assert.IsFalse(text.Contains("_VtblGap", StringComparison.Ordinal));
     }
 
+    [TestMethod]
+    [DataRow(EventStyle.Events)]
+    [DataRow(EventStyle.Observable)]
+    [DataRow(EventStyle.Interface)]
+    public void EventSinksImplementTheMethodsOfIEnumVariant(EventStyle style)
+    {
+        // The interface of a source that derives from IEnumVARIANT derives from it, so the sink has to implement its
+        // methods. The generated code is compiled to prove that it does.
+        var events = new InterfaceDefinition
+        {
+            Name = "IEnumEvents",
+            OriginalName = "IEnumEvents",
+            Guid = Guid.NewGuid(),
+            BaseInterface = new WellKnownTypeReference(WellKnownType.IEnumVariant),
+            BaseVtableSlots = 7,
+        };
+        events.Methods.Add(Method("Changed", 7));
+
+        var list = new CoClassDefinition { Name = "List", OriginalName = "List", Guid = Guid.NewGuid() };
+        list.Interfaces.Add(new CoClassInterface(new UserDefinedTypeReference(events), IsDefault: true, IsSource: true, IsRestricted: false));
+        var library = new TypeLibrary { Name = "Synthetic" };
+        library.Types.AddRange([events, list]);
+
+        string text = new InteropPipeline()
+            .GenerateCode(library, new CodeGenerationOptions { Namespace = "Test", EventStyle = style, SingleFile = true, SingleFileName = "Test.cs" })
+            .Single()
+            .GetText();
+
+        StringAssert.Contains(text, "int global::CsCom.Runtime.IEnumVARIANT.Reset()");
+        Assert.IsFalse(text.Contains("_VtblGap", StringComparison.Ordinal));
+
+        using var runtime = new MemoryStream(File.ReadAllBytes(typeof(CsCom.Runtime.DispatchObject).Assembly.Location));
+        TestCompiler.Compile("EnumeratorEvents", text, reference: runtime);
+    }
+
     private static MethodDefinition Method(string name, int slot, InvokeKind kind = InvokeKind.Method, int? memberId = null) => new()
     {
         Name = name,

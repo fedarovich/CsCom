@@ -56,6 +56,8 @@ same version. The versions up to 2.0.0 are not described here.
   method.
 - A `SAFEARRAY` whose number of elements does not fit a .NET array is rejected; the number was computed without a check.
 - Setting a `VARIANT` element of a `SAFEARRAY` whose old value cannot be cleared leaked the new value.
+- The event sink of a source interface that derives from `IEnumVARIANT` did not implement the methods of `IEnumVARIANT`, so
+  the generated code failed to compile. They return `E_NOTIMPL`.
 
 ## 3.0.0-beta.1 - 2026-11-12
 
