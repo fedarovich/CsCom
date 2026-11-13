@@ -1,5 +1,5 @@
 # Builds the solution and runs the unit tests for every push and pull request. A tag with a semantic version, e.g. 1.2.3 or
-# 1.2.3-beta.1, sets the version of the packages and pushes them to nuget.org with trusted publishing.
+# 1.2.3-beta.1, sets the version of the packages, tests them and pushes them to nuget.org with trusted publishing.
 name: CI
 
 on:
@@ -71,6 +71,12 @@ jobs:
           $properties = @()
           if ($env:CSCOM_VERSION) { $properties += "-p:Version=$env:CSCOM_VERSION" }
           dotnet pack src/CsCom.slnx -c Release --no-build @properties
+
+      # A release is only published when its packages work: these tests build projects that restore CsCom.Build and
+      # CsCom.Runtime from artifacts/packages and generate the interop code during the build. The publish job needs this job.
+      - name: Test the packages
+        if: github.ref_type == 'tag'
+        run: dotnet test src/CsCom.slnx -c Release --no-build --filter "FullyQualifiedName~BuildPackageTests" --logger "trx;LogFilePrefix=package-tests" --results-directory TestResults
 
       - name: Upload the test results
         if: failure()
