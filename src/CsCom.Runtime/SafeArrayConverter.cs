@@ -501,23 +501,9 @@ internal static unsafe class SafeArrayConverter
         }
     }
 
-    private static T ConvertElement<T>(object? value)
-    {
-        switch (value)
-        {
-            case null:
-                return default!;
-            case T typed:
-                return typed;
-        }
-
-        if (typeof(T).IsEnum)
-        {
-            return (T)Enum.ToObject(typeof(T), value);
-        }
-
-        return (T)Convert.ChangeType(value, typeof(T), CultureInfo.InvariantCulture);
-    }
+    // The elements are converted like the values of VARIANTs, also to the wrappers ComDate, ComCurrency and ComBool, which
+    // arrays can be created from.
+    private static T ConvertElement<T>(object? value) => ComConvert.To<T>(value);
 
     // Arranges the elements of a SAFEARRAY, whose first index varies fastest, into a zero-based .NET array of the same shape.
     private static Array Reshape<T>(T[] elements, int[] lengths)

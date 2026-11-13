@@ -79,6 +79,30 @@ public sealed class SafeArrayTests
     }
 
     [TestMethod]
+    public void ArraysOfTheValueWrappersAreReturned()
+    {
+        // The marshaller of the arrays of ComDate, ComCurrency and ComBool also converts the elements that it receives.
+        AssertRoundTrip<ComDate>([new ComDate(1.5), new ComDate(36526)], VarEnum.VT_DATE);
+        AssertRoundTrip<ComCurrency>([new ComCurrency(15000), new ComCurrency(-1)], VarEnum.VT_CY);
+        AssertRoundTrip<ComBool>([ComBool.True, ComBool.False], VarEnum.VT_BOOL);
+
+        static void AssertRoundTrip<T>(T[] values, VarEnum elementType)
+        {
+            nint psa = SafeArrayMarshaller<T>.ConvertToUnmanaged(values);
+            try
+            {
+                using var view = ComSafeArray<T>.FromPointer(psa, ownsArray: false)!;
+                Assert.AreEqual(elementType, view.ElementType);
+                CollectionAssert.AreEqual(values, SafeArrayMarshaller<T>.ConvertToManaged(psa));
+            }
+            finally
+            {
+                SafeArrayMarshaller<T>.Free(psa);
+            }
+        }
+    }
+
+    [TestMethod]
     public void WrappersOfUnsignedArraysHaveUnsignedElements()
     {
         using var array = ComSafeArray<byte>.Create([1, 200])!;
