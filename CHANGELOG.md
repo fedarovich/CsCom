@@ -12,6 +12,14 @@ same version. The versions up to 2.0.0 are not described here.
   late-bound wrappers and to the indexers that call them. The index parameters of the setter methods stay required in C#,
   since the value follows them.
 
+### Fixed
+
+- A method named like its interface made the generated interface fail to compile; it gets a trailing underscore, like the
+  members of the late-bound wrappers already did.
+- The types that are generated next to an interface (the extensions class, the event handler interface, the event sink and
+  the delegates or the classes of the event arguments) could have the name of a type of the library, e.g. `IShapeExtensions`.
+  Such a generated type gets a trailing underscore.
+
 ## 3.0.0-beta.2 - 2026-11-12
 
 ### Changed

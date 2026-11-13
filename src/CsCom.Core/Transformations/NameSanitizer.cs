@@ -77,9 +77,11 @@ public sealed partial class NameSanitizer : IModelTransformer
 
     private static void SanitizeInterface(InterfaceDefinition @interface)
     {
+        // A member cannot have the name of its type. The members of a late-bound wrapper are named after the methods and the
+        // properties; those of the other interfaces are the methods, since the accessors of the properties have prefixes.
         HashSet<string> reserved = @interface.InterfaceKind == InterfaceKind.Dispatch
             ? [@interface.Name, .. DispatchWrapperReservedNames]
-            : [];
+            : @interface.Methods.Any(m => m.InvokeKind == InvokeKind.Method && ToIdentifier(m.Name) == @interface.Name) ? [@interface.Name] : [];
 
         // Accessors of the same property share the name, so rename by the original name.
         var renamed = new Dictionary<string, string>(StringComparer.Ordinal);

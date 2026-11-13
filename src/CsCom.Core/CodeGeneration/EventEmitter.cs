@@ -74,9 +74,24 @@ internal sealed partial class EventEmitter
         }
 
         var signatures = new SignatureBuilder(_context, new TypeMapper(_context, @namespace), @namespace);
+        // The types generated for the events must not have the names of the types of the library.
+        string sinkName = _context.GetHelperTypeName(definition, definition.Name + "Sink");
         var source = definition.InterfaceKind == InterfaceKind.Dispatch
-            ? CreateDispatchSource(definition, guid, signatures)
-            : CreateVtableSource(definition, guid, signatures, _context.Options.Marshalling);
+            ? CreateDispatchSource(definition, guid, signatures, sinkName)
+            : CreateVtableSource(definition, guid, signatures, _context.Options.Marshalling, sinkName);
+        string? eventType = _context.Options.EventStyle switch
+        {
+            EventStyle.Events => "EventHandler",
+            EventStyle.Observable => "EventArgs",
+            _ => null,
+        };
+        source = source with
+        {
+            HandlerName = _context.GetHelperTypeName(definition, source.HandlerName),
+            Events = eventType is null
+                ? source.Events
+                : [.. source.Events.Select(e => e with { TypeName = _context.GetHelperTypeName(definition, $"{definition.Name}_{e.Name}{eventType}") })],
+        };
 
         var members = new List<MemberDeclarationSyntax> { EmitHandlerInterface(source) };
         switch (_context.Options.EventStyle)
@@ -93,7 +108,7 @@ internal sealed partial class EventEmitter
         return members;
     }
 
-    private static Source CreateDispatchSource(InterfaceDefinition definition, Guid guid, SignatureBuilder signatures)
+    private static Source CreateDispatchSource(InterfaceDefinition definition, Guid guid, SignatureBuilder signatures, string sinkName)
     {
         var events = new List<Event>();
         foreach (var method in definition.Methods.Where(static m => m.InvokeKind == InvokeKind.Method))
@@ -102,10 +117,10 @@ internal sealed partial class EventEmitter
             events.Add(new Event(method, method.Name, returnType.Name, parameters, IsDispatched: true));
         }
 
-        return new Source(definition, guid, AssignNames(definition, events), [], IsDispatch: true, IsDual: false);
+        return new Source(definition, guid, AssignNames(sinkName, events), [], IsDispatch: true, IsDual: false) { SinkName = sinkName };
     }
 
-    private static Source CreateVtableSource(InterfaceDefinition definition, Guid guid, SignatureBuilder signatures, MarshallingOptions marshalling)
+    private static Source CreateVtableSource(InterfaceDefinition definition, Guid guid, SignatureBuilder signatures, MarshallingOptions marshalling, string sinkName)
     {
         // The sink implements the methods of the base interfaces as well.
         var hierarchy = new List<InterfaceDefinition>();
@@ -158,16 +173,16 @@ internal sealed partial class EventEmitter
         }
 
         var gaps = hierarchy.SelectMany(InterfaceEmitter.GetVtableGaps).ToList();
-        return new Source(definition, guid, AssignNames(definition, events), gaps, IsDispatch: false, IsDual: isDual) { IsEnumerator = isEnumerator };
+        return new Source(definition, guid, AssignNames(sinkName, events), gaps, IsDispatch: false, IsDual: isDual) { SinkName = sinkName, IsEnumerator = isEnumerator };
     }
 
     // Makes the names of the handler methods unique and keeps the events from hiding the members of the sink class. The fields of
     // the observables are named after the events, but must not clash with the connection field or the events, e.g. for an event
     // named connection.
-    private static List<Event> AssignNames(InterfaceDefinition definition, List<Event> events)
+    private static List<Event> AssignNames(string sinkName, List<Event> events)
     {
         var handlerNames = new HashSet<string>(StringComparer.Ordinal);
-        var eventNames = new HashSet<string>(ReservedNames, StringComparer.Ordinal) { definition.Name + "Sink" };
+        var eventNames = new HashSet<string>(ReservedNames, StringComparer.Ordinal) { sinkName };
         var result = new List<Event>(events.Count);
         foreach (var @event in events)
         {
@@ -599,6 +614,9 @@ internal sealed partial class EventEmitter
         /// <summary>The name of the field of the sink class that holds the observable, see <see cref="AssignNames"/>.</summary>
         public string FieldName { get; init; } = "__" + HandlerName;
 
+        /// <summary>The name of the delegate or of the class of the arguments of the event, with the styles that have them.</summary>
+        public string TypeName { get; init; } = string.Empty;
+
         public bool IsVoid => ReturnType == "void";
 
         public bool HasPointers => ReturnType.EndsWith('*') || Parameters.Any(static p => p.TypeName.EndsWith('*'));
@@ -618,19 +636,19 @@ internal sealed partial class EventEmitter
         public string InterfaceName => Syntax.Escape(Definition.Name);
 
         // Names that already look like interface names (IFooEvents, _IFooEvents) are not prefixed.
-        public string HandlerName => Definition.Name.StartsWith('_') || Definition.Name is ['I', var second, ..] && char.IsUpper(second)
+        public string HandlerName { get; init; } = Definition.Name.StartsWith('_') || Definition.Name is ['I', var second, ..] && char.IsUpper(second)
             ? Definition.Name + "Handler"
             : "I" + Definition.Name + "Handler";
 
-        public string SinkName => Definition.Name + "Sink";
+        public required string SinkName { get; init; }
 
         /// <summary>Whether the interface derives from <c>IEnumVARIANT</c>, whose methods the sink has to implement too.</summary>
         public bool IsEnumerator { get; init; }
 
         public bool IsUnsafe => IsEnumerator || Events.Any(static e => e.HasPointers);
 
-        public string DelegateName(Event @event) => $"{Definition.Name}_{@event.Name}EventHandler";
+        public string DelegateName(Event @event) => @event.TypeName;
 
-        public string EventArgsName(Event @event) => $"{Definition.Name}_{@event.Name}EventArgs";
+        public string EventArgsName(Event @event) => @event.TypeName;
     }
 }

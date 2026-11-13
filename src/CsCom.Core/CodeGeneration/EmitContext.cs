@@ -66,7 +66,29 @@ internal sealed class EmitContext
         return @namespace == currentNamespace ? Syntax.Escape(name) : $"global::{@namespace}.{Syntax.Escape(name)}";
     }
 
-    public static string GetExtensionsClassName(InterfaceDefinition definition) => definition.Name + "Extensions";
+    private readonly Dictionary<string, HashSet<string>> _typeNames = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// Gets the name of a type that is generated next to <paramref name="owner"/> in its namespace, e.g. its extensions class
+    /// or its event sink: <paramref name="name"/>, with trailing <c>_</c>s while a type of the library or another such type
+    /// has the name. The name is taken, so it is requested once per generated type.
+    /// </summary>
+    public string GetHelperTypeName(TypeDefinition owner, string name)
+    {
+        string @namespace = GetNamespace(owner);
+        if (!_typeNames.TryGetValue(@namespace, out var names))
+        {
+            names = new HashSet<string>(Library.Types.Where(t => GetNamespace(t) == @namespace).Select(static t => t.Name), StringComparer.Ordinal);
+            _typeNames.Add(@namespace, names);
+        }
+
+        while (!names.Add(name))
+        {
+            name += "_";
+        }
+
+        return name;
+    }
 
     /// <summary>The name of the class that contains the marshallers of the multidimensional <c>SAFEARRAY</c> parameters.</summary>
     public const string SafeArrayMarshallersClassName = "CsComSafeArrayMarshallers";

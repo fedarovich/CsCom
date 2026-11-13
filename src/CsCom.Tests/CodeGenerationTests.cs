@@ -971,6 +971,63 @@ public sealed class CodeGenerationTests : VerifyBase
         TestCompiler.Compile("EnumeratorEvents", text, reference: runtime);
     }
 
+    [TestMethod]
+    [DataRow(EventStyle.Events)]
+    [DataRow(EventStyle.Observable)]
+    [DataRow(EventStyle.Interface)]
+    public void GeneratedNamesDoNotClashWithTheTypesOfTheLibrary(EventStyle style)
+    {
+        // A method named like its interface is renamed, and the types generated next to an interface (the extensions class,
+        // the event handler, the sink and the delegates or the event arguments) get a trailing _ when types of the library
+        // have their names. The generated code is compiled to prove that nothing clashes.
+        var thing = new InterfaceDefinition { Name = "IThing", OriginalName = "IThing", Guid = Guid.NewGuid(), BaseVtableSlots = 3 };
+        var getter = Method("Size", 4, InvokeKind.PropertyGet);
+        getter.Parameters.Add(new ParameterDefinition
+        {
+            Name = "result",
+            Type = new PointerTypeReference(new PrimitiveTypeReference(System.Runtime.InteropServices.VarEnum.VT_I4)),
+            Flags = ParameterFlags.Out | ParameterFlags.Retval,
+        });
+        thing.Methods.AddRange([Method("IThing", 3), getter]);
+
+        var events = new InterfaceDefinition { Name = "IThingEvents", OriginalName = "IThingEvents", Guid = Guid.NewGuid(), BaseVtableSlots = 3 };
+        events.Methods.Add(Method("Changed", 3));
+        var coClass = new CoClassDefinition { Name = "Thing", OriginalName = "Thing", Guid = Guid.NewGuid() };
+        coClass.Interfaces.Add(new CoClassInterface(new UserDefinedTypeReference(thing), IsDefault: true, IsSource: false, IsRestricted: false));
+        coClass.Interfaces.Add(new CoClassInterface(new UserDefinedTypeReference(events), IsDefault: true, IsSource: true, IsRestricted: false));
+
+        var library = new TypeLibrary { Name = "Synthetic" };
+        library.Types.AddRange([thing, events, coClass]);
+        string[] taken = ["IThingExtensions", "IThingEventsHandler", "IThingEventsSink", "IThingEvents_ChangedEventHandler", "IThingEvents_ChangedEventArgs"];
+        foreach (string name in taken)
+        {
+            var @enum = new EnumDefinition { Name = name, OriginalName = name };
+            @enum.Members.Add(new EnumMember { Name = "None", Value = 0 });
+            library.Types.Add(@enum);
+        }
+
+        string text = new InteropPipeline()
+            .GenerateCode(library, new CodeGenerationOptions { Namespace = "Test", EventStyle = style, SingleFile = true, SingleFileName = "Test.cs" })
+            .Single()
+            .GetText();
+
+        StringAssert.Contains(text, "void IThing_();");
+        StringAssert.Contains(text, "public static partial class IThingExtensions_\r\n");
+        StringAssert.Contains(text, "partial interface IThingEventsHandler_\r\n");
+        StringAssert.Contains(text, " class IThingEventsSink_");
+        if (style == EventStyle.Events)
+        {
+            StringAssert.Contains(text, "public delegate void IThingEvents_ChangedEventHandler_();");
+        }
+        else if (style == EventStyle.Observable)
+        {
+            StringAssert.Contains(text, "public sealed class IThingEvents_ChangedEventArgs_\r\n");
+        }
+
+        using var runtime = new MemoryStream(File.ReadAllBytes(typeof(CsCom.Runtime.DispatchObject).Assembly.Location));
+        TestCompiler.Compile("Clashes", text, reference: runtime);
+    }
+
     private static MethodDefinition Method(string name, int slot, InvokeKind kind = InvokeKind.Method, int? memberId = null) => new()
     {
         Name = name,

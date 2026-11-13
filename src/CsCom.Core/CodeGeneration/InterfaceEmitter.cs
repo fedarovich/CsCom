@@ -296,7 +296,7 @@ internal sealed partial class InterfaceEmitter
             .WithCloseBraceToken(Token(SyntaxKind.CloseBraceToken));
 
         return _context.Annotations.Annotate(
-            ClassDeclaration(Syntax.Identifier(EmitContext.GetExtensionsClassName(definition)))
+            ClassDeclaration(Syntax.Identifier(_context.GetHelperTypeName(definition, definition.Name + "Extensions")))
                 .WithModifiers(Syntax.Modifiers(_context.Accessibility, SyntaxKind.StaticKeyword, SyntaxKind.PartialKeyword))
                 .WithMembers(List<MemberDeclarationSyntax>([extension, .. proxyTypes]))
                 .WithDocumentation($"Provides the properties of the {definition.Name} interface."),
