@@ -25,6 +25,9 @@ public sealed partial class LibrarySetBuild
     /// <summary>The name of the state file in the output directory.</summary>
     public const string StateFileName = "cscom.state";
 
+    /// <summary>The name of the file of the request, which the task writes next to the state file.</summary>
+    public const string RequestFileName = "cscom.request.json";
+
     private readonly InteropPipeline _pipeline;
     private readonly ILoggerFactory _loggerFactory;
     private readonly ILogger _logger;
@@ -57,10 +60,19 @@ public sealed partial class LibrarySetBuild
         ArgumentNullException.ThrowIfNull(requestHash);
 
         string output = Path.GetFullPath(request.OutputDirectory);
-        string statePath = Path.Combine(output, StateFileName);
+        string stateDirectory = request.StateDirectory.Length > 0 ? Path.GetFullPath(request.StateDirectory) : output;
+        Directory.CreateDirectory(stateDirectory);
+        string statePath = Path.Combine(stateDirectory, StateFileName);
         if (File.Exists(statePath))
         {
             File.Delete(statePath);
+        }
+
+        // Earlier versions wrote the state and the request next to the generated files, also in a folder of the project.
+        if (!string.Equals(stateDirectory, output, StringComparison.OrdinalIgnoreCase))
+        {
+            File.Delete(Path.Combine(output, StateFileName));
+            File.Delete(Path.Combine(output, RequestFileName));
         }
 
         // An input that changes after this point may have been read before the change.

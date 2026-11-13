@@ -114,6 +114,13 @@ public sealed class BuildPackageTests
         Assert.AreEqual("Count=1", Run(project).Last());
         Assert.IsTrue(File.Exists(Path.Combine(directory, "Generated", "CsCom", "Interop.Scripting", "Dictionary.cs")));
 
+        // The folder only gets the generated files: the state, with the paths of this machine, is in the intermediate output.
+        // Clean deletes it, so a rebuild generates the code again.
+        Assert.AreEqual(0, Directory.GetFiles(Path.Combine(directory, "Generated", "CsCom"), "cscom.*").Length);
+        Assert.IsTrue(File.Exists(Path.Combine(directory, "obj", "Debug", TestEnvironment.TargetFramework, "CsCom", "cscom.state")));
+        StringAssert.Contains(Build(project), "CsCom: the interop code in");
+        Assert.IsFalse(Build(project, "-t:Rebuild").Contains("CsCom: the interop code in", StringComparison.Ordinal));
+
         // The default globs skip the folder, so the files are compiled once and the state files are not shown.
         Build(project);
         CollectionAssert.Contains(GetItems(project, "Compile"), (@"Generated\CsCom\Interop.Scripting\Dictionary.cs", string.Empty));

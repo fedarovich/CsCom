@@ -47,6 +47,12 @@ public sealed class CsComGenerate : ToolTask
     [Required]
     public string OutputDirectory { get; set; } = string.Empty;
 
+    /// <summary>
+    /// Gets or sets the directory of the state and request files: the intermediate output. The directory of the generated
+    /// files when empty.
+    /// </summary>
+    public string StateDirectory { get; set; } = string.Empty;
+
     /// <summary>Gets or sets the path of the assembly of the cscom tool.</summary>
     [Required]
     public string CsComPath { get; set; } = string.Empty;
@@ -115,15 +121,19 @@ public sealed class CsComGenerate : ToolTask
     /// <inheritdoc/>
     public override bool Execute()
     {
+        // The state and the request are files of the intermediate output, which Clean deletes, also when the code is
+        // generated into a folder of the project.
         string output = Path.GetFullPath(Path.Combine(ProjectDirectory, OutputDirectory));
+        string stateDirectory = string.IsNullOrEmpty(StateDirectory) ? output : Path.GetFullPath(Path.Combine(ProjectDirectory, StateDirectory));
         Directory.CreateDirectory(output);
-        string request = CreateRequest(output);
+        Directory.CreateDirectory(stateDirectory);
+        string request = CreateRequest(output, stateDirectory);
         string hash = ComputeHash(request);
-        string statePath = Path.Combine(output, StateFileName);
+        string statePath = Path.Combine(stateDirectory, StateFileName);
         var files = BuildState.ReadGeneratedFiles(statePath, hash, out var warnings);
         if (files is null)
         {
-            string requestPath = Path.Combine(output, RequestFileName);
+            string requestPath = Path.Combine(stateDirectory, RequestFileName);
             File.WriteAllText(requestPath, request, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
             _commandLine = $"exec \"{CsComPath}\" build-generate \"{requestPath}\" {hash}";
             if (!base.Execute())
@@ -192,12 +202,13 @@ public sealed class CsComGenerate : ToolTask
     }
 
     // The request of the generator, see CsCom.LibrarySets.BuildRequest.
-    private string CreateRequest(string output)
+    private string CreateRequest(string output, string stateDirectory)
     {
         var json = new JsonWriter();
         json.Property("toolVersion", Version);
         json.Property("projectDirectory", Path.GetFullPath(ProjectDirectory));
         json.Property("outputDirectory", output);
+        json.Property("stateDirectory", stateDirectory);
         json.Property("targetFramework", TargetFramework);
         json.Property("languageVersion", LanguageVersion);
         json.Property("supportCode", SupportCode);

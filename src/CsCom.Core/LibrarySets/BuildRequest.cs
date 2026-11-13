@@ -23,6 +23,12 @@ public sealed class BuildRequest
     /// <summary>The directory of the generated files, e.g. <c>obj\Debug\net10.0-windows\CsCom</c>.</summary>
     public required string OutputDirectory { get; init; }
 
+    /// <summary>
+    /// The directory of the state file, e.g. <c>obj\Debug\net10.0-windows\CsCom</c>: the intermediate output, also when the
+    /// files are generated into a folder of the project. The output directory when empty.
+    /// </summary>
+    public string StateDirectory { get; init; } = string.Empty;
+
     /// <summary>The target framework of the project (<c>$(TargetFramework)</c>).</summary>
     public string TargetFramework { get; init; } = string.Empty;
 

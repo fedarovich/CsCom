@@ -5,6 +5,11 @@
   <PropertyGroup>
     <!-- The generated files are written into the intermediate output, per target framework. -->
     <CsComOutputPath Condition="'$(CsComOutputPath)' == ''">$(IntermediateOutputPath)CsCom\</CsComOutputPath>
+    <!--
+      The state of the generation is always in the intermediate output, which Clean deletes, so that a rebuild generates
+      the code again and a folder of the project only gets the generated files.
+    -->
+    <_CsComStatePath>$(IntermediateOutputPath)CsCom\</_CsComStatePath>
     <CsComSupportNamespace Condition="'$(CsComSupportNamespace)' == ''">$(RootNamespace).ComSupport</CsComSupportNamespace>
     <!-- The cscom tool generates the code. -->
     <_CsComToolPath>$(MSBuildThisFileDirectory)..\tools\net10.0\cscom.dll</_CsComToolPath>
@@ -45,8 +50,8 @@
   -->
   <Target Name="_CsComCollectUpToDateCheckInputs"
           BeforeTargets="CollectUpToDateCheckInputDesignTime"
-          Condition="'@(CsComReference)' != '' and Exists('$(CsComOutputPath)cscom.state')">
-    <ReadLinesFromFile File="$(CsComOutputPath)cscom.state">
+          Condition="'@(CsComReference)' != '' and Exists('$(_CsComStatePath)cscom.state')">
+    <ReadLinesFromFile File="$(_CsComStatePath)cscom.state">
       <Output TaskParameter="Lines" ItemName="_CsComStateLine" />
     </ReadLinesFromFile>
     <ItemGroup>
@@ -75,6 +80,7 @@
                    Libraries="@(CsComLibrary)"
                    ProjectDirectory="$(MSBuildProjectDirectory)"
                    OutputDirectory="$(CsComOutputPath)"
+                   StateDirectory="$(_CsComStatePath)"
                    CsComPath="$(_CsComToolPath)"
                    DotNetHostPath="$(_CsComDotNetHostPath)"
                    TargetFramework="$(TargetFramework)"
@@ -100,12 +106,12 @@
       <_CsComEvaluatedFile Include="@(Compile)" Condition="'%(Compile.CsComGenerated)' == 'true'" />
       <Compile Remove="@(_CsComEvaluatedFile)" />
       <Compile Include="@(_CsComGeneratedFile)" CsComGenerated="true" />
-      <FileWrites Include="@(_CsComGeneratedFile);$(CsComOutputPath)cscom.request.json;$(CsComOutputPath)cscom.state" />
+      <FileWrites Include="@(_CsComGeneratedFile);$(_CsComStatePath)cscom.request.json;$(_CsComStatePath)cscom.state" />
       <!--
         The generator writes the state file whenever it runs, so the compiler runs again after it, also when it only deleted
         files or changed the attributes of the assembly, which leaves no file that is newer than the assembly.
       -->
-      <CustomAdditionalCompileInputs Include="$(CsComOutputPath)cscom.state" />
+      <CustomAdditionalCompileInputs Include="$(_CsComStatePath)cscom.state" />
     </ItemGroup>
 
     <PropertyGroup>

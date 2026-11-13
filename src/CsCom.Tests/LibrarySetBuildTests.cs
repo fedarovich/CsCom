@@ -81,6 +81,33 @@ public sealed class LibrarySetBuildTests
     }
 
     [TestMethod]
+    public void WritesTheStateIntoItsOwnDirectory()
+    {
+        // The code can be generated into a folder of the project, which only gets the generated files; the state files that
+        // earlier versions wrote there are deleted.
+        string project = TestEnvironment.CreateDirectory("build-state-directory");
+        string output = Path.Combine(project, "Generated");
+        string stateDirectory = Path.Combine(project, "obj", "CsCom");
+        Directory.CreateDirectory(output);
+        File.WriteAllText(Path.Combine(output, LibrarySetBuild.StateFileName), "hash=old");
+        File.WriteAllText(Path.Combine(output, LibrarySetBuild.RequestFileName), "{}");
+
+        var files = new LibrarySetBuild(new InteropPipeline()).Run(
+            new BuildRequest
+            {
+                ProjectDirectory = project,
+                OutputDirectory = output,
+                StateDirectory = stateDirectory,
+                References = [new BuildReference { Source = TestEnvironment.TestTypeLibrary }],
+            },
+            "hash1");
+
+        Assert.IsNotNull(BuildState.ReadGeneratedFiles(Path.Combine(stateDirectory, LibrarySetBuild.StateFileName), "hash1"));
+        Assert.IsTrue(files.All(file => file.StartsWith(output, StringComparison.OrdinalIgnoreCase)));
+        Assert.AreEqual(0, Directory.GetFiles(output, "cscom.*", SearchOption.AllDirectories).Length);
+    }
+
+    [TestMethod]
     public void RecordsTheRegisteredTypeLibrariesOfImportedTypes()
     {
         // CsComTest uses types of stdole, which are read from its registered type library, e.g. System32\stdole2.tlb.
