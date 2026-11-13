@@ -98,7 +98,9 @@ public sealed partial class NameSanitizer : IModelTransformer
 
         foreach (var property in @interface.Properties)
         {
-            property.Name = renamed.TryGetValue(property.Name, out string? name) ? name : MakeUnique(ToIdentifier(property.Name), names);
+            // A property is not an accessor of a method, whose names are looked up by their original names: its name can be
+            // the former name of a method that was renamed.
+            property.Name = MakeUnique(ToIdentifier(property.Name), names);
         }
     }
 

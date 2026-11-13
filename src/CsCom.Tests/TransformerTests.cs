@@ -125,6 +125,23 @@ public sealed class TransformerTests
     }
 
     [TestMethod]
+    public void NameSanitizerKeepsAPropertyNamedLikeTheFormerNameOfAMethod()
+    {
+        // The method Refresh was renamed to Reload, and the property Value to Refresh: the property is not the method.
+        var events = new InterfaceDefinition { Name = "IView", OriginalName = "IView", Guid = Guid.NewGuid(), InterfaceKind = InterfaceKind.Dispatch };
+        var method = new MethodDefinition { Name = "Reload", OriginalName = "Refresh", ReturnType = new PrimitiveTypeReference(VarEnum.VT_VOID) };
+        var property = new DispatchPropertyDefinition { Name = "Refresh", Type = new PrimitiveTypeReference(VarEnum.VT_I4) };
+        events.Methods.Add(method);
+        events.Properties.Add(property);
+        var library = new TypeLibrary { Name = "Synthetic" };
+        library.Types.Add(events);
+
+        new NameSanitizer().Transform(library, Context);
+
+        Assert.AreEqual(("Reload", "Refresh"), (method.Name, property.Name));
+    }
+
+    [TestMethod]
     public void NameSanitizerReportsTheTypesThatItRenames()
     {
         // The copy that another version of the library imported is generated into the namespace of the library too.
