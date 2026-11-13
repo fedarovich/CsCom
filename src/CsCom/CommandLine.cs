@@ -759,7 +759,8 @@ internal static class CommandLine
     }
 
     // Runs an action that Ctrl+C cancels: the process keeps running, so that the action can stop the processes that it
-    // started and delete its temporary files. Ctrl+Break still ends the process at once.
+    // started and delete its temporary files. The action only notices the cancellation between its steps, e.g. after the
+    // code of a large library is generated, so a second Ctrl+C ends the process at once, as Ctrl+Break does.
     private static T WithCancellation<T>(Func<CancellationToken, T> action)
     {
         using var cancellation = new CancellationTokenSource();
@@ -770,9 +771,14 @@ internal static class CommandLine
                 return;
             }
 
-            e.Cancel = true;
             try
             {
+                if (cancellation.IsCancellationRequested)
+                {
+                    return;
+                }
+
+                e.Cancel = true;
                 cancellation.Cancel();
             }
             catch (ObjectDisposedException)
