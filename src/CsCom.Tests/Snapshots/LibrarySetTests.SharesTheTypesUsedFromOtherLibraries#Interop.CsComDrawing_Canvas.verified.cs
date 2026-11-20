@@ -21,5 +21,12 @@ public static partial class Canvas
     /// Creates an instance of the Canvas class.
     /// </summary>
     /// <param name="context">The context in which the code that manages the newly created object will run.</param>
-    public static ICanvas Create(global::CsCom.Runtime.ClassContext context = global::CsCom.Runtime.ComActivator.DefaultContext) => global::CsCom.Runtime.ComActivator.CreateInstance<ICanvas>(Clsid, context);
+    public static ICanvas Create(global::CsCom.Runtime.ClassContext context = global::CsCom.Runtime.ComActivator.DefaultContext) => Create(false, context);
+
+    /// <summary>
+    /// Creates an instance of the Canvas class. If unique is set, the instance has a managed object of its own, which ComMarshalling.Release releases at once.
+    /// </summary>
+    /// <param name="unique">Whether the COM object gets a managed object of its own rather than the one that all the references to it share.</param>
+    /// <param name="context">The context in which the code that manages the newly created object will run.</param>
+    public static ICanvas Create(bool unique, global::CsCom.Runtime.ClassContext context = global::CsCom.Runtime.ComActivator.DefaultContext) => global::CsCom.Runtime.ComActivator.CreateInstance<ICanvas>(Clsid, unique, context);
 }

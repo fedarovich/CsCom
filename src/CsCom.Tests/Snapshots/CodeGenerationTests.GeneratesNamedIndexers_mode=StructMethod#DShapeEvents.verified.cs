@@ -147,7 +147,7 @@ public delegate void DShapeEvents_Create_EventHandler();
 /// <summary>
 /// Connects to the DShapeEvents events of a COM object and raises them as .NET events. Dispose the sink to disconnect it.
 /// </summary>
-public sealed partial class DShapeEventsSink : IDShapeEventsHandler, global::System.IDisposable
+public sealed partial class DShapeEventsSink : IDShapeEventsHandler, global::System.IDisposable, global::System.IAsyncDisposable
 {
     /// <summary>
     /// The interface identifier (IID) of the DShapeEvents event interface.
@@ -207,6 +207,11 @@ public sealed partial class DShapeEventsSink : IDShapeEventsHandler, global::Sys
     {
         __connection.Dispose();
     }
+
+    /// <summary>
+    /// Disconnects the sink from the events, and completes when no handler runs any more. Call it on the thread that connected the sink. Throws a COMException when the sink could not be disconnected and stays connected: dispose it again, e.g. on that thread.
+    /// </summary>
+    public global::System.Threading.Tasks.ValueTask DisposeAsync() => __connection.DisposeAsync();
 
     /// <summary>
     /// Connects a handler to the DShapeEvents events of a COM object.

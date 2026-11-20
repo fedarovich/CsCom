@@ -90,6 +90,11 @@
               <xs:documentation>The representation of typed SAFEARRAY parameters and return values: array (T[]), sysarray (System.Array), wrapper (ComSafeArray&lt;T&gt;) or none (nint).</xs:documentation>
             </xs:annotation>
           </xs:attribute>
+          <xs:attribute name="Interfaces" type="InterfaceMarshalling">
+            <xs:annotation>
+              <xs:documentation>The marshaller of the interface pointers of parameters and return values: shared (one object per COM object) or unique (an object per pointer, which can be released at once).</xs:documentation>
+            </xs:annotation>
+          </xs:attribute>
         </xs:complexType>
       </xs:element>
       <xs:element name="RemoveEnumPrefix">
@@ -266,6 +271,13 @@
       <xs:enumeration value="sysarray" />
       <xs:enumeration value="wrapper" />
       <xs:enumeration value="none" />
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="InterfaceMarshalling">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="shared" />
+      <xs:enumeration value="unique" />
     </xs:restriction>
   </xs:simpleType>
 

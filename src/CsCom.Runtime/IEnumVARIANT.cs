@@ -24,5 +24,5 @@ public unsafe partial interface IEnumVARIANT
 
     /// <summary>Creates a copy of the current state of enumeration.</summary>
     [PreserveSig]
-    int Clone(out IEnumVARIANT? ppEnum);
+    int Clone([MarshalUsing(typeof(ComObjectMarshaller<IEnumVARIANT>))] out IEnumVARIANT? ppEnum);
 }

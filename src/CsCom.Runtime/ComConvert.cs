@@ -1,6 +1,7 @@
 using System;
 using System.Globalization;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices.Marshalling;
 
 namespace CsCom.Runtime;
 
@@ -12,25 +13,25 @@ internal static class ComConvert
     /// <summary>Converts a value to a late-bound wrapper.</summary>
     public static T? ToWrapper<T>(object? value) where T : class, IDispatchWrapper<T>
     {
+        // The rule of IDispatchProvider where an IDispatch is required: a late-bound wrapper stands for its COM object, or
+        // for no object without one, and a managed object that is exposed to COM, which a pointer converts back to, is
+        // wrapped itself when it implements IDispatch, and otherwise through the IDispatch that it provides, e.g. a
+        // decorator of a COM object; one that provides none does not implement IDispatch. The wrapper calls the managed
+        // IDispatch, so its type is tested, rather than the COM interface of the object. An IDispatch that is a T itself,
+        // e.g. a wrapper of the application that is exposed to COM, is returned like by the marshaller of its pointer.
         return value switch
         {
             null => null,
             T wrapper => wrapper,
+            _ when ComMarshalling.IsLateBoundWrapper(value, out IDispatch? wrapped) => wrapped is null ? null : DispatchWrapperMarshaller<T>.Wrap(wrapped),
             IDispatch dispatch => T.Create(dispatch),
+            _ when ComMarshalling.TryGetProvidedDispatch(value, out IDispatch? provided) => DispatchWrapperMarshaller<T>.Wrap(provided),
             _ => throw new InvalidCastException($"The value of type {value.GetType()} does not implement IDispatch."),
         };
     }
 
     /// <summary>Converts a value to a COM interface.</summary>
-    public static T? ToInterface<T>(object? value) where T : class
-    {
-        return value switch
-        {
-            null => null,
-            IDispatchProvider provider => (T)(object)provider.Dispatch,
-            _ => (T)value,
-        };
-    }
+    public static T? ToInterface<T>(object? value) where T : class => To<T?>(value);
 
     /// <summary>
     /// Converts a value to <typeparamref name="T"/>: <see langword="null"/> to the default value, numbers to enums and to other
@@ -42,10 +43,50 @@ internal static class ComConvert
         {
             case null:
                 return default!;
+
+            // A COM object is asked for the interface once, by the cast: the type test below would ask it, and the cast at
+            // the end again when it does not implement the interface, which can be a call to another process. It is no
+            // IDispatchProvider either, which its strategy would look up on every call.
+            case ComObject when typeof(T).IsInterface:
+                return (T)value;
             case T typed:
                 return typed;
-            case IDispatchProvider provider when typeof(T).IsInterface:
-                return (T)(object)provider.Dispatch;
+        }
+
+        // The rule of IDispatchProvider for an interface (ToInterface is this method too): a value that implements it is
+        // itself, also a managed object that is exposed to COM, which a pointer converts back to. Otherwise a late-bound
+        // wrapper stands for the COM object of its Dispatch, or for no object without one, with the rule of what that is.
+        // An object that is exposed to COM, also in a late-bound wrapper, is asked through its COM interface then, as its
+        // pointer would be, e.g. for another declaration of the interface, of another interop assembly, which gives a COM
+        // object of its own, and else through the IDispatch that it provides, whose COM object is asked for the interface:
+        // the order of ComMarshalling.QueryInterface. One that provides none does not implement the interface, which the
+        // cast at the end throws for.
+        if (typeof(T).IsInterface)
+        {
+            if (ComMarshalling.IsLateBoundWrapper(value, out IDispatch? wrapped))
+            {
+                if (wrapped is null)
+                {
+                    return default!;
+                }
+
+                // A COM object is asked for the interface once, by the cast, as above.
+                value = wrapped;
+                if (value is ComObject or T)
+                {
+                    return (T)value;
+                }
+            }
+
+            if (ComMarshalling.TryConvertExposedObject(value, out T? converted))
+            {
+                return converted;
+            }
+
+            if (ComMarshalling.TryGetProvidedDispatch(value, out IDispatch? provided))
+            {
+                return (T)(object)provided;
+            }
         }
 
         // T is checked to be exactly the converted type, so the value is reinterpreted instead of being boxed and unboxed.

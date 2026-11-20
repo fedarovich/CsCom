@@ -79,7 +79,7 @@ public sealed class CsComReferenceEditorTests
             StructProperties = StructProperties.Never,
             OverloadsForDefaultValues = true,
             NamedIndexers = NamedIndexers.ClassProperty,
-            Marshalling = new MarshallingOverrides
+            Marshalling = new MarshallingOptionOverrides
             {
                 Dates = ValueMarshalling.Wrapper,
                 Currencies = ValueMarshalling.None,

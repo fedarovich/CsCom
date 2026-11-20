@@ -380,7 +380,7 @@ internal static unsafe class SafeArrayConverter
     {
         VarEnum.VT_VARIANT => VariantMarshaller.ConvertToManaged(*(ComVariant*)element),
         VarEnum.VT_BSTR => *(nint*)element == 0 ? null : Marshal.PtrToStringBSTR(*(nint*)element),
-        VarEnum.VT_UNKNOWN or VarEnum.VT_DISPATCH => ComInterfaceMarshaller<object>.ConvertToManaged(*(void**)element),
+        VarEnum.VT_UNKNOWN or VarEnum.VT_DISPATCH => ComMarshalling.ToManaged<object>(*(void**)element),
         VarEnum.VT_BOOL => *(short*)element != 0,
         VarEnum.VT_DATE => DateTime.FromOADate(*(double*)element),
         VarEnum.VT_CY => decimal.FromOACurrency(*(long*)element),
@@ -435,7 +435,7 @@ internal static unsafe class SafeArrayConverter
 
             case VarEnum.VT_UNKNOWN or VarEnum.VT_DISPATCH:
             {
-                nint pointer = vt == VarEnum.VT_DISPATCH ? ComObjects.GetDispatch(value) : ComObjects.GetUnknown(value);
+                nint pointer = vt == VarEnum.VT_DISPATCH ? ComObjects.GetDispatch(value) : (nint)ComMarshalling.ToUnmanaged(value);
                 if (*(nint*)element != 0)
                 {
                     Marshal.Release(*(nint*)element);
@@ -646,7 +646,7 @@ internal static unsafe class SafeArrayConverter
         var result = new object?[length];
         for (int i = 0; i < length; i++)
         {
-            result[i] = ComInterfaceMarshaller<object>.ConvertToManaged(data[i]);
+            result[i] = ComMarshalling.ToManaged<object>(data[i]);
         }
 
         return result;
@@ -743,7 +743,7 @@ internal static unsafe class SafeArrayConverter
                 var items = (nint*)data;
                 for (int i = 0; i < values.Length; i++)
                 {
-                    items[i] = ComObjects.GetUnknown(values.GetValue(i));
+                    items[i] = (nint)ComMarshalling.ToUnmanaged(values.GetValue(i));
                 }
             });
 

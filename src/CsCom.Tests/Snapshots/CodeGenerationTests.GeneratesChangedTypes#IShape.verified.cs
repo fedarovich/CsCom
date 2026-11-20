@@ -30,8 +30,9 @@ public unsafe partial interface IShape : global::CsCom.Runtime.IDispatch
 
     double get_Area();
 
-    void putref_Parent(IShape? Parent);
+    void putref_Parent([global::System.Runtime.InteropServices.Marshalling.MarshalUsing(typeof(global::CsCom.Runtime.ComObjectMarshaller<IShape>))] IShape? Parent);
 
+    [return: global::System.Runtime.InteropServices.Marshalling.MarshalUsing(typeof(global::CsCom.Runtime.ComObjectMarshaller<IShape>))]
     IShape? get_Parent();
 
     [return: global::System.Runtime.InteropServices.Marshalling.MarshalUsing(typeof(global::CsCom.Runtime.VariantMarshaller))]
@@ -52,14 +53,16 @@ public unsafe partial interface IShape : global::CsCom.Runtime.IDispatch
 
     Color get_Coordinate(int index);
 
-    [return: global::System.Runtime.InteropServices.Marshalling.MarshalUsing(typeof(global::System.Runtime.InteropServices.Marshalling.ComInterfaceMarshaller<object>))]
+    [return: global::System.Runtime.InteropServices.Marshalling.MarshalUsing(typeof(global::CsCom.Runtime.ComObjectMarshaller<object>))]
     object? get__NewEnum();
 
+    [return: global::System.Runtime.InteropServices.Marshalling.MarshalUsing(typeof(global::CsCom.Runtime.ComObjectMarshaller<IShape>))]
     IShape? Clone();
 
     DShapeEvents? GetEvents();
 
-    IShape? Dispatch(global::CsCom.Runtime.IDispatch? Dispatch);
+    [return: global::System.Runtime.InteropServices.Marshalling.MarshalUsing(typeof(global::CsCom.Runtime.ComObjectMarshaller<IShape>))]
+    IShape? Dispatch([global::System.Runtime.InteropServices.Marshalling.MarshalUsing(typeof(global::CsCom.Runtime.ComObjectMarshaller<global::CsCom.Runtime.IDispatch>))] global::CsCom.Runtime.IDispatch? Dispatch);
 
     [return: global::System.Runtime.InteropServices.Marshalling.MarshalUsing(typeof(global::CsCom.Runtime.DateMarshaller))]
     global::System.DateTime Dates([global::System.Runtime.InteropServices.Marshalling.MarshalUsing(typeof(global::CsCom.Runtime.DateMarshaller))] global::System.DateTime Date, [global::System.Runtime.InteropServices.Marshalling.MarshalUsing(typeof(global::CsCom.Runtime.CurrencyMarshaller))] decimal Money, decimal Amount);

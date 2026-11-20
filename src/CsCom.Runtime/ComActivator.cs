@@ -30,6 +30,13 @@ public enum ClassContext : uint
 /// <summary>
 /// Creates instances of COM classes and wraps them using source-generated COM interop.
 /// </summary>
+/// <remarks>
+/// The methods throw a <see cref="NotSupportedException"/> for a type that a COM object cannot be converted to before
+/// anything else: before they look up a ProgID, create or get the object. That is an interface that is not a
+/// source-generated COM interface (<see cref="GeneratedComInterfaceAttribute"/>), or a class other than
+/// <see cref="object"/> and <see cref="ComObject"/>, e.g. a late-bound wrapper, which
+/// <see cref="CreateDispatchInstance{T}(Guid, bool, ClassContext)"/> creates.
+/// </remarks>
 public static unsafe class ComActivator
 {
     /// <summary>
@@ -45,14 +52,33 @@ public static unsafe class ComActivator
     /// <param name="context">The context in which the code that manages the newly created object will run.</param>
     public static T CreateInstance<T>(Guid clsid, ClassContext context = DefaultContext) where T : class
     {
-        int hr = OleNativeMethods.CoCreateInstance(clsid, null, (uint)context, OleNativeMethods.IID_IUnknown, out void* unknown);
-        if (hr == OleNativeMethods.CO_E_NOTINITIALIZED && JoinApartment())
-        {
-            hr = OleNativeMethods.CoCreateInstance(clsid, null, (uint)context, OleNativeMethods.IID_IUnknown, out unknown);
-        }
+        // A context that converts to bool too, i.e. default, still calls this overload, as before the overloads with unique,
+        // like in the other methods with a context: C# prefers an overload whose parameters all have arguments to one that
+        // needs a default value.
+        return CreateInstance<T>(clsid, unique: false, context);
+    }
 
-        Marshal.ThrowExceptionForHR(hr);
-        return ToObject<T>(unknown, $"of class {clsid:B}");
+    /// <summary>
+    /// Creates an instance of the COM class identified by <paramref name="clsid"/> and returns it as <typeparamref name="T"/>,
+    /// in a managed object of its own if <paramref name="unique"/> is set.
+    /// </summary>
+    /// <remarks>
+    /// A unique managed object is not shared with other references to the COM object, so its COM references can be released
+    /// at once with <see cref="ComMarshalling.Release"/>. The objects that its members return are shared, unless they are
+    /// marshalled as unique objects too.
+    /// </remarks>
+    /// <typeparam name="T">A <see cref="GeneratedComInterfaceAttribute"/>-attributed interface implemented by the class, or <see cref="object"/>.</typeparam>
+    /// <param name="clsid">The class identifier.</param>
+    /// <param name="unique">
+    /// <see langword="true"/> for a managed object of its own; <see langword="false"/> for the object that all the
+    /// references to the COM object share, which is released when it is garbage collected.
+    /// </param>
+    /// <param name="context">The context in which the code that manages the newly created object will run.</param>
+    public static T CreateInstance<T>(Guid clsid, bool unique, ClassContext context = DefaultContext) where T : class
+    {
+        // Checked first, so that no server is started for an object that cannot be converted.
+        ThrowIfNotSupported<T>();
+        return Create<T>(clsid, unique, context);
     }
 
     /// <summary>
@@ -63,7 +89,24 @@ public static unsafe class ComActivator
     /// <param name="context">The context in which the code that manages the newly created object will run.</param>
     public static T CreateInstance<T>(string progId, ClassContext context = DefaultContext) where T : class
     {
-        return CreateInstance<T>(GetClassId(progId), context);
+        return CreateInstance<T>(progId, unique: false, context);
+    }
+
+    /// <summary>
+    /// Creates an instance of the COM class identified by <paramref name="progId"/> and returns it as <typeparamref name="T"/>,
+    /// in a managed object of its own if <paramref name="unique"/> is set, see
+    /// <see cref="CreateInstance{T}(Guid, bool, ClassContext)"/>.
+    /// </summary>
+    /// <typeparam name="T">A <see cref="GeneratedComInterfaceAttribute"/>-attributed interface implemented by the class, or <see cref="object"/>.</typeparam>
+    /// <param name="progId">The programmatic identifier of the class, e.g. <c>Scripting.Dictionary</c>.</param>
+    /// <param name="unique">Whether the COM object gets a managed object of its own rather than the shared one.</param>
+    /// <param name="context">The context in which the code that manages the newly created object will run.</param>
+    public static T CreateInstance<T>(string progId, bool unique, ClassContext context = DefaultContext) where T : class
+    {
+        // Checked before the ProgID is looked up, so that an interface that cannot be used fails first, like in the other
+        // methods.
+        ThrowIfNotSupported<T>();
+        return Create<T>(GetClassId(progId), unique, context);
     }
 
     /// <summary>
@@ -75,7 +118,22 @@ public static unsafe class ComActivator
     /// <exception cref="COMException">No instance of the class is registered (<c>MK_E_UNAVAILABLE</c>).</exception>
     public static T GetActiveInstance<T>(Guid clsid) where T : class
     {
-        return GetActiveInstance<T>(clsid, $"the class {clsid:B}");
+        return GetActiveInstance<T>(clsid, unique: false);
+    }
+
+    /// <summary>
+    /// Gets the running instance of the COM class identified by <paramref name="clsid"/>, like
+    /// <see cref="GetActiveInstance{T}(Guid)"/>, in a managed object of its own if <paramref name="unique"/> is set, see
+    /// <see cref="CreateInstance{T}(Guid, bool, ClassContext)"/>.
+    /// </summary>
+    /// <typeparam name="T">A <see cref="GeneratedComInterfaceAttribute"/>-attributed interface implemented by the class, or <see cref="object"/>.</typeparam>
+    /// <param name="clsid">The class identifier.</param>
+    /// <param name="unique">Whether the COM object gets a managed object of its own rather than the shared one.</param>
+    /// <exception cref="COMException">No instance of the class is registered (<c>MK_E_UNAVAILABLE</c>).</exception>
+    public static T GetActiveInstance<T>(Guid clsid, bool unique) where T : class
+    {
+        ThrowIfNotSupported<T>();
+        return GetActiveInstance<T>(clsid, $"the class {clsid:B}", unique);
     }
 
     /// <summary>
@@ -87,7 +145,22 @@ public static unsafe class ComActivator
     /// <exception cref="COMException">No instance of the class is registered (<c>MK_E_UNAVAILABLE</c>).</exception>
     public static T GetActiveInstance<T>(string progId) where T : class
     {
-        return GetActiveInstance<T>(GetClassId(progId), $"'{progId}'");
+        return GetActiveInstance<T>(progId, unique: false);
+    }
+
+    /// <summary>
+    /// Gets the running instance of the COM class identified by <paramref name="progId"/>, like
+    /// <see cref="GetActiveInstance{T}(string)"/>, in a managed object of its own if <paramref name="unique"/> is set, see
+    /// <see cref="CreateInstance{T}(Guid, bool, ClassContext)"/>.
+    /// </summary>
+    /// <typeparam name="T">A <see cref="GeneratedComInterfaceAttribute"/>-attributed interface implemented by the class, or <see cref="object"/>.</typeparam>
+    /// <param name="progId">The programmatic identifier of the class, e.g. <c>Excel.Application</c>.</param>
+    /// <param name="unique">Whether the COM object gets a managed object of its own rather than the shared one.</param>
+    /// <exception cref="COMException">No instance of the class is registered (<c>MK_E_UNAVAILABLE</c>).</exception>
+    public static T GetActiveInstance<T>(string progId, bool unique) where T : class
+    {
+        ThrowIfNotSupported<T>();
+        return GetActiveInstance<T>(GetClassId(progId), $"'{progId}'", unique);
     }
 
     /// <summary>
@@ -100,7 +173,23 @@ public static unsafe class ComActivator
     /// <returns><see langword="true"/> if an instance is running; <see langword="false"/> otherwise.</returns>
     public static bool TryGetActiveInstance<T>(Guid clsid, [NotNullWhen(true)] out T? instance) where T : class
     {
-        return TryGetActiveInstance(clsid, $"the class {clsid:B}", out instance);
+        return TryGetActiveInstance(clsid, unique: false, out instance);
+    }
+
+    /// <summary>
+    /// Gets the running instance of the COM class identified by <paramref name="clsid"/>, like
+    /// <see cref="TryGetActiveInstance{T}(Guid, out T)"/>, in a managed object of its own if <paramref name="unique"/> is
+    /// set, see <see cref="CreateInstance{T}(Guid, bool, ClassContext)"/>.
+    /// </summary>
+    /// <typeparam name="T">A <see cref="GeneratedComInterfaceAttribute"/>-attributed interface implemented by the class, or <see cref="object"/>.</typeparam>
+    /// <param name="clsid">The class identifier.</param>
+    /// <param name="unique">Whether the COM object gets a managed object of its own rather than the shared one.</param>
+    /// <param name="instance">The running instance, or <see langword="null"/>.</param>
+    /// <returns><see langword="true"/> if an instance is running; <see langword="false"/> otherwise.</returns>
+    public static bool TryGetActiveInstance<T>(Guid clsid, bool unique, [NotNullWhen(true)] out T? instance) where T : class
+    {
+        ThrowIfNotSupported<T>();
+        return TryGetActiveInstance(clsid, $"the class {clsid:B}", unique, out instance);
     }
 
     /// <summary>
@@ -113,13 +202,30 @@ public static unsafe class ComActivator
     /// <returns><see langword="true"/> if an instance is running; <see langword="false"/> otherwise, also if the ProgID is not registered.</returns>
     public static bool TryGetActiveInstance<T>(string progId, [NotNullWhen(true)] out T? instance) where T : class
     {
+        return TryGetActiveInstance(progId, unique: false, out instance);
+    }
+
+    /// <summary>
+    /// Gets the running instance of the COM class identified by <paramref name="progId"/>, like
+    /// <see cref="TryGetActiveInstance{T}(string, out T)"/>, in a managed object of its own if <paramref name="unique"/> is
+    /// set, see <see cref="CreateInstance{T}(Guid, bool, ClassContext)"/>.
+    /// </summary>
+    /// <typeparam name="T">A <see cref="GeneratedComInterfaceAttribute"/>-attributed interface implemented by the class, or <see cref="object"/>.</typeparam>
+    /// <param name="progId">The programmatic identifier of the class, e.g. <c>Excel.Application</c>.</param>
+    /// <param name="unique">Whether the COM object gets a managed object of its own rather than the shared one.</param>
+    /// <param name="instance">The running instance, or <see langword="null"/>.</param>
+    /// <returns><see langword="true"/> if an instance is running; <see langword="false"/> otherwise, also if the ProgID is not registered.</returns>
+    public static bool TryGetActiveInstance<T>(string progId, bool unique, [NotNullWhen(true)] out T? instance) where T : class
+    {
+        // Checked before the ProgID, so that an interface that cannot be used fails also when the ProgID is not registered.
+        ThrowIfNotSupported<T>();
         if (!TryGetClassId(progId, out Guid clsid))
         {
             instance = null;
             return false;
         }
 
-        return TryGetActiveInstance(clsid, $"'{progId}'", out instance);
+        return TryGetActiveInstance(clsid, $"'{progId}'", unique, out instance);
     }
 
     /// <summary>
@@ -132,6 +238,21 @@ public static unsafe class ComActivator
     /// <exception cref="COMException">The name is not a valid moniker or the object cannot be bound.</exception>
     public static T BindToMoniker<T>(string name) where T : class
     {
+        return BindToMoniker<T>(name, unique: false);
+    }
+
+    /// <summary>
+    /// Gets the object identified by a moniker display name, like <see cref="BindToMoniker{T}(string)"/>, in a managed object
+    /// of its own if <paramref name="unique"/> is set, see <see cref="CreateInstance{T}(Guid, bool, ClassContext)"/>.
+    /// </summary>
+    /// <typeparam name="T">A <see cref="GeneratedComInterfaceAttribute"/>-attributed interface implemented by the object, or <see cref="object"/>.</typeparam>
+    /// <param name="name">The display name of the moniker.</param>
+    /// <param name="unique">Whether the COM object gets a managed object of its own rather than the shared one.</param>
+    /// <exception cref="COMException">The name is not a valid moniker or the object cannot be bound.</exception>
+    public static T BindToMoniker<T>(string name, bool unique) where T : class
+    {
+        // Checked before the name, like the ProgID in the other methods.
+        ThrowIfNotSupported<T>();
         ArgumentException.ThrowIfNullOrEmpty(name);
         int hr = OleNativeMethods.CoGetObject(name, null, OleNativeMethods.IID_IUnknown, out void* unknown);
         if (hr == OleNativeMethods.CO_E_NOTINITIALIZED && JoinApartment())
@@ -144,7 +265,7 @@ public static unsafe class ComActivator
             throw new COMException($"The moniker '{name}' cannot be bound to an object: {Marshal.GetExceptionForHR(hr)!.Message}", hr);
         }
 
-        return ToObject<T>(unknown, $"'{name}'");
+        return ToObject<T>(unknown, $"'{name}'", unique);
     }
 
     /// <summary>
@@ -183,10 +304,54 @@ public static unsafe class ComActivator
     /// <param name="context">The context in which the code that manages the newly created object will run.</param>
     public static T CreateDispatchInstance<T>(Guid clsid, ClassContext context = DefaultContext) where T : class, IDispatchWrapper<T>
     {
-        return T.Create(CreateInstance<IDispatch>(clsid, context));
+        return CreateDispatchInstance<T>(clsid, unique: false, context);
     }
 
-    private static T GetActiveInstance<T>(Guid clsid, string description) where T : class
+    /// <summary>
+    /// Creates an instance of the COM class identified by <paramref name="clsid"/> and wraps it into the late-bound wrapper
+    /// <typeparamref name="T"/>, with a managed object of its own if <paramref name="unique"/> is set, see
+    /// <see cref="CreateInstance{T}(Guid, bool, ClassContext)"/>: <see cref="ComMarshalling.Release"/> of the wrapper
+    /// releases it.
+    /// </summary>
+    /// <typeparam name="T">A late-bound wrapper of a dispinterface.</typeparam>
+    /// <param name="clsid">The class identifier.</param>
+    /// <param name="unique">Whether the COM object gets a managed object of its own rather than the shared one.</param>
+    /// <param name="context">The context in which the code that manages the newly created object will run.</param>
+    public static T CreateDispatchInstance<T>(Guid clsid, bool unique, ClassContext context = DefaultContext) where T : class, IDispatchWrapper<T>
+    {
+        IDispatch dispatch = Create<IDispatch>(clsid, unique, context);
+        return unique ? UniqueDispatchWrapperMarshaller<T>.CreateWrapper(dispatch) : DispatchWrapperMarshaller<T>.Wrap(dispatch);
+    }
+
+    // Tests T first, so that no server is started and no ProgID is looked up for an object that cannot be converted to it.
+    // A COM object is a ComObject, which is sealed, so it converts to no other class than ComObject and object; a class
+    // of the application whose instances a class factory of its own returns, e.g. in the same process, is got as an
+    // interface that it implements, or as object.
+    private static void ThrowIfNotSupported<T>()
+    {
+        ComMarshalling.ThrowIfNotComInterface<T>();
+        if (!typeof(T).IsInterface && !typeof(T).IsAssignableFrom(typeof(ComObject)))
+        {
+            throw new NotSupportedException(typeof(IDispatchProvider).IsAssignableFrom(typeof(T))
+                ? $"A COM object cannot be converted to the late-bound wrapper {typeof(T)}: get it as IDispatch and wrap it, e.g. with ComDynamic.ToDynamic for a dynamic object, or create a wrapper that implements IDispatchWrapper<T> with {nameof(CreateDispatchInstance)}."
+                : $"A COM object cannot be converted to the class {typeof(T)}: use a source-generated COM interface ([GeneratedComInterface]) or object.");
+        }
+    }
+
+    // The private methods leave the test of T to the public ones, which make it first: see the remarks of the class.
+    private static T Create<T>(Guid clsid, bool unique, ClassContext context) where T : class
+    {
+        int hr = OleNativeMethods.CoCreateInstance(clsid, null, (uint)context, OleNativeMethods.IID_IUnknown, out void* unknown);
+        if (hr == OleNativeMethods.CO_E_NOTINITIALIZED && JoinApartment())
+        {
+            hr = OleNativeMethods.CoCreateInstance(clsid, null, (uint)context, OleNativeMethods.IID_IUnknown, out unknown);
+        }
+
+        Marshal.ThrowExceptionForHR(hr);
+        return ToObject<T>(unknown, $"of class {clsid:B}", unique);
+    }
+
+    private static T GetActiveInstance<T>(Guid clsid, string description, bool unique) where T : class
     {
         int hr = GetActiveObject(clsid, out void* unknown);
         if (hr == OleNativeMethods.MK_E_UNAVAILABLE)
@@ -195,10 +360,10 @@ public static unsafe class ComActivator
         }
 
         Marshal.ThrowExceptionForHR(hr);
-        return ToObject<T>(unknown, $"of {description}");
+        return ToObject<T>(unknown, $"of {description}", unique);
     }
 
-    private static bool TryGetActiveInstance<T>(Guid clsid, string description, [NotNullWhen(true)] out T? instance) where T : class
+    private static bool TryGetActiveInstance<T>(Guid clsid, string description, bool unique, [NotNullWhen(true)] out T? instance) where T : class
     {
         int hr = GetActiveObject(clsid, out void* unknown);
         if (hr == OleNativeMethods.MK_E_UNAVAILABLE)
@@ -208,7 +373,7 @@ public static unsafe class ComActivator
         }
 
         Marshal.ThrowExceptionForHR(hr);
-        instance = ToObject<T>(unknown, $"of {description}");
+        instance = ToObject<T>(unknown, $"of {description}", unique);
         return true;
     }
 
@@ -223,12 +388,12 @@ public static unsafe class ComActivator
         return hr;
     }
 
-    // Converts an IUnknown pointer and releases it.
-    private static T ToObject<T>(void* unknown, string description) where T : class
+    // Converts an IUnknown pointer, to a managed object of its own if 'unique', and releases it.
+    private static T ToObject<T>(void* unknown, string description, bool unique) where T : class
     {
         try
         {
-            return ComInterfaceMarshaller<T>.ConvertToManaged(unknown)
+            return ComMarshalling.ToManaged<T>(unknown, unique)
                 ?? throw new InvalidCastException($"The COM object {description} could not be converted to {typeof(T)}.");
         }
         finally

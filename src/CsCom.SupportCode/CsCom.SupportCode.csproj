@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The MSBuild task that checks the sources of CsCom.Runtime and CsCom.Runtime.Dynamic and qualifies their names of .NET with
+    global:: when CsCom.Core is built, which embeds the qualified copies as its support code (see CsCom.Core.csproj). It only
+    runs in the build of CsCom.Core, in a task host of .NET: it is not packed, and nothing references its assembly.
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>CsCom.SupportCode</RootNamespace>
+    <!-- The task host loads Roslyn from the folder of the task, which a library does not copy its packages into. -->
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" />
+    <!-- MSBuild provides its own assemblies. -->
+    <PackageReference Include="Microsoft.Build.Framework" PrivateAssets="all" ExcludeAssets="runtime" />
+    <PackageReference Include="Microsoft.Build.Utilities.Core" PrivateAssets="all" ExcludeAssets="runtime" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The layout of the support code files, which CsCom.Core checks again when it emits them. -->
+    <Compile Include="..\CsCom.Core\CodeGeneration\SupportCodeLayout.cs" Link="SupportCodeLayout.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="CsCom.Tests" />
+  </ItemGroup>
+
+</Project>

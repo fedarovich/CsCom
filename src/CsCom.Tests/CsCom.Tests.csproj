@@ -19,6 +19,8 @@
   <ItemGroup>
     <ProjectReference Include="..\CsCom\CsCom.csproj" />
     <ProjectReference Include="..\CsCom.Core\CsCom.Core.csproj" />
+    <!-- The qualification of the support code, which runs when CsCom.Core is built. -->
+    <ProjectReference Include="..\CsCom.SupportCode\CsCom.SupportCode.csproj" />
 
     <!-- Tested directly, and their packages are restored from the local feed by the integration tests. -->
     <ProjectReference Include="..\CsCom.Runtime\CsCom.Runtime.csproj" />

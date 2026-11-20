@@ -30,8 +30,9 @@ internal unsafe partial interface IShape : global::Interop.CsComTest.ComSupport.
 
     double get_Area();
 
-    void putref_Parent(IShape? Parent);
+    void putref_Parent([global::System.Runtime.InteropServices.Marshalling.MarshalUsing(typeof(global::Interop.CsComTest.ComSupport.ComObjectMarshaller<IShape>))] IShape? Parent);
 
+    [return: global::System.Runtime.InteropServices.Marshalling.MarshalUsing(typeof(global::Interop.CsComTest.ComSupport.ComObjectMarshaller<IShape>))]
     IShape? get_Parent();
 
     [return: global::System.Runtime.InteropServices.Marshalling.MarshalUsing(typeof(global::Interop.CsComTest.ComSupport.VariantMarshaller))]
@@ -52,14 +53,16 @@ internal unsafe partial interface IShape : global::Interop.CsComTest.ComSupport.
 
     int get_Coordinate(int index);
 
-    [return: global::System.Runtime.InteropServices.Marshalling.MarshalUsing(typeof(global::System.Runtime.InteropServices.Marshalling.ComInterfaceMarshaller<object>))]
+    [return: global::System.Runtime.InteropServices.Marshalling.MarshalUsing(typeof(global::Interop.CsComTest.ComSupport.ComObjectMarshaller<object>))]
     object? get__NewEnum();
 
+    [return: global::System.Runtime.InteropServices.Marshalling.MarshalUsing(typeof(global::Interop.CsComTest.ComSupport.ComObjectMarshaller<IShape>))]
     IShape? Clone();
 
     DShapeEvents? GetEvents();
 
-    global::Interop.CsComTest.ComSupport.IDispatch? Dispatch(global::Interop.CsComTest.ComSupport.IDispatch? Dispatch);
+    [return: global::System.Runtime.InteropServices.Marshalling.MarshalUsing(typeof(global::Interop.CsComTest.ComSupport.ComObjectMarshaller<global::Interop.CsComTest.ComSupport.IDispatch>))]
+    global::Interop.CsComTest.ComSupport.IDispatch? Dispatch([global::System.Runtime.InteropServices.Marshalling.MarshalUsing(typeof(global::Interop.CsComTest.ComSupport.ComObjectMarshaller<global::Interop.CsComTest.ComSupport.IDispatch>))] global::Interop.CsComTest.ComSupport.IDispatch? Dispatch);
 
     [return: global::System.Runtime.InteropServices.Marshalling.MarshalUsing(typeof(global::Interop.CsComTest.ComSupport.DateMarshaller))]
     global::System.DateTime Dates([global::System.Runtime.InteropServices.Marshalling.MarshalUsing(typeof(global::Interop.CsComTest.ComSupport.DateMarshaller))] global::System.DateTime Date, [global::System.Runtime.InteropServices.Marshalling.MarshalUsing(typeof(global::Interop.CsComTest.ComSupport.CurrencyMarshaller))] decimal Money, decimal Amount);

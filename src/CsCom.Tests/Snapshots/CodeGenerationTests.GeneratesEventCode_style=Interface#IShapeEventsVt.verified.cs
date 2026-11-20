@@ -72,28 +72,92 @@ public static partial class IShapeEventsVtSink
     public static global::CsCom.Runtime.EventConnection Connect(object source, IShapeEventsVtHandler handler)
     {
         global::System.ArgumentNullException.ThrowIfNull(handler);
-        return global::CsCom.Runtime.EventConnection.Advise(source, Iid, new ComSink(handler));
+        return global::CsCom.Runtime.EventConnection.Advise(source, Iid, gate => new ComSink(handler, gate));
     }
 
     /// <summary>
-    /// Implements the IShapeEventsVt event interface and passes the events to the handler.
+    /// Implements the IShapeEventsVt event interface and passes the events to the handler until the gate of its connection is closed.
     /// </summary>
     [global::System.Runtime.InteropServices.Marshalling.GeneratedComClass]
     private sealed partial class ComSink : IShapeEventsVt
     {
         private readonly IShapeEventsVtHandler __handler;
 
-        public ComSink(IShapeEventsVtHandler handler)
+        private readonly global::CsCom.Runtime.EventGate __gate;
+
+        public ComSink(IShapeEventsVtHandler handler, global::CsCom.Runtime.EventGate gate)
         {
             __handler = handler;
+            __gate = gate;
         }
 
-        public void Moved(int X, int Y) => __handler.Moved(X, Y);
+        public void Moved(int X, int Y)
+        {
+            if (!__gate.TryEnter())
+            {
+                return;
+            }
 
-        public void Closing(ref bool Cancel) => __handler.Closing(ref Cancel);
+            try
+            {
+                __handler.Moved(X, Y);
+            }
+            finally
+            {
+                __gate.Exit();
+            }
+        }
 
-        public void Renamed(string? Name) => __handler.Renamed(Name);
+        public void Closing(ref bool Cancel)
+        {
+            if (!__gate.TryEnter())
+            {
+                return;
+            }
 
-        public string? Describe(object? Value, out int length) => __handler.Describe(Value, out length);
+            try
+            {
+                __handler.Closing(ref Cancel);
+            }
+            finally
+            {
+                __gate.Exit();
+            }
+        }
+
+        public void Renamed(string? Name)
+        {
+            if (!__gate.TryEnter())
+            {
+                return;
+            }
+
+            try
+            {
+                __handler.Renamed(Name);
+            }
+            finally
+            {
+                __gate.Exit();
+            }
+        }
+
+        public string? Describe(object? Value, out int length)
+        {
+            if (!__gate.TryEnter())
+            {
+                length = default;
+                return default;
+            }
+
+            try
+            {
+                return __handler.Describe(Value, out length);
+            }
+            finally
+            {
+                __gate.Exit();
+            }
+        }
     }
 }

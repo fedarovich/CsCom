@@ -88,10 +88,12 @@ public sealed class CSharpEmitter
 
         if (options.SupportCode != SupportCodeMode.Package && (scope is null || scope.EmitSupportCode))
         {
+            // The provider has moved the using directives of each file into its single namespace, which the single-file mode
+            // merges with those of the other files.
             foreach (var (fileName, root) in SupportCodeProvider.GetFiles(options))
             {
                 var @namespace = root.Members.OfType<BaseNamespaceDeclarationSyntax>().Single();
-                units.Add(new Unit("ComSupport/" + fileName, options.SupportNamespace, [.. @namespace.Members], root.Usings, root));
+                units.Add(new Unit("ComSupport/" + fileName, options.SupportNamespace, [.. @namespace.Members], @namespace.Usings, root));
             }
         }
 

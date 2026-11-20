@@ -17,8 +17,17 @@ namespace CsCom.Transformations;
 /// </para>
 /// <para>
 /// The changes are combined with the changes made by earlier transformers. Only the representation of <c>DATE</c>,
-/// <c>CURRENCY</c> and <c>VARIANT_BOOL</c> values applies to the fields of structures, and only the representation of
-/// <c>SAFEARRAY</c>s to the late-bound wrappers of dispinterfaces.
+/// <c>CURRENCY</c>, <c>VARIANT_BOOL</c> and <c>BSTR</c> values applies to the fields of structures, and only the
+/// representation of <c>SAFEARRAY</c>s to the late-bound wrappers of dispinterfaces; all changes apply to the parameters
+/// and return values of vtable and dual interfaces and of module functions. A type that none of the changes applies to
+/// does not match. For an element that only changes the marshaller of interface pointers, neither does a parameter or a
+/// return value that is no interface pointer, or an interface pointer that is passed in and out, which is always a
+/// shared object.
+/// </para>
+/// <para>
+/// Like every transformer, it sees the model as the transformers before it left it. The other changes apply to the
+/// matching parameters whatever their types, but an element that only changes the marshaller of interface pointers applies
+/// to the interface pointers at its point: a <c>SetType</c> that makes a parameter an interface pointer goes before it.
 /// </para>
 /// </remarks>
 public sealed partial class MarshallingSetter : IModelTransformer
@@ -53,19 +62,28 @@ public sealed partial class MarshallingSetter : IModelTransformer
     /// <inheritdoc/>
     public void Transform(TypeLibrary library, TransformationContext context)
     {
+        // A type that none of the changes applies to does not match, so that the warning tells that the element has no
+        // effect. Neither does a parameter or a return value when only the marshaller of interface pointers would change
+        // and it is no interface pointer, or one that is passed in and out, which is always a shared object.
+        bool interfacesOnly = Marshalling.Options == new MarshallingOptionOverrides();
         bool matched = false;
-        foreach (var type in library.Types.Where(t => ModelSelectors.IsMatch(Type, t)))
+        foreach (var type in library.Types.Where(t => ModelSelectors.IsMatch(Type, t) && AppliesTo(t)))
         {
             foreach (var method in ModelSelectors.GetMethods(type).Where(m => ModelSelectors.IsMatch(Member, m.Name)))
             {
                 foreach (var parameter in method.Parameters.Where(p => ModelSelectors.IsMatch(Parameter, p.Name)))
                 {
+                    if (interfacesOnly && !SignatureBuilder.HasInterfaceMarshaller(type, method, parameter))
+                    {
+                        continue;
+                    }
+
                     matched = true;
                     parameter.Marshalling = MarshallingOverrides.Combine(parameter.Marshalling, Marshalling);
                     LogChanging(context.Logger, $"{type.Name}.{method.Name}({parameter.Name})");
                 }
 
-                if (Parameter is null)
+                if (Parameter is null && (!interfacesOnly || TypeMapper.IsInterfacePointer(method.ReturnType)))
                 {
                     matched = true;
                     method.ReturnMarshalling = MarshallingOverrides.Combine(method.ReturnMarshalling, Marshalling);
@@ -107,20 +125,34 @@ public sealed partial class MarshallingSetter : IModelTransformer
         }
     }
 
+    // Whether one of the changes has an effect on the members of the type. All of them apply to the parameters and return
+    // values of vtable and dual interfaces and of the functions of modules; TypeMapper tells which of them it reads for
+    // the late-bound wrappers of dispinterfaces and for the fields of structures.
+    private bool AppliesTo(TypeDefinition type) => type switch
+    {
+        InterfaceDefinition { InterfaceKind: InterfaceKind.Dispatch } => TypeMapper.AppliesToLateBound(Marshalling),
+        RecordDefinition => TypeMapper.AppliesToFields(Marshalling),
+        _ => true,
+    };
+
     internal static MarshallingSetter Create(ConfigurationElement element)
     {
         var marshalling = new MarshallingOverrides
         {
-            Dates = element.GetEnum<ValueMarshalling>("Dates"),
-            Currencies = element.GetEnum<ValueMarshalling>("Currencies"),
-            Booleans = element.GetEnum<ValueMarshalling>("Booleans"),
-            Bstrs = element.GetEnum<BstrMarshalling>("Bstrs"),
-            SafeArrays = element.GetEnum<SafeArrayMarshalling>("SafeArrays"),
+            Options = new()
+            {
+                Dates = element.GetEnum<ValueMarshalling>("Dates"),
+                Currencies = element.GetEnum<ValueMarshalling>("Currencies"),
+                Booleans = element.GetEnum<ValueMarshalling>("Booleans"),
+                Bstrs = element.GetEnum<BstrMarshalling>("Bstrs"),
+                SafeArrays = element.GetEnum<SafeArrayMarshalling>("SafeArrays"),
+            },
+            Interfaces = element.GetEnum<InterfaceMarshalling>("Interfaces"),
         };
 
         if (marshalling == new MarshallingOverrides())
         {
-            throw element.CreateError($"At least one of the attributes Dates, Currencies, Booleans, Bstrs or SafeArrays is required by <{element.Name}>.");
+            throw element.CreateError($"At least one of the attributes Dates, Currencies, Booleans, Bstrs, SafeArrays or Interfaces is required by <{element.Name}>.");
         }
 
         return new MarshallingSetter(element.GetTypeSelector(), element.GetSelector("Member"), element.GetSelector("Parameter"), marshalling);

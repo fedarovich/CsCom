@@ -28,6 +28,11 @@ internal sealed record SignatureParameter(ParameterDefinition Definition, TypeRe
     /// <summary>The annotation that associates the parameter syntax with <see cref="Definition"/>.</summary>
     public SyntaxAnnotation? Annotation { get; init; }
 
+    /// <summary>
+    /// Whether the parameter is an interface pointer that is converted to a unique object, see <see cref="ManagedType.IsUnique"/>.
+    /// </summary>
+    public bool IsUnique { get; init; }
+
     public string Name => Syntax.Escape(Definition.Name);
 
     public bool IsByRef => Modifier is SyntaxKind.RefKeyword or SyntaxKind.OutKeyword;
@@ -112,6 +117,9 @@ internal sealed partial class SignatureBuilder
     public const string DefaultLcid = "0x0400";
 
     private const string Missing = "global::System.Reflection.Missing.Value";
+
+    // The marshalling of the interface pointers that are passed in and out, see MapParameters.
+    private static readonly MarshallingOverrides SharedInterfaces = new() { Interfaces = InterfaceMarshalling.Shared };
 
     private readonly EmitContext _context;
     private readonly TypeMapper _mapper;
@@ -248,20 +256,17 @@ internal sealed partial class SignatureBuilder
                     continue;
                 }
 
-                // A pointer without a direction, as old type libraries have them, can return a value, so it is passed by
-                // reference like TlbImp does; only an [in] pointer to a value that is not changed is an `in` parameter.
-                bool isOut = parameter.Flags.HasFlag(ParameterFlags.Out);
-                bool isIn = parameter.Flags.HasFlag(ParameterFlags.In);
-                SyntaxKind modifier = isOut
-                    ? isIn ? SyntaxKind.RefKeyword : SyntaxKind.OutKeyword
-                    : isIn && IsPassedAsIn(element) ? SyntaxKind.InKeyword : SyntaxKind.RefKeyword;
-                var type = _mapper.WithMarshalling(parameter.Marshalling).MapValue(element);
-                result.Add(CreateParameter(parameter, element, type.Name, type.Marshalling, modifier));
+                SyntaxKind modifier = GetByRefModifier(parameter, element);
+                var marshalling = IsInOutInterfacePointer(element, modifier)
+                    ? MarshallingOverrides.Combine(parameter.Marshalling, SharedInterfaces)
+                    : parameter.Marshalling;
+                var type = _mapper.WithMarshalling(marshalling).MapValue(element);
+                result.Add(CreateParameter(parameter, element, type.Name, type.Marshalling, modifier) with { IsUnique = type.IsUnique });
             }
             else
             {
                 var type = _mapper.WithMarshalling(parameter.Marshalling).MapValue(parameter.Type);
-                result.Add(CreateParameter(parameter, parameter.Type, type.Name, type.Marshalling, null));
+                result.Add(CreateParameter(parameter, parameter.Type, type.Name, type.Marshalling, null) with { IsUnique = type.IsUnique });
             }
         }
 
@@ -305,6 +310,43 @@ internal sealed partial class SignatureBuilder
 
     private SignatureParameter CreateParameter(ParameterDefinition definition, TypeReference valueType, string typeName, string? marshalling, SyntaxKind? modifier) =>
         new(definition, valueType, typeName, marshalling, modifier) { Annotation = _context.Annotations.GetAnnotation(definition) };
+
+    // Whether the parameter of a method of the owner is an interface pointer that is passed in and out (ref), which
+    // MapParameters always maps to a shared object: MarshallingOverrides.Interfaces does not apply to it.
+    private static bool IsSharedInterfaceParameter(TypeDefinition owner, MethodDefinition method, ParameterDefinition parameter) =>
+        !IsReturned(owner, method, parameter)
+        && TypeMapper.TryGetByRefElement(parameter.Type, out var element)
+        && IsInOutInterfacePointer(element, GetByRefModifier(parameter, element));
+
+    // Whether a parameter passed by reference is an interface pointer that is passed in and out, which is passed back to the
+    // caller, so that its receiver does not own the object and could not release it: it is always a shared object.
+    private static bool IsInOutInterfacePointer(TypeReference element, SyntaxKind modifier) =>
+        modifier == SyntaxKind.RefKeyword && TypeMapper.IsInterfacePointer(element);
+
+    // Whether the parameter is the [retval] parameter that MapComSignature returns as the value of the method, whatever its
+    // direction is declared as. Module functions keep it as a parameter: they are mapped with MapParameters.
+    private static bool IsReturned(TypeDefinition owner, MethodDefinition method, ParameterDefinition parameter) =>
+        owner is InterfaceDefinition && ReferenceEquals(method.RetvalParameter, parameter) && HasRetval(method, out _);
+
+    /// <summary>
+    /// Whether the parameter of a method of <paramref name="owner"/> is an interface pointer whose marshaller
+    /// <see cref="MarshallingOverrides.Interfaces"/> selects: one that is passed by value or returned, but not one that is
+    /// passed in and out.
+    /// </summary>
+    internal static bool HasInterfaceMarshaller(TypeDefinition owner, MethodDefinition method, ParameterDefinition parameter) =>
+        TypeMapper.IsInterfacePointer(TypeMapper.TryGetByRefElement(parameter.Type, out var element) ? element : parameter.Type)
+        && !IsSharedInterfaceParameter(owner, method, parameter);
+
+    // A pointer without a direction, as old type libraries have them, can return a value, so it is passed by reference
+    // like TlbImp does; only an [in] pointer to a value that is not changed is an `in` parameter.
+    private static SyntaxKind GetByRefModifier(ParameterDefinition parameter, TypeReference element)
+    {
+        bool isOut = parameter.Flags.HasFlag(ParameterFlags.Out);
+        bool isIn = parameter.Flags.HasFlag(ParameterFlags.In);
+        return isOut
+            ? isIn ? SyntaxKind.RefKeyword : SyntaxKind.OutKeyword
+            : isIn && IsPassedAsIn(element) ? SyntaxKind.InKeyword : SyntaxKind.RefKeyword;
+    }
 
     private static bool IsPassedAsIn(TypeReference element) =>
         element is PrimitiveTypeReference { VarType: VarEnum.VT_VARIANT }

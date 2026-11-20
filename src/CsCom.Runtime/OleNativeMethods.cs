@@ -9,8 +9,15 @@ internal static unsafe partial class OleNativeMethods
     public const int S_OK = 0;
     public const int S_FALSE = 1;
     public const int E_NOTIMPL = unchecked((int)0x80004001);
+    public const int E_FAIL = unchecked((int)0x80004005);
     public const int E_NOINTERFACE = unchecked((int)0x80004002);
     public const int CONNECT_E_NOCONNECTION = unchecked((int)0x80040200);
+    public const int RPC_E_WRONG_THREAD = unchecked((int)0x8001010E);
+    public const int RPC_E_CALL_REJECTED = unchecked((int)0x80010001);
+    public const int RPC_E_SERVERCALL_RETRYLATER = unchecked((int)0x8001010A);
+    public const int RPC_E_CANTCALLOUT_INASYNCCALL = unchecked((int)0x80010004);
+    public const int RPC_E_CANTCALLOUT_INEXTERNALCALL = unchecked((int)0x80010005);
+    public const int RPC_E_CANTCALLOUT_ININPUTSYNCCALL = unchecked((int)0x8001010D);
     public const int CO_E_NOTINITIALIZED = unchecked((int)0x800401F0);
     public const int DISP_E_EXCEPTION = unchecked((int)0x80020009);
     public const int DISP_E_PARAMNOTFOUND = unchecked((int)0x80020004);
@@ -26,7 +33,15 @@ internal static unsafe partial class OleNativeMethods
 
     public static readonly Guid IID_IUnknown = new(0x00000000, 0x0000, 0x0000, 0xC0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46);
     public static readonly Guid IID_IDispatch = new(0x00020400, 0x0000, 0x0000, 0xC0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46);
+    public static readonly Guid IID_IEnumVARIANT = new(0x00020404, 0x0000, 0x0000, 0xC0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x46);
     public static readonly Guid IID_IConnectionPointContainer = new(0xB196B284, 0xBAB4, 0x101A, 0xB6, 0x9C, 0x00, 0xAA, 0x00, 0x34, 0x1D, 0x07);
+
+    /// <summary>
+    /// Gets the <c>HRESULT</c> that a call through COM returns for an exception: its <see cref="Exception.HResult"/>, or
+    /// <c>E_FAIL</c> when that is no error code, e.g. of a <c>COMException</c> of <c>S_FALSE</c>, which would read as a
+    /// success.
+    /// </summary>
+    public static int GetFailure(Exception exception) => exception.HResult < 0 ? exception.HResult : E_FAIL;
 
     [LibraryImport("ole32.dll")]
     public static partial int CoCreateInstance(in Guid rclsid, void* pUnkOuter, uint dwClsContext, in Guid riid, out void* ppv);

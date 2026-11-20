@@ -115,7 +115,7 @@ public sealed class IShapeEventsVt_DescribeEventArgs
 /// <summary>
 /// Connects to the IShapeEventsVt events of a COM object and pushes them to observables. Dispose the sink to disconnect it.
 /// </summary>
-public sealed partial class IShapeEventsVtSink : IShapeEventsVtHandler, global::System.IDisposable
+public sealed partial class IShapeEventsVtSink : IShapeEventsVtHandler, global::System.IDisposable, global::System.IAsyncDisposable
 {
     /// <summary>
     /// The interface identifier (IID) of the IShapeEventsVt event interface.
@@ -162,16 +162,19 @@ public sealed partial class IShapeEventsVtSink : IShapeEventsVtHandler, global::
     public global::System.IObservable<IShapeEventsVt_DescribeEventArgs> Describe => __Describe;
 
     /// <summary>
-    /// Disconnects the sink from the events and completes the observables.
+    /// Disconnects the sink from the events, and completes the observables once no handler runs any more: at once when none runs, otherwise on the thread of the running handler, when it returns.
     /// </summary>
     public void Dispose()
     {
-        __connection.Dispose();
-        __Moved.OnCompleted();
-        __Closing.OnCompleted();
-        __Renamed.OnCompleted();
-        __Describe.OnCompleted();
+        __connection.DisposeWithCompletion(__Complete);
     }
+
+    /// <summary>
+    /// Disconnects the sink from the events, waits until no handler runs any more and completes the observables, in the synchronization context of the caller. Call it on the thread that connected the sink, and await it rather than block on it there. Throws a COMException when the sink could not be disconnected and stays connected, after completing the observables: dispose it again, e.g. on that thread. Every observer is completed, also when another throws: a single exception is thrown as it is, several in an AggregateException, the COMException first.
+    /// </summary>
+    public global::System.Threading.Tasks.ValueTask DisposeAsync() => global::CsCom.Runtime.EventSubject.CompleteAfterAsync(__connection.DisposeAsync(), __Moved, __Closing, __Renamed, __Describe);
+
+    private void __Complete() => global::CsCom.Runtime.EventSubject.Complete(__Moved, __Closing, __Renamed, __Describe);
 
     /// <summary>
     /// Connects a handler to the IShapeEventsVt events of a COM object.
@@ -182,7 +185,7 @@ public sealed partial class IShapeEventsVtSink : IShapeEventsVtHandler, global::
     public static global::CsCom.Runtime.EventConnection Connect(object source, IShapeEventsVtHandler handler)
     {
         global::System.ArgumentNullException.ThrowIfNull(handler);
-        return global::CsCom.Runtime.EventConnection.Advise(source, Iid, new ComSink(handler));
+        return global::CsCom.Runtime.EventConnection.Advise(source, Iid, gate => new ComSink(handler, gate));
     }
 
     void IShapeEventsVtHandler.Moved(int X, int Y) => this.__Moved.OnNext(new IShapeEventsVt_MovedEventArgs { X = X, Y = Y });
@@ -211,24 +214,88 @@ public sealed partial class IShapeEventsVtSink : IShapeEventsVtHandler, global::
     }
 
     /// <summary>
-    /// Implements the IShapeEventsVt event interface and passes the events to the handler.
+    /// Implements the IShapeEventsVt event interface and passes the events to the handler until the gate of its connection is closed.
     /// </summary>
     [global::System.Runtime.InteropServices.Marshalling.GeneratedComClass]
     private sealed partial class ComSink : IShapeEventsVt
     {
         private readonly IShapeEventsVtHandler __handler;
 
-        public ComSink(IShapeEventsVtHandler handler)
+        private readonly global::CsCom.Runtime.EventGate __gate;
+
+        public ComSink(IShapeEventsVtHandler handler, global::CsCom.Runtime.EventGate gate)
         {
             __handler = handler;
+            __gate = gate;
         }
 
-        public void Moved(int X, int Y) => __handler.Moved(X, Y);
+        public void Moved(int X, int Y)
+        {
+            if (!__gate.TryEnter())
+            {
+                return;
+            }
 
-        public void Closing(ref bool Cancel) => __handler.Closing(ref Cancel);
+            try
+            {
+                __handler.Moved(X, Y);
+            }
+            finally
+            {
+                __gate.Exit();
+            }
+        }
 
-        public void Renamed(string? Name) => __handler.Renamed(Name);
+        public void Closing(ref bool Cancel)
+        {
+            if (!__gate.TryEnter())
+            {
+                return;
+            }
 
-        public string? Describe(object? Value, out int length) => __handler.Describe(Value, out length);
+            try
+            {
+                __handler.Closing(ref Cancel);
+            }
+            finally
+            {
+                __gate.Exit();
+            }
+        }
+
+        public void Renamed(string? Name)
+        {
+            if (!__gate.TryEnter())
+            {
+                return;
+            }
+
+            try
+            {
+                __handler.Renamed(Name);
+            }
+            finally
+            {
+                __gate.Exit();
+            }
+        }
+
+        public string? Describe(object? Value, out int length)
+        {
+            if (!__gate.TryEnter())
+            {
+                length = default;
+                return default;
+            }
+
+            try
+            {
+                return __handler.Describe(Value, out length);
+            }
+            finally
+            {
+                __gate.Exit();
+            }
+        }
     }
 }

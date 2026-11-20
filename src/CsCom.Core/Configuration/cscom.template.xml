@@ -11,6 +11,7 @@
     <!-- <RenameMember TypeName="IShape" Member="^Get(.*)$" NewName="Fetch$1" /> -->
     <!-- <RenameMembersToPascalCase /> -->
     <!-- <SetMarshalling TypeName="IArrays" MemberName="Matrix" SafeArrays="wrapper" /> -->
+    <!-- <SetMarshalling TypeName="IShape" MemberName="Parent" Interfaces="unique" /> -->
     <!-- <RemoveEnumPrefix /> -->
     <!-- <ExcludeType Type="^_" Kind="interface|dispinterface" /> -->
     <!-- <SetType TypeName="IShape" MemberName="Move" ParameterName="kind" To="ShapeKind" /> -->

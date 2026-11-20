@@ -196,15 +196,19 @@ public sealed class IntegrationTests
     }
 
     [TestMethod]
-    public void MultiTargetedProjectBuildsWithoutWarnings()
+    [DataRow(SupportCodeMode.Package)]
+    [DataRow(SupportCodeMode.Public)]
+    public void MultiTargetedProjectBuildsWithoutWarnings(SupportCodeMode supportCode)
     {
         // Each target framework compiles against the builds of CsCom.Runtime and CsCom.Runtime.Dynamic for its .NET version,
-        // with C# 14, the version that all of them support.
-        string directory = TestEnvironment.CreateDirectory("build-multi-target");
+        // or the support code, with C# 14, the version that all of them support. The support code is qualified against
+        // .NET 10 when CsCom.Core is built, and compiles for .NET 11 too.
+        string directory = TestEnvironment.CreateDirectory($"build-multi-target-{supportCode}");
         string project = new ProjectGenerator(_pipeline).CreateProject(new CreateProjectRequest
         {
             Sources = [TestEnvironment.ScriptingRuntime],
             OutputDirectory = directory,
+            SupportCode = supportCode,
             Dynamic = true,
             TargetFrameworks = SupportedTargetFrameworks,
             PackageSource = TestEnvironment.LocalPackages,
@@ -931,6 +935,460 @@ public sealed class IntegrationTests
     }
 
     [TestMethod]
+    [DataRow(SupportCodeMode.Package)]
+    [DataRow(SupportCodeMode.Public)]
+    public void CustomComWrappersCreateTheObjects(SupportCodeMode supportCode)
+    {
+        // The objects of an activation, of an interface pointer and of a VARIANT are created by the instance of the consumer:
+        // it returns the same objects for their pointers.
+        string root = TestEnvironment.CreateDirectory($"com-wrappers-{supportCode}");
+        string interop = CreateProject(
+            TestEnvironment.ScriptingRuntime,
+            Path.Combine(root, "Interop"),
+            supportCode,
+            singleFile: false);
+
+        var output = RunConsumer(root, interop, """
+            using System.Runtime.InteropServices;
+            using System.Runtime.InteropServices.Marshalling;
+            using Interop.Scripting;
+            using __SUPPORT__;
+
+            // Values that are no objects are converted without the instance, which can still be set afterwards.
+            VariantMarshaller.Free(VariantMarshaller.ConvertToUnmanaged(42));
+            VariantMarshaller.Free(VariantMarshaller.ConvertToUnmanaged("text"));
+
+            // Neither are null pointers and null objects.
+            unsafe
+            {
+                _ = ComObjectMarshaller<object>.ConvertToManaged(null);
+                _ = UniqueComObjectMarshaller<IDispatch>.ConvertToManaged(null);
+                _ = ComObjectMarshaller<object>.ConvertToUnmanaged(null);
+                _ = VariantMarshaller.ConvertToManaged(ComVariant.CreateRaw(VarEnum.VT_DISPATCH, (nint)0));
+            }
+
+            var wrappers = new CountingComWrappers();
+            ComMarshalling.ComWrappers = wrappers;
+
+            IDictionary dictionary = Dictionary.Create();
+            Console.WriteLine($"Activation={IsOwned(dictionary)}");
+
+            IDictionary child = Dictionary.Create();
+            dictionary.Add("child", child);
+            Console.WriteLine($"Variant={ReferenceEquals(dictionary.get_Item("child"), child)}");
+
+            IFileSystem3 fileSystem = FileSystemObject.Create();
+            IFolder folder = fileSystem.GetFolder(Path.GetTempPath())!;
+            Console.WriteLine($"Interface={IsOwned(folder)}");
+            Console.WriteLine($"Argument={fileSystem.GetFolder(folder.Path)!.Path == folder.Path}");
+            Console.WriteLine($"Created={wrappers.Created >= 4}");
+
+            // An object that is passed by reference in a VARIANT.
+            ComWrappers.TryGetComInstance(child, out nint reference);
+            unsafe
+            {
+                var byRef = ComVariant.CreateRaw(VarEnum.VT_BYREF | VarEnum.VT_UNKNOWN, (nint)(&reference));
+                Console.WriteLine($"ByRef={ReferenceEquals(VariantMarshaller.ConvertToManaged(byRef), child)}");
+            }
+
+            Marshal.Release(reference);
+
+            // A managed object is exposed by the instance too, which therefore unwraps its pointer, also from the wrapper
+            // that ComVariantMarshaller converts with the instance of .NET; other objects are rejected as without it.
+            var exposed = new Exposed();
+            foreach (object value in new object[] { exposed, new UnknownWrapper(exposed) })
+            {
+                ComVariant variant = VariantMarshaller.ConvertToUnmanaged(value);
+                Console.WriteLine($"{value.GetType().Name}={variant.VarType == VarEnum.VT_UNKNOWN && ReferenceEquals(VariantMarshaller.ConvertToManaged(variant), exposed)}");
+                VariantMarshaller.Free(variant);
+            }
+
+            // A unique object of the pointer is the object too, as the shared one is: the flags of the instance cannot unwrap it.
+            unsafe
+            {
+                void* exposedPointer = ComObjectMarshaller<IExposed>.ConvertToUnmanaged(exposed);
+                Console.WriteLine($"UniqueExposed={ReferenceEquals(UniqueComObjectMarshaller<IExposed>.ConvertToManaged(exposedPointer), exposed) && ReferenceEquals(UniqueComObjectMarshaller<object>.ConvertToManaged(exposedPointer), exposed)}");
+                ComObjectMarshaller<IExposed>.Free(exposedPointer);
+            }
+
+            try
+            {
+                VariantMarshaller.ConvertToUnmanaged(new System.Text.StringBuilder());
+            }
+            catch (ArgumentException)
+            {
+                Console.WriteLine("Rejected");
+            }
+
+            IDictionary unique = Dictionary.Create(unique: true);
+            ComWrappers.TryGetComInstance(unique, out nint pointer);
+            ((ComObject)(object)unique).FinalRelease();
+            Console.WriteLine($"Released={Marshal.Release(pointer) == 0}");
+
+            // default converts to the unique parameter too, but calls the overload whose parameters all have arguments: the
+            // empty context, which activates no class.
+            try
+            {
+                _ = Dictionary.Create(default);
+                Console.WriteLine("DefaultContext=Created");
+            }
+            catch (COMException e)
+            {
+                Console.WriteLine($"DefaultContext=0x{e.HResult:X8}");
+            }
+
+            // The object that another ComWrappers has created for a COM object is marshalled as that COM object: it is not
+            // exposed as a managed object by the instance.
+            ComWrappers.TryGetComInstance(child, out nint identity);
+            object foreign = new ForeignWrappers().GetOrCreateObjectForComInstance(identity, CreateObjectFlags.None);
+            unsafe
+            {
+                nint marshalled = (nint)ComObjectMarshaller<object>.ConvertToUnmanaged(foreign);
+                Console.WriteLine($"Foreign={marshalled == identity}");
+                Marshal.Release(marshalled);
+            }
+
+            Marshal.Release(identity);
+            GC.KeepAlive(foreign);
+
+            try
+            {
+                ComMarshalling.ComWrappers = new StrategyBasedComWrappers();
+            }
+            catch (InvalidOperationException)
+            {
+                Console.WriteLine("Frozen");
+            }
+
+            // Whether the instance of the consumer has created the object: it returns it for the pointer of the COM object.
+            bool IsOwned(object value)
+            {
+                ComWrappers.TryGetComInstance(value, out nint unknown);
+                try
+                {
+                    return ReferenceEquals(wrappers.GetOrCreateObjectForComInstance(unknown, CreateObjectFlags.None), value);
+                }
+                finally
+                {
+                    Marshal.Release(unknown);
+                }
+            }
+
+            [GeneratedComInterface]
+            [Guid("6B1F2D2A-4C1E-4B71-9D0B-7B7C2E0A10F1")]
+            internal partial interface IExposed
+            {
+                void Run();
+            }
+
+            [GeneratedComClass]
+            internal sealed partial class Exposed : IExposed
+            {
+                public void Run()
+                {
+                }
+            }
+
+            internal sealed class CountingComWrappers : StrategyBasedComWrappers
+            {
+                private int _created;
+
+                public int Created => _created;
+
+                protected override IIUnknownStrategy GetOrCreateIUnknownStrategy()
+                {
+                    Interlocked.Increment(ref _created);
+                    return base.GetOrCreateIUnknownStrategy();
+                }
+            }
+
+            // A ComWrappers whose objects are no ComObjects of .NET.
+            internal sealed unsafe class ForeignWrappers : ComWrappers
+            {
+                protected override ComInterfaceEntry* ComputeVtables(object obj, CreateComInterfaceFlags flags, out int count)
+                {
+                    count = 0;
+                    return null;
+                }
+
+                protected override object? CreateObject(nint externalComObject, CreateObjectFlags flags) => new ForeignObject();
+
+                protected override void ReleaseObjects(System.Collections.IEnumerable objects) => throw new NotSupportedException();
+            }
+
+            internal sealed class ForeignObject;
+            """.Replace("__SUPPORT__", supportCode == SupportCodeMode.Package ? "CsCom.Runtime" : "Interop.Scripting.ComSupport", StringComparison.Ordinal),
+            allowUnsafe: true);
+
+        CollectionAssert.IsSubsetOf(
+            new[] { "Activation=True", "Variant=True", "Interface=True", "Argument=True", "Created=True", "ByRef=True", "Exposed=True", "UnknownWrapper=True", "UniqueExposed=True", "Rejected", "Released=True", "DefaultContext=0x80040154", "Foreign=True", "Frozen" },
+            output.ToArray(),
+            string.Join(Environment.NewLine, output));
+    }
+
+    [TestMethod]
+    public void InterfacesAreMarshalledAsUniqueInstances()
+    {
+        // A return value that is marshalled as a unique instance is released at once, which the shared object of the same
+        // COM object is not.
+        string root = TestEnvironment.CreateDirectory("interfaces-unique");
+        string configuration = Path.Combine(root, "cscom.xml");
+        File.WriteAllText(configuration, """
+            <CsCom>
+              <ModelTransformers>
+                <SetMarshalling TypeName="IFileSystem" MemberName="GetFolder" Interfaces="unique" />
+                <SetMarshalling TypeName="IDictionary" MemberName="_NewEnum" Interfaces="unique" />
+              </ModelTransformers>
+            </CsCom>
+            """);
+        string interop = new ProjectGenerator(_pipeline).CreateProject(new CreateProjectRequest
+        {
+            Sources = [TestEnvironment.ScriptingRuntime],
+            OutputDirectory = Path.Combine(root, "Interop"),
+            ConfigurationPath = configuration,
+            TargetFrameworks = [TestEnvironment.TargetFramework],
+            PackageSource = TestEnvironment.LocalPackages,
+            GlobalPackagesFolder = TestEnvironment.GlobalPackagesFolder,
+        });
+
+        var output = RunConsumer(root, interop, """
+            using System.Runtime.InteropServices;
+            using System.Runtime.InteropServices.Marshalling;
+            using Interop.Scripting;
+
+            IFileSystem3 fileSystem = FileSystemObject.Create();
+            IFolder first = fileSystem.GetFolder(Path.GetTempPath())!;
+            IFolder second = first.ParentFolder!;
+            Console.WriteLine($"Unique={Release(first)}");
+            Console.WriteLine($"Shared={Release(second)}");
+            GC.KeepAlive(second);
+
+            // The enumerator of _NewEnum is a unique object, which foreach releases at the end: it holds a reference to the
+            // dictionary until then. The first loop makes the dictionary cache its interface pointers.
+            IDictionary dictionary = Dictionary.Create();
+            dictionary.Add("a", 1);
+            dictionary.Add("b", 2);
+            ComWrappers.TryGetComInstance(dictionary, out nint pointer);
+            var keys = new List<object?>();
+            foreach (object? key in dictionary)
+            {
+                keys.Add(key);
+            }
+
+            int references = Count(pointer);
+            foreach (object? key in dictionary)
+            {
+                keys.Add(key);
+            }
+
+            Console.WriteLine($"Keys={string.Join(",", keys)}");
+            Console.WriteLine($"Enumerator={Count(pointer) == references}");
+            Marshal.Release(pointer);
+            GC.KeepAlive(dictionary);
+
+            static int Count(nint pointer)
+            {
+                Marshal.AddRef(pointer);
+                return Marshal.Release(pointer);
+            }
+
+            // Whether FinalRelease releases the references of the object, so that the reference of the test is the last one.
+            static bool Release(object value)
+            {
+                ComWrappers.TryGetComInstance(value, out nint unknown);
+                ((ComObject)value).FinalRelease();
+                return Marshal.Release(unknown) == 0;
+            }
+            """);
+
+        CollectionAssert.IsSubsetOf(
+            new[] { "Unique=True", "Shared=False", "Keys=a,b,a,b", "Enumerator=True" },
+            output.ToArray(),
+            string.Join(Environment.NewLine, output));
+    }
+
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public void ForeachEnumeratesTheObjectOfADispinterfaceWrapper(bool unique)
+    {
+        // ICalculator.Enumerator becomes a _NewEnum that returns the dispinterface DShapeEvents, whose late-bound wrapper is
+        // no enumerator: foreach enumerates its object, through ComEnumerator.FromObject. No COM object of Windows returns a
+        // dispinterface from _NewEnum, so the consumer implements the collection and the enumerator, and calls the
+        // collection through a runtime callable wrapper of its own COM callable wrapper. The enumerator is a managed object,
+        // which the marshallers unwrap: the release of a unique COM enumerator is not observable here, and is tested by
+        // UniqueInstanceTests.
+        var pipeline = new InteropPipeline();
+        pipeline.ModelTransformers.Add(new DispatchEnumeratorTransformer());
+        string root = TestEnvironment.CreateDirectory(unique ? "dispatch-enumerator-unique" : "dispatch-enumerator");
+        string? configuration = null;
+        if (unique)
+        {
+            configuration = Path.Combine(root, "cscom.xml");
+            File.WriteAllText(configuration, """
+                <CsCom>
+                  <ModelTransformers>
+                    <SetMarshalling TypeName="ICalculator" MemberName="enumerator" Interfaces="unique" />
+                  </ModelTransformers>
+                </CsCom>
+                """);
+        }
+
+        string interop = new ProjectGenerator(pipeline).CreateProject(new CreateProjectRequest
+        {
+            Sources = [TestEnvironment.TestTypeLibrary],
+            OutputDirectory = Path.Combine(root, "Interop"),
+            ConfigurationPath = configuration,
+            TargetFrameworks = [TestEnvironment.TargetFramework],
+            PackageSource = TestEnvironment.LocalPackages,
+            GlobalPackagesFolder = TestEnvironment.GlobalPackagesFolder,
+        });
+
+        // The transformer applies: GetEnumerator enumerates the object of the wrapper, which it owns and releases when it is
+        // unique and the call went through COM.
+        string generated = string.Concat(Directory.GetFiles(Path.GetDirectoryName(interop)!, "*.cs", SearchOption.AllDirectories).Select(File.ReadAllText));
+        const string Call = "global::CsCom.Runtime.ComEnumerator.FromObject(@this.enumerator()";
+        StringAssert.Contains(generated, unique ? $"{Call}, ownsEnumerator: " : $"{Call});");
+
+        var output = RunConsumer(root, interop, """
+            using System.Runtime.InteropServices;
+            using System.Runtime.InteropServices.Marshalling;
+            using CsCom.Runtime;
+            using Interop.CsComTest;
+
+            var wrappers = new StrategyBasedComWrappers();
+            var implementation = new CalculatorImpl();
+            nint unknown = wrappers.GetOrCreateComInterfaceForObject(implementation, CreateComInterfaceFlags.None);
+            var proxy = (ICalculator)wrappers.GetOrCreateObjectForComInstance(unknown, CreateObjectFlags.UniqueInstance);
+            Marshal.Release(unknown);
+
+            // Through COM, where the marshaller creates the wrapper, and on the implementation itself.
+            Console.WriteLine($"Proxy={string.Join(",", Enumerate(proxy))}");
+            var owned = implementation.Last!;
+            Console.WriteLine($"Direct={string.Join(",", Enumerate(implementation))}");
+
+            // Disposing the enumerator at the end of foreach through COM, which owns it when it is unique, leaves the object
+            // of the application alone.
+            Console.WriteLine($"Usable={owned.Reset() == 0}");
+
+            static List<object?> Enumerate(ICalculator calculator)
+            {
+                var items = new List<object?>();
+                foreach (object? item in calculator)
+                {
+                    items.Add(item);
+                }
+
+                return items;
+            }
+
+            [GeneratedComClass]
+            internal sealed unsafe partial class ItemsEnumerator(int[] items) : IDispatch, IEnumVARIANT
+            {
+                private const int E_NOTIMPL = unchecked((int)0x80004001);
+                private int _index;
+
+                public int GetTypeInfoCount(out uint pctinfo)
+                {
+                    pctinfo = 0;
+                    return 0;
+                }
+
+                public int GetTypeInfo(uint iTInfo, uint lcid, out nint ppTInfo)
+                {
+                    ppTInfo = 0;
+                    return E_NOTIMPL;
+                }
+
+                public int GetIDsOfNames(in Guid riid, char** rgszNames, uint cNames, uint lcid, int* rgDispId) => E_NOTIMPL;
+
+                public int Invoke(int dispIdMember, in Guid riid, uint lcid, ushort wFlags, DispParams* pDispParams, ComVariant* pVarResult, ExcepInfo* pExcepInfo, uint* puArgErr) => E_NOTIMPL;
+
+                public int Next(uint celt, ComVariant* rgVar, uint* pCeltFetched)
+                {
+                    uint fetched = 0;
+                    while (fetched < celt && _index < items.Length)
+                    {
+                        rgVar[fetched++] = ComVariant.Create(items[_index++]);
+                    }
+
+                    if (pCeltFetched is not null)
+                    {
+                        *pCeltFetched = fetched;
+                    }
+
+                    return fetched == celt ? 0 : 1;
+                }
+
+                public int Skip(uint celt)
+                {
+                    _index = (int)Math.Min(items.Length, _index + celt);
+                    return _index == items.Length ? 1 : 0;
+                }
+
+                public int Reset()
+                {
+                    _index = 0;
+                    return 0;
+                }
+
+                public int Clone(out IEnumVARIANT? ppEnum)
+                {
+                    ppEnum = null;
+                    return E_NOTIMPL;
+                }
+            }
+
+            [GeneratedComClass]
+            internal sealed unsafe partial class CalculatorImpl : ICalculator
+            {
+                public ItemsEnumerator? Last { get; private set; }
+
+                public DShapeEvents? enumerator() => DShapeEvents.Create(Last = new ItemsEnumerator([1, 2, 3]));
+
+                public int Add(int a, int b) => a + b;
+
+                public void Divide(double a, double b, out double quotient, out double remainder) => throw new NotSupportedException();
+
+                public void Swap(ref int a, ref int b) => throw new NotSupportedException();
+
+                public Point GetPoint() => throw new NotSupportedException();
+
+                public void SetPoint(Point Point) => throw new NotSupportedException();
+
+                public void MovePoint(in Point Point) => throw new NotSupportedException();
+
+                public int NoHResult(int Value) => throw new NotSupportedException();
+
+                public void NoReturn(int Value) => throw new NotSupportedException();
+
+                public string? Strings(string? bstr, string? wide, string? ansi) => throw new NotSupportedException();
+
+                public int[]? Arrays(string?[]? Values) => throw new NotSupportedException();
+
+                public void Buffer(int size, ref byte Buffer) => throw new NotSupportedException();
+
+                public void VoidPointer(void* pointer) => throw new NotSupportedException();
+
+                public int GetHandle() => throw new NotSupportedException();
+
+                public int Locale(int lcid) => throw new NotSupportedException();
+
+                public int Keywords(int @params, int @lock, int Value) => throw new NotSupportedException();
+
+                public int Numbers(Number Number, in Record Record, in Guid Id) => throw new NotSupportedException();
+
+                public void Integers(sbyte c, byte b, short s, ushort us, int i, uint ui, long h, ulong uh, float f) => throw new NotSupportedException();
+            }
+            """, allowUnsafe: true);
+
+        CollectionAssert.IsSubsetOf(
+            new[] { "Proxy=1,2,3", "Direct=1,2,3", "Usable=True" },
+            output.ToArray(),
+            string.Join(Environment.NewLine, output));
+    }
+
+    [TestMethod]
     [DataRow(BstrMarshalling.String)]
     [DataRow(BstrMarshalling.Wrapper)]
     [DataRow(BstrMarshalling.None)]
@@ -1121,12 +1579,29 @@ public sealed class IntegrationTests
     [DataRow(EventStyle.Interface)]
     public void EventsAreReceivedThroughEachKindOfEventInterface(EventStyle style)
     {
+        ReceiveEvents(style, customComWrappers: false);
+    }
+
+    [TestMethod]
+    public void EventsAreReceivedWithCustomComWrappers()
+    {
+        // The sinks are exposed to COM, and the connection points are wrapped, by the instance of the consumer.
+        ReceiveEvents(EventStyle.Events, customComWrappers: true);
+    }
+
+    private void ReceiveEvents(EventStyle style, bool customComWrappers)
+    {
         // The consumer implements a COM object that raises events through connection points and connects the generated sinks
         // to a runtime callable wrapper of it. The object calls the sinks through runtime callable wrappers as well, so that
         // the events are marshalled to native code and back: dispinterface and dual events through IDispatch::Invoke,
         // vtable and dual events through the vtable.
-        string root = TestEnvironment.CreateDirectory($"events-{style}");
-        string interop = CreateProject(TestEnvironment.TestTypeLibrary, Path.Combine(root, "Interop"), SupportCodeMode.Package, singleFile: false, eventStyle: style);
+        string root = TestEnvironment.CreateDirectory(customComWrappers ? "events-com-wrappers" : $"events-{style}");
+        string interop = CreateProject(
+            TestEnvironment.TestTypeLibrary,
+            Path.Combine(root, "Interop"),
+            SupportCodeMode.Package,
+            singleFile: false,
+            eventStyle: style);
 
         (string Source, string Label)[] sources = [("_ShapeEvents", "Dispatch"), ("IShapeEventsVt", "Vt"), ("IShapeEventsDual", "Dual")];
         string program = """
@@ -1136,26 +1611,48 @@ public sealed class IntegrationTests
             using Interop.CsComTest;
 
             var wrappers = new StrategyBasedComWrappers();
+            __COM_WRAPPERS__
             var source = new EventSource();
             nint unknown = wrappers.GetOrCreateComInterfaceForObject(source, CreateComInterfaceFlags.None);
             object proxy = wrappers.GetOrCreateObjectForComInstance(unknown, CreateObjectFlags.UniqueInstance);
             Marshal.Release(unknown);
             var disposables = new List<IDisposable>();
 
+            // The vtable source raises an event while the sink connects: only a handler passed to Connect can get it.
+            source.Points[IShapeEventsVtSink.Iid].Advising = sink =>
+                ((IShapeEventsVt)wrappers.GetOrCreateObjectForComInstance(sink, CreateObjectFlags.UniqueInstance)).Moved(7, 8);
+
             __CONNECT__
 
             Console.WriteLine($"Connections={source.Connections}");
-            Fire(wrappers, source);
+
+            // The sinks are kept, so that they can be called after they are disconnected, as by a source that raises an
+            // event at the same time: their handlers get no more events.
+            var sinks = source.Points.ToDictionary(static p => p.Key, static p => p.Value.Sinks.Values.ToArray());
+            foreach (nint sink in sinks.Values.SelectMany(static s => s))
+            {
+                Marshal.AddRef(sink);
+            }
+
+            Fire(wrappers, sinks);
             foreach (var disposable in disposables)
             {
                 disposable.Dispose();
             }
 
+            Console.WriteLine("Late");
+            Fire(wrappers, sinks);
+            foreach (nint sink in sinks.Values.SelectMany(static s => s))
+            {
+                Marshal.Release(sink);
+            }
+
+            __ASYNC__
             Console.WriteLine($"Connections={source.Connections}");
 
-            static void Fire(StrategyBasedComWrappers wrappers, EventSource source)
+            static void Fire(StrategyBasedComWrappers wrappers, Dictionary<Guid, nint[]> sinks)
             {
-                foreach (nint sink in source.Points[_ShapeEventsSink.Iid].Sinks.Values)
+                foreach (nint sink in sinks[_ShapeEventsSink.Iid])
                 {
                     var dispatch = (IDispatch)wrappers.GetOrCreateObjectForComInstance(sink, CreateObjectFlags.UniqueInstance);
                     Invoke(dispatch, "DispatchInvoke");
@@ -1169,7 +1666,7 @@ public sealed class IntegrationTests
                     }
                 }
 
-                foreach (nint sink in source.Points[IShapeEventsVtSink.Iid].Sinks.Values)
+                foreach (nint sink in sinks[IShapeEventsVtSink.Iid])
                 {
                     var events = (IShapeEventsVt)wrappers.GetOrCreateObjectForComInstance(sink, CreateObjectFlags.UniqueInstance);
                     events.Moved(1, 2);
@@ -1181,7 +1678,7 @@ public sealed class IntegrationTests
                     Console.WriteLine($"VtFire.Describe={description}|{length}");
                 }
 
-                foreach (nint sink in source.Points[IShapeEventsDualSink.Iid].Sinks.Values)
+                foreach (nint sink in sinks[IShapeEventsDualSink.Iid])
                 {
                     var events = (IShapeEventsDual)wrappers.GetOrCreateObjectForComInstance(sink, CreateObjectFlags.UniqueInstance);
                     events.Moved(1, 2);
@@ -1207,98 +1704,17 @@ public sealed class IntegrationTests
                 Console.WriteLine($"{label}.Describe={description}|{describe[1]}");
             }
 
-            [GeneratedComClass]
-            internal sealed partial class EventSource : IConnectionPointContainer
-            {
-                public Dictionary<Guid, ConnectionPoint> Points { get; } = new()
-                {
-                    [_ShapeEventsSink.Iid] = new(_ShapeEventsSink.Iid),
-                    [IShapeEventsVtSink.Iid] = new(IShapeEventsVtSink.Iid),
-                    [IShapeEventsDualSink.Iid] = new(IShapeEventsDualSink.Iid),
-                };
-
-                public int Connections => Points.Values.Sum(static p => p.Sinks.Count);
-
-                public int EnumConnectionPoints(out nint ppEnum)
-                {
-                    ppEnum = 0;
-                    return unchecked((int)0x80004001);
-                }
-
-                public int FindConnectionPoint(in Guid riid, out IConnectionPoint? ppCP)
-                {
-                    ppCP = Points.GetValueOrDefault(riid);
-                    return ppCP is null ? unchecked((int)0x80040200) : 0;
-                }
-            }
-
-            [GeneratedComClass]
-            internal sealed partial class ConnectionPoint(Guid iid) : IConnectionPoint
-            {
-                private uint _cookie;
-
-                public Dictionary<uint, nint> Sinks { get; } = [];
-
-                public int GetConnectionInterface(out Guid pIID)
-                {
-                    pIID = iid;
-                    return 0;
-                }
-
-                public int GetConnectionPointContainer(out nint ppCPC)
-                {
-                    ppCPC = 0;
-                    return unchecked((int)0x80004001);
-                }
-
-                // Like real event sources, asks the sink for the event interface.
-                public int Advise(nint pUnkSink, out uint pdwCookie)
-                {
-                    pdwCookie = 0;
-                    int hr = Marshal.QueryInterface(pUnkSink, iid, out nint sink);
-                    if (hr < 0)
-                    {
-                        return hr;
-                    }
-
-                    pdwCookie = ++_cookie;
-                    Sinks.Add(pdwCookie, sink);
-                    return 0;
-                }
-
-                public int Unadvise(uint dwCookie)
-                {
-                    if (!Sinks.Remove(dwCookie, out nint sink))
-                    {
-                        return unchecked((int)0x80040200);
-                    }
-
-                    Marshal.Release(sink);
-                    return 0;
-                }
-
-                public int EnumConnections(out nint ppEnum)
-                {
-                    ppEnum = 0;
-                    return unchecked((int)0x80004001);
-                }
-            }
-
-            internal sealed class Observer<T>(Action<T> next, Action? completed = null) : IObserver<T>
-            {
-                public void OnNext(T value) => next(value);
-
-                public void OnError(Exception error) => throw error;
-
-                public void OnCompleted() => completed?.Invoke();
-            }
+            __EVENT_SOURCE__
 
             __HANDLERS__
             """;
 
         program = program
+            .Replace("__EVENT_SOURCE__", EventSourceFixture, StringComparison.Ordinal)
+            .Replace("__COM_WRAPPERS__", customComWrappers ? "ComMarshalling.ComWrappers = wrappers;" : string.Empty, StringComparison.Ordinal)
             .Replace("__CONNECT__", string.Join(Environment.NewLine, sources.Select(s => ConnectEvents(style, s.Source, s.Label))), StringComparison.Ordinal)
-            .Replace("__HANDLERS__", style == EventStyle.Interface ? string.Join(Environment.NewLine, sources.Select(static s => HandlerClass(s.Source, s.Label))) : string.Empty, StringComparison.Ordinal);
+            .Replace("__HANDLERS__", style == EventStyle.Interface ? string.Join(Environment.NewLine, sources.Select(static s => HandlerClass(s.Source, s.Label))) : string.Empty, StringComparison.Ordinal)
+            .Replace("__ASYNC__", DisposeAsyncSteps(style), StringComparison.Ordinal);
         var output = RunConsumer(root, interop, program, allowUnsafe: true);
 
         string[] expected =
@@ -1309,11 +1725,293 @@ public sealed class IntegrationTests
             "Dual.Moved=1,2", "Dual.Closing=True", "DualFire.Cancel=True", "Dual.Renamed=renamed", "DualFire.Describe=value 42|7",
             "DualInvoke.Cancel=True", "DualInvoke.Describe=value 42|7",
             .. style == EventStyle.Observable ? ["Dispatch.Completed", "Vt.Completed", "Dual.Completed"] : Array.Empty<string>(),
+            .. style == EventStyle.Interface ? Array.Empty<string>() : ["AsyncConnections=1", "AsyncDisposed=0", "Waiting=True", "WaitHandlerDone", "Waited"],
+            .. style == EventStyle.Observable
+                ? ["AsyncCompleted", "WaitCompleted", "CompletedEarly=False", "SyncHandlerDone", "SyncCompleted", "SyncCompletedOnHandlerThread=True", "SyncOtherCompleted",
+                    "SyncRaiseError=80131509", "FailedCompleted", "FailedDisposeError=8001010E", "FailedConnections=1", "FailedRetried=0",
+                    "BothDisposeErrors=COMException:8001010E,InvalidOperationException:80131509", "BothConnections=1", "BothRetried=0"]
+                : Array.Empty<string>(),
         ];
-        CollectionAssert.IsSubsetOf(expected, output.ToArray(), string.Join(Environment.NewLine, output));
-        Assert.AreEqual("Connections=0", output.Last(), string.Join(Environment.NewLine, output));
-        Assert.HasCount(2, output.Where(static line => line == "Dual.Moved=1,2"), string.Join(Environment.NewLine, output));
+        string text = string.Join(Environment.NewLine, output);
+        CollectionAssert.IsSubsetOf(expected, output.ToArray(), text);
+        Assert.AreEqual("Connections=0", output.Last(), text);
+        if (style != EventStyle.Interface)
+        {
+            // DisposeAsync completes after the running handler has returned.
+            Assert.IsLessThan(output.IndexOf("Waited"), output.IndexOf("WaitHandlerDone"), text);
+        }
+
+        if (style == EventStyle.Observable)
+        {
+            Assert.IsLessThan(output.IndexOf("AsyncDisposed=0"), output.IndexOf("AsyncCompleted"), text);
+            Assert.IsGreaterThan(output.IndexOf("AsyncConnections=1"), output.IndexOf("AsyncCompleted"), text);
+
+            // The observables are completed after the running handler has returned, by DisposeAsync and by Dispose.
+            Assert.IsGreaterThan(output.IndexOf("WaitHandlerDone"), output.IndexOf("WaitCompleted"), text);
+            Assert.IsLessThan(output.IndexOf("Waited"), output.IndexOf("WaitCompleted"), text);
+            Assert.IsGreaterThan(output.IndexOf("SyncHandlerDone"), output.IndexOf("SyncCompleted"), text);
+
+            // The exception of the observer fails the event call of the source, which the handler completed in, once the other
+            // observable is completed too.
+            Assert.IsGreaterThan(output.IndexOf("SyncCompleted"), output.IndexOf("SyncOtherCompleted"), text);
+            Assert.IsGreaterThan(output.IndexOf("SyncOtherCompleted"), output.IndexOf("SyncRaiseError=80131509"), text);
+
+            // DisposeAsync completes the observables before it throws the error that left the sink connected.
+            Assert.IsGreaterThan(output.IndexOf("FailedCompleted"), output.IndexOf("FailedDisposeError=8001010E"), text);
+        }
+        Assert.HasCount(2, output.Where(static line => line == "Dual.Moved=1,2"), text);
+
+        // The event that the source raises during Advise reaches the handler of Connect, but no handler or observer of a sink,
+        // which can only be subscribed once the constructor has returned; the constructor succeeds all the same.
+        Assert.AreEqual(style == EventStyle.Interface, output.Contains("Vt.Moved=7,8"), text);
+
+        // After the sinks are disposed, the events that are raised through them reach no handler, through the vtable as
+        // through IDispatch::Invoke, and the results and out arguments are the defaults.
+        var late = output.SkipWhile(static line => line != "Late").ToList();
+        Assert.IsFalse(late.Any(static line => System.Text.RegularExpressions.Regex.IsMatch(line, @"^(Dispatch|Vt|Dual)\.|^Error=")), text);
+        CollectionAssert.IsSubsetOf(
+            new[] { "DispatchInvoke.Cancel=False", "VtFire.Cancel=False", "VtFire.Describe=|0", "DualFire.Cancel=False", "DualInvoke.Cancel=False" },
+            late.ToArray(),
+            text);
     }
+
+    // The steps of the consumer of ReceiveEvents that dispose generated sinks: DisposeAsync disconnects, and completes when
+    // no handler runs any more, also when one is running on another thread; with the observable style it completes the
+    // observables afterwards, and so does Dispose, which does not wait for the handler.
+    private static string DisposeAsyncSteps(EventStyle style)
+    {
+        if (style == EventStyle.Interface)
+        {
+            return string.Empty;
+        }
+
+        bool observable = style == EventStyle.Observable;
+        string asyncSubscription = observable
+            ? """_ = asyncSink.Moved.Subscribe(new Observer<IShapeEventsDual_MovedEventArgs>(_ => { }, () => Console.WriteLine("AsyncCompleted")));"""
+            : string.Empty;
+        string waitSubscription = observable
+            ? """_ = waitSink.Moved.Subscribe(new Observer<IShapeEventsDual_MovedEventArgs>(_ => { waitEntered.Set(); WaitFor(waitResume); Console.WriteLine("WaitHandlerDone"); }, () => Console.WriteLine("WaitCompleted")));"""
+            : """waitSink.Moved += (x, y) => { waitEntered.Set(); WaitFor(waitResume); Console.WriteLine("WaitHandlerDone"); };""";
+        string steps = $$"""
+            // A signal that does not come fails the program, rather than letting it go on as if it had come.
+            static void WaitFor(ManualResetEventSlim signal, [System.Runtime.CompilerServices.CallerArgumentExpression(nameof(signal))] string name = "")
+            {
+                if (!signal.Wait(TimeSpan.FromSeconds(30)))
+                {
+                    throw new TimeoutException($"{name} was not set.");
+                }
+            }
+
+            await using (var asyncSink = new IShapeEventsDualSink(proxy))
+            {
+                {{asyncSubscription}}
+                Console.WriteLine($"AsyncConnections={source.Connections}");
+            }
+
+            Console.WriteLine($"AsyncDisposed={source.Connections}");
+
+            // A handler is running on another thread when the sink is disposed.
+            using var waitEntered = new ManualResetEventSlim();
+            using var waitResume = new ManualResetEventSlim();
+            var waitSink = new IShapeEventsDualSink(proxy);
+            {{waitSubscription}}
+            var waitEvents = (IShapeEventsDual)wrappers.GetOrCreateObjectForComInstance(source.Points[IShapeEventsDualSink.Iid].Sinks.Values.Single(), CreateObjectFlags.UniqueInstance);
+            var waitRaising = Task.Run(() => waitEvents.Moved(1, 2));
+            WaitFor(waitEntered);
+            var waitDisposing = waitSink.DisposeAsync().AsTask();
+            Console.WriteLine($"Waiting={!waitDisposing.IsCompleted}");
+            waitResume.Set();
+            await waitDisposing;
+            await waitRaising;
+            Console.WriteLine("Waited");
+            """;
+
+        if (observable)
+        {
+            steps += """
+
+                // Dispose does not wait for the running handler, which completes the observables on its thread when it has
+                // returned; the exception of an observer then fails its event call, after the other observables are
+                // completed too.
+                using var syncEntered = new ManualResetEventSlim();
+                using var syncResume = new ManualResetEventSlim();
+                using var syncCompleted = new ManualResetEventSlim();
+                int syncHandlerThread = 0;
+                var syncSink = new IShapeEventsDualSink(proxy);
+                _ = syncSink.Moved.Subscribe(new Observer<IShapeEventsDual_MovedEventArgs>(
+                    _ => { syncHandlerThread = Environment.CurrentManagedThreadId; syncEntered.Set(); WaitFor(syncResume); Console.WriteLine("SyncHandlerDone"); },
+                    () =>
+                    {
+                        Console.WriteLine("SyncCompleted");
+                        Console.WriteLine($"SyncCompletedOnHandlerThread={Environment.CurrentManagedThreadId == syncHandlerThread}");
+                        syncCompleted.Set();
+                        throw new InvalidOperationException("SyncCompletionFailed");
+                    }));
+                _ = syncSink.Closing.Subscribe(new Observer<IShapeEventsDual_ClosingEventArgs>(_ => { }, () => Console.WriteLine("SyncOtherCompleted")));
+                var syncEvents = (IShapeEventsDual)wrappers.GetOrCreateObjectForComInstance(source.Points[IShapeEventsDualSink.Iid].Sinks.Values.Single(), CreateObjectFlags.UniqueInstance);
+                var syncRaising = Task.Run(() => syncEvents.Moved(1, 2));
+                WaitFor(syncEntered);
+                syncSink.Dispose();
+                Console.WriteLine($"CompletedEarly={syncCompleted.IsSet}");
+                syncResume.Set();
+                WaitFor(syncCompleted);
+                try
+                {
+                    await syncRaising;
+                }
+                catch (Exception e)
+                {
+                    Console.WriteLine($"SyncRaiseError={e.HResult:X8}");
+                }
+
+                // A disconnection from the wrong thread leaves the sink connected: DisposeAsync throws, after completing the
+                // observables, and Dispose disconnects the sink.
+                var failSink = new IShapeEventsDualSink(proxy);
+                _ = failSink.Moved.Subscribe(new Observer<IShapeEventsDual_MovedEventArgs>(_ => { }, () => Console.WriteLine("FailedCompleted")));
+                source.Points[IShapeEventsDualSink.Iid].UnadviseError = unchecked((int)0x8001010E);
+                try
+                {
+                    await failSink.DisposeAsync();
+                }
+                catch (COMException e)
+                {
+                    Console.WriteLine($"FailedDisposeError={e.HResult:X8}");
+                }
+
+                Console.WriteLine($"FailedConnections={source.Connections}");
+                failSink.Dispose();
+                Console.WriteLine($"FailedRetried={source.Connections}");
+
+                // When an observer throws too, both exceptions are thrown, the one that left the sink connected first.
+                var bothSink = new IShapeEventsDualSink(proxy);
+                _ = bothSink.Moved.Subscribe(new Observer<IShapeEventsDual_MovedEventArgs>(_ => { }, () => throw new InvalidOperationException("BothCompletionFailed")));
+                source.Points[IShapeEventsDualSink.Iid].UnadviseError = unchecked((int)0x8001010E);
+                try
+                {
+                    await bothSink.DisposeAsync();
+                }
+                catch (AggregateException e)
+                {
+                    Console.WriteLine($"BothDisposeErrors={string.Join(",", e.InnerExceptions.Select(static x => $"{x.GetType().Name}:{x.HResult:X8}"))}");
+                }
+
+                Console.WriteLine($"BothConnections={source.Connections}");
+                bothSink.Dispose();
+                Console.WriteLine($"BothRetried={source.Connections}");
+                """;
+        }
+
+        return steps;
+    }
+
+    // A COM object of the consumer that raises the events of the event interfaces of the test library through connection
+    // points, and an observer of the observable event style.
+    private const string EventSourceFixture = """
+        [GeneratedComClass]
+        internal sealed partial class EventSource : IConnectionPointContainer
+        {
+            public Dictionary<Guid, ConnectionPoint> Points { get; } = new()
+            {
+                [_ShapeEventsSink.Iid] = new(_ShapeEventsSink.Iid),
+                [IShapeEventsVtSink.Iid] = new(IShapeEventsVtSink.Iid),
+                [IShapeEventsDualSink.Iid] = new(IShapeEventsDualSink.Iid),
+            };
+
+            public int Connections => Points.Values.Sum(static p => p.Sinks.Count);
+
+            public int EnumConnectionPoints(out nint ppEnum)
+            {
+                ppEnum = 0;
+                return unchecked((int)0x80004001);
+            }
+
+            public int FindConnectionPoint(in Guid riid, out IConnectionPoint? ppCP)
+            {
+                ppCP = Points.GetValueOrDefault(riid);
+                return ppCP is null ? unchecked((int)0x80040200) : 0;
+            }
+        }
+
+        [GeneratedComClass]
+        internal sealed partial class ConnectionPoint(Guid iid) : IConnectionPoint
+        {
+            private uint _cookie;
+
+            public Dictionary<uint, nint> Sinks { get; } = [];
+
+            // The HRESULT with which the next call of Unadvise fails, leaving the sink connected.
+            public int UnadviseError { get; set; }
+
+            // Called once with the next sink that connects, before Advise returns, like a source that raises its state then.
+            public Action<nint>? Advising { get; set; }
+
+            public int GetConnectionInterface(out Guid pIID)
+            {
+                pIID = iid;
+                return 0;
+            }
+
+            public int GetConnectionPointContainer(out nint ppCPC)
+            {
+                ppCPC = 0;
+                return unchecked((int)0x80004001);
+            }
+
+            // Like real event sources, asks the sink for the event interface.
+            public int Advise(nint pUnkSink, out uint pdwCookie)
+            {
+                pdwCookie = 0;
+                int hr = Marshal.QueryInterface(pUnkSink, iid, out nint sink);
+                if (hr < 0)
+                {
+                    return hr;
+                }
+
+                pdwCookie = ++_cookie;
+                Sinks.Add(pdwCookie, sink);
+                if (Advising is { } advising)
+                {
+                    Advising = null;
+                    advising(sink);
+                }
+
+                return 0;
+            }
+
+            public int Unadvise(uint dwCookie)
+            {
+                if (UnadviseError != 0)
+                {
+                    int error = UnadviseError;
+                    UnadviseError = 0;
+                    return error;
+                }
+
+                if (!Sinks.Remove(dwCookie, out nint sink))
+                {
+                    return unchecked((int)0x80040200);
+                }
+
+                Marshal.Release(sink);
+                return 0;
+            }
+
+            public int EnumConnections(out nint ppEnum)
+            {
+                ppEnum = 0;
+                return unchecked((int)0x80004001);
+            }
+        }
+
+        internal sealed class Observer<T>(Action<T> next, Action? completed = null) : IObserver<T>
+        {
+            public void OnNext(T value) => next(value);
+
+            public void OnError(Exception error) => throw error;
+
+            public void OnCompleted() => completed?.Invoke();
+        }
+        """;
 
     private static string ConnectEvents(EventStyle style, string source, string label) => style switch
     {
@@ -1432,6 +2130,96 @@ public sealed class IntegrationTests
             {
                 public static global::Interop.stdole.Font? GetFont(global::Drawing.Interop.ICanvas canvas, global::Interop.CsComTest.IShape shape) =>
                     canvas.Font ?? shape.Font();
+            }
+            """);
+
+        // Types around and in the namespace of the support code, named like types of .NET that it uses, as type libraries
+        // name theirs, e.g. Action of Excel, Exception of Outlook and Task of Word, and namespaces named System: the support
+        // code imports the types of .NET in its namespace, which the types around it cannot hide, and names them with
+        // global::, which the types in it cannot hide either, also in the code of the COM generators. It calls extension
+        // methods through their classes, so that those of its namespace are not found first.
+        File.WriteAllText(Path.Combine(directory, "Hostile.cs"), """
+            namespace Consumer
+            {
+                internal sealed class Action { }
+
+                internal sealed class Exception { }
+
+                internal sealed class Task { }
+
+                internal sealed class Marshal { }
+
+                internal sealed class Guid { }
+
+                internal sealed class Type { }
+            }
+
+            namespace Consumer.System
+            {
+                internal static class Placeholder { }
+            }
+
+            namespace Consumer.ComSupport
+            {
+                internal sealed class Action { }
+
+                internal sealed class Exception { }
+
+                internal sealed class Task { }
+
+                internal sealed class ValueTask { }
+
+                internal sealed class Marshal { }
+
+                internal sealed class Guid { }
+
+                internal sealed class Type { }
+
+                internal sealed class Lock { }
+
+                internal sealed class List<T> { }
+
+                internal sealed class Interlocked { }
+
+                internal sealed class Delegate { }
+
+                internal sealed class GeneratedComInterfaceAttribute { }
+
+                // Extension methods of the namespace, which a call through a receiver would find before those that the
+                // using directives import, and fail to compile with.
+                internal static class HostileExtensions
+                {
+                    private const string Message = "An extension method of the namespace of the support code.";
+
+                    [global::System.Obsolete(Message, error: true)]
+                    public static int AsSpan(this string text) => 0;
+
+                    [global::System.Obsolete(Message, error: true)]
+                    public static int AsSpan(this string text, int start) => 0;
+
+                    [global::System.Obsolete(Message, error: true)]
+                    public static int AsSpan<T>(this T[] array) => 0;
+
+                    [global::System.Obsolete(Message, error: true)]
+                    public static int AsSpan<T>(this T[] array, int start) => 0;
+
+                    [global::System.Obsolete(Message, error: true)]
+                    public static int AsSpan<T>(this T[] array, int start, int length) => 0;
+
+                    [global::System.Obsolete(Message, error: true)]
+                    public static int Select<TSource, TResult>(this global::System.Collections.Generic.IEnumerable<TSource> source, global::System.Func<TSource, TResult> selector) => 0;
+
+                    [global::System.Obsolete(Message, error: true)]
+                    public static int ToHashSet<T>(this global::System.Collections.Generic.IEnumerable<T> source) => 0;
+
+                    [global::System.Obsolete(Message, error: true)]
+                    public static int GetValueOrDefault<TKey, TValue>(this global::System.Collections.Generic.IReadOnlyDictionary<TKey, TValue> dictionary, TKey key) => 0;
+                }
+            }
+
+            namespace Consumer.ComSupport.System
+            {
+                internal static class Placeholder { }
             }
             """);
 
@@ -1824,6 +2612,50 @@ internal sealed class AccessorsInDerivedInterfaceTransformer : IModelTransformer
             shape.Methods.Remove(setter);
             circle.Methods.Add(setter);
         }
+    }
+}
+
+/// <summary>
+/// Turns <c>ICalculator.Enumerator</c>, which returns an <c>IEnumVARIANT</c>, into a <c>_NewEnum</c> that returns the
+/// dispinterface <c>DShapeEvents</c>, with the same vtable slot and layout.
+/// </summary>
+internal sealed class DispatchEnumeratorTransformer : IModelTransformer
+{
+    public void Transform(TypeLibrary library, TransformationContext context)
+    {
+        // The transformers also run on the libraries whose types are imported, e.g. stdole.
+        var interfaces = library.Types.OfType<InterfaceDefinition>().ToList();
+        if (interfaces.SingleOrDefault(static i => i.Name == "ICalculator") is not { } calculator
+            || interfaces.SingleOrDefault(static i => i.Name == "DShapeEvents") is not { } events)
+        {
+            return;
+        }
+
+        // MIDL stores the name of the method as that of its parameter, enumerator. The member identifier cannot be changed,
+        // so the method is replaced.
+        int index = calculator.Methods.FindIndex(static m => string.Equals(m.Name, "Enumerator", StringComparison.OrdinalIgnoreCase));
+        if (index < 0)
+        {
+            throw new InvalidOperationException("The test type library has no method ICalculator.Enumerator.");
+        }
+
+        var method = calculator.Methods[index];
+        var newEnum = new MethodDefinition
+        {
+            Name = method.Name,
+            OriginalName = method.OriginalName,
+            MemberId = -4,
+            InvokeKind = method.InvokeKind,
+            CallingConvention = method.CallingConvention,
+            VtableSlot = method.VtableSlot,
+            ReturnType = method.ReturnType,
+            Flags = method.Flags,
+            Documentation = method.Documentation,
+        };
+        var retval = method.RetvalParameter!;
+        retval.Type = new PointerTypeReference(new PointerTypeReference(new UserDefinedTypeReference(events)));
+        newEnum.Parameters.Add(retval);
+        calculator.Methods[index] = newEnum;
     }
 }
 

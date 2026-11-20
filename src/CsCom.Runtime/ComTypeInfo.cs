@@ -66,7 +66,7 @@ internal static unsafe class ComTypeInfo
 
         try
         {
-            return ComInterfaceMarshaller<ITypeInfo>.ConvertToManaged((void*)pointer);
+            return ComMarshalling.ToManaged<ITypeInfo>((void*)pointer);
         }
         finally
         {
@@ -119,7 +119,7 @@ internal static unsafe class ComTypeInfo
 
         try
         {
-            return ComInterfaceMarshaller<ITypeInfo>.ConvertToManaged((void*)pointer);
+            return ComMarshalling.ToManaged<ITypeInfo>((void*)pointer);
         }
         finally
         {

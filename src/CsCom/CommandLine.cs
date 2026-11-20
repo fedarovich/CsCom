@@ -855,7 +855,7 @@ internal static class CommandLine
             command.Options.Add(SafeArrays);
         }
 
-        public MarshallingOverrides GetOverrides(ParseResult result) => new()
+        public MarshallingOptionOverrides GetOverrides(ParseResult result) => new()
         {
             Dates = result.GetValue(Dates),
             Currencies = result.GetValue(Currencies),

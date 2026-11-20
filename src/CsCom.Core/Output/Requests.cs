@@ -169,7 +169,7 @@ public sealed class UpdateProjectRequest
     public bool? SingleFile { get; init; }
 
     /// <summary>The changes to the representation of <c>DATE</c>, <c>CURRENCY</c> and <c>VARIANT_BOOL</c> values.</summary>
-    public MarshallingOverrides Marshalling { get; init; } = new();
+    public MarshallingOptionOverrides Marshalling { get; init; } = new();
 
     /// <summary>The new code generated for the event (source) interfaces.</summary>
     public EventStyle? EventStyle { get; init; }
@@ -234,7 +234,7 @@ public sealed class AddReferencesRequest
     public IReadOnlyList<string> ReferencePaths { get; init; } = [];
 
     /// <summary>How <c>DATE</c>, <c>CURRENCY</c> and <c>VARIANT_BOOL</c> values, <c>BSTR</c>s and typed <c>SAFEARRAY</c>s are represented.</summary>
-    public MarshallingOverrides Marshalling { get; init; } = new();
+    public MarshallingOptionOverrides Marshalling { get; init; } = new();
 
     /// <summary>The code generated for the event (source) interfaces.</summary>
     public EventStyle? EventStyle { get; init; }

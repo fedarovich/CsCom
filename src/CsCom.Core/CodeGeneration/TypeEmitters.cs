@@ -132,18 +132,26 @@ internal sealed partial class TypeEmitters
             if (definition.Flags.HasFlag(TypeFlags.CanCreate))
             {
                 string context = $"{support}.ClassContext context = {support}.ComActivator.DefaultContext";
-                string create = definition.DefaultInterface?.Interface switch
+                (string type, string activation) = definition.DefaultInterface?.Interface switch
                 {
                     UserDefinedTypeReference { Definition: InterfaceDefinition { InterfaceKind: InterfaceKind.Dispatch } wrapper } =>
-                        Create(_context.GetTypeName(wrapper, @namespace), "CreateDispatchInstance"),
+                        (_context.GetTypeName(wrapper, @namespace), "CreateDispatchInstance"),
                     UserDefinedTypeReference { Definition: InterfaceDefinition defaultInterface } =>
-                        Create(_context.GetTypeName(defaultInterface, @namespace), "CreateInstance"),
-                    PrimitiveTypeReference { VarType: VarEnum.VT_DISPATCH } => Create($"{support}.IDispatch", "CreateInstance"),
-                    _ => Create("object", "CreateInstance"),
+                        (_context.GetTypeName(defaultInterface, @namespace), "CreateInstance"),
+                    PrimitiveTypeReference { VarType: VarEnum.VT_DISPATCH } => ($"{support}.IDispatch", "CreateInstance"),
+                    _ => ("object", "CreateInstance"),
                 };
 
-                members.Add(Syntax.Member(create).WithDocumentation(
+                // Create(default) calls this overload, as before the one with unique: C# prefers an overload whose parameters
+                // all have arguments to one that needs a default value.
+                members.Add(Syntax.Member($"public static {type} Create({context}) => Create(false, context);").WithDocumentation(
                     $"Creates an instance of the {definition.OriginalName} class.",
+                    ("param name=\"context\"", "The context in which the code that manages the newly created object will run.")));
+
+                // ComMarshalling.Release takes a late-bound wrapper too, and releases the object that it wraps.
+                members.Add(Syntax.Member($"public static {type} Create(bool unique, {context}) => {support}.ComActivator.{activation}<{type}>(Clsid, unique, context);").WithDocumentation(
+                    $"Creates an instance of the {definition.OriginalName} class. If unique is set, the instance has a managed object of its own, which ComMarshalling.Release releases at once.",
+                    ("param name=\"unique\"", "Whether the COM object gets a managed object of its own rather than the one that all the references to it share."),
                     ("param name=\"context\"", "The context in which the code that manages the newly created object will run.")));
 
                 // Objects whose default interface is a vtable interface may not implement IDispatch. The activation for dynamic
@@ -160,9 +168,6 @@ internal sealed partial class TypeEmitters
                             $"Creates an instance of the {definition.OriginalName} class for late binding with dynamic.",
                             ("param name=\"context\"", "The context in which the code that manages the newly created object will run.")));
                 }
-
-                string Create(string type, string method) =>
-                    $"public static {type} Create({context}) => {support}.ComActivator.{method}<{type}>(Clsid, context);";
             }
         }
 

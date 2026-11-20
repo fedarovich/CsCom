@@ -34,7 +34,7 @@ public sealed class ConfigurationSchemaTests
                 <RenameMembersToPascalCase Type="^I" Kind="interface" Member="^_" />
                 <RenameMembersToPascalCase TypeName="Record" MemberName="checked" />
                 <SetMarshalling Type="^IArrays$" Kind="interface" Member="Matrix" Parameter="Values"
-                                Dates="bcl" Currencies="none" Booleans="wrapper" Bstrs="string" SafeArrays="sysarray" />
+                                Dates="bcl" Currencies="none" Booleans="wrapper" Bstrs="string" SafeArrays="sysarray" Interfaces="unique" />
                 <SetMarshalling TypeName="IArrays" MemberName="Matrix" ParameterName="Values" Bstrs="wrapper" SafeArrays="array" />
                 <RemoveEnumPrefix />
                 <RemoveEnumPrefix Type="^Anon" />

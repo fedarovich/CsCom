@@ -10,7 +10,8 @@ four NuGet packages that are always released together with the same version: `Cs
 (MSBuild integration), `CsCom.Runtime` and `CsCom.Runtime.Dynamic` (support code of the generated code).
 
 `README.md` is the user documentation and is thorough: read the relevant section before changing a behavior it describes.
-`docs/requirements.md` holds the original requirements; the README is the current description.
+`docs/requirements.md` holds the original requirements; the README is the current description. `docs/known-issues.md`
+lists the known issues that are not fixed, with the reasons: check it before reporting or fixing one.
 
 ## Commands
 
@@ -20,7 +21,7 @@ Windows only (type libraries are read with the OLE Automation APIs). Building ne
 ```powershell
 dotnet build src/CsCom.slnx
 dotnet test src/CsCom.slnx --no-build --filter "TestCategory!=Integration"   # unit tests, on .NET 10 and .NET 11
-dotnet pack src/CsCom.slnx --no-build                                        # packages into artifacts/packages
+dotnet pack src/CsCom.slnx                                                   # packages into artifacts/packages
 dotnet test src/CsCom.slnx --no-build                                        # all tests; the integration tests need the packages
 ```
 
@@ -30,6 +31,8 @@ A single test, on one target framework:
 dotnet test src/CsCom.Tests/CsCom.Tests.csproj -f net11.0-windows --filter "FullyQualifiedName~CodeGenerationTests.GeneratesSingleFile"
 ```
 
+- `dotnet pack` packs the Release configuration, which `dotnet build` (Debug) does not build: do not add `--no-build` to
+  it, unless the solution was built with `-c Release` as CI does, or it packs the binaries of an earlier Release build.
 - Set `$env:DiffEngine_Disabled = 'true'` before running tests, so that Verify does not open a diff tool for a snapshot
   that does not match.
 - There is no separate linter: `TreatWarningsAsErrors` and `AnalysisLevel=latest` apply to every project
@@ -93,10 +96,23 @@ These are the types that the generated code calls: `IDispatch`, the `VARIANT`/`S
 (the base of the late-bound wrappers), the event sinks, and the `dynamic` support. Their sources have two consumers: they are
 compiled into the packages, and they are embedded as resources into CsCom.Core, from which `SupportCodeProvider` emits them
 into generated projects in the `public` and `internal` support code modes, rewriting the namespace and the accessibility.
-The sources must therefore stay self-contained:
 
-- no implicit usings and no assembly-level attributes, and only the file-scoped namespace `CsCom.Runtime` (both projects);
+When CsCom.Core is built, the `QualifySupportCode` MSBuild task of `src/CsCom.SupportCode`, a build-only library that
+runs in a .NET task host, checks their layout and qualifies their names of .NET with `global::`, calling the extension
+methods through their classes (`SupportCodeQualifier`). It binds them with Roslyn as C# 14 against the compile
+references of the `net10.0` build of CsCom.Runtime, and CsCom.Core embeds the qualified copies from
+`obj/<config>/net10.0/SupportCode/`, so the sources keep their using directives. A file that breaks the rules below, or
+does not bind, fails the build of CsCom.Core. The sources must therefore stay self-contained:
+
+- no implicit usings, no assembly-level attributes and no preprocessor directives, and only the file-scoped namespace
+  `CsCom.Runtime` (both projects), with all using directives at the top of the file, before it (`SupportCodeLayout`
+  rejects any other layout);
+- no names of their namespace, such as `CsCom.Runtime.X`, `Runtime.X` or `using static CsCom.Runtime.X;`: it is renamed
+  in generated projects, so `SupportCodeLayout` rejects them, and all the types are in scope without them;
 - compatible with C# 14: the `net10.0` build uses the default C# version to enforce it;
+- extension methods only called as `receiver.Method(…)`, which `SupportCodeQualifier` rewrites: not after `?.`, as
+  method groups, or implicitly in `foreach`, `await`, collection initializers, deconstructions or queries
+  (`SupportCodeQualificationTests.ExtensionMethodsAreCalledThroughTheirClasses` rejects them);
 - CsCom.Runtime.Dynamic only uses the public API of CsCom.Runtime;
 - AOT compatible (`IsAotCompatible`).
 
@@ -117,6 +133,15 @@ same target framework as the assembly that declares it (SYSLIB1230).
   of C# 15 such as extension indexers are emitted only behind checks like `CodeGenerationOptions.SupportsExtensionIndexers`.
 - **A change of the generated code or of CsCom.Runtime** usually needs: the Verify snapshots, the integration tests (which
   compile and run the generated code against real COM objects), the README section and a CHANGELOG entry.
+- **What a value stands for where it goes to COM** (the rule of `IDispatchProvider`, late-bound wrappers, objects
+  exposed to COM, `UnknownWrapper` and `DispatchWrapper`) is applied in several places, which a change of the rule must
+  all follow: `ComMarshalling.ToUnmanaged`, `QueryInterface` and `Release`, `ComConvert.ToWrapper` and `To`,
+  `ComObjects.GetDispatch`, `ComEnumerator.FromObject` and `VariantMarshaller.ConvertToUnmanaged`, with the helpers
+  `IsLateBoundWrapper`, `TryGetProvidedDispatch`, `TryConvertExposedObject` and `UnwrapUnknownWrapper` of
+  `ComMarshalling`. CsCom.Runtime.Dynamic has copies in `ComDynamic` (`Unwrap`, and `TryGetDispatch`, which
+  `DynamicDispatchObject.Wrap` uses for the results of calls) and `DynamicDispatchObject.IsComObject`, which
+  `TheDynamicSupportFollowsTheRulesOfTheRuntime` compares with the runtime. The README describes the rule in "Interface
+  pointers".
 
 ## Tests (`src/CsCom.Tests`)
 
@@ -126,8 +151,8 @@ same target framework as the assembly that declares it (SYSLIB1230).
   headers of the generated files use `TestEnvironment.ToolVersion`, so that the snapshots do not depend on the version.
 - **Integration tests** (`[TestCategory("Integration")]`: `IntegrationTests`, `BuildPackageTests`) generate projects, build
   them with the .NET SDK (and the MSBuild of Visual Studio when installed) and run them. They restore CsCom.Runtime,
-  CsCom.Runtime.Dynamic and CsCom.Build from `artifacts/packages`, which only `dotnet pack` updates: **pack again after
-  changing the runtime, the task or the tool**, or the tests run against the old packages. They are slow; filter them.
+  CsCom.Runtime.Dynamic and CsCom.Build from `artifacts/packages`, which only `dotnet pack` updates: **pack again (without
+  `--no-build`) after changing the runtime, the task or the tool**, or the tests run against the old packages. They are slow; filter them.
 - **Fixtures:** `TestAssets/CsComTest.idl` is the type library that most tests generate from; add a construct there (and
   rebuild the `.tlb`) to cover it. Tests against real objects use `scrrun.dll` and `stdole2.tlb` of Windows.
   `TestCompiler` compiles hand-written `[ComImport]` fixtures in memory.

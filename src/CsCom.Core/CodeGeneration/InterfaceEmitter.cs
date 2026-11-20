@@ -253,10 +253,20 @@ internal sealed partial class InterfaceEmitter
             m.MemberId == DispIdNewEnum && m.InvokeKind is InvokeKind.Method or InvokeKind.PropertyGet && m.Parameters.Count == 1 && SignatureBuilder.HasRetval(m, out _));
         if (newEnum is not null && !methodNames.Contains("GetEnumerator"))
         {
+            // The enumerator that a call through COM returns belongs to foreach, which releases it at the end when it is a
+            // unique object, which the marshaller created; a shared one is not owned. A managed implementation of the
+            // interface is called directly, and returns an object of its own, which is not owned either. FromObject
+            // enumerates the COM object of a late-bound wrapper, which the marshaller created for the wrapper that it
+            // created, and owns no object of the application that is exposed to COM, which the pointer can be converted
+            // back to, e.g. a late-bound wrapper of its own that the collection returns.
+            string call = $"{ReceiverExpression}.{Syntax.Escape(SignatureBuilder.GetMethodName(newEnum))}()";
+            string arguments = signatures.MapComSignature(newEnum).ReturnType.IsUnique
+                ? $"{call}, ownsEnumerator: (object){ReceiverExpression} is {Syntax.MarshallingNamespace}.ComObject"
+                : call;
             members.Add(_context.Annotations.Annotate(
                 MethodDeclaration(Syntax.Type($"{_context.Support}.ComEnumerator"), Syntax.Identifier("GetEnumerator"))
                     .WithModifiers(Syntax.Modifiers(SyntaxKind.PublicKeyword))
-                    .WithExpressionBody(Syntax.Arrow($"{_context.Support}.ComEnumerator.FromObject({ReceiverExpression}.{Syntax.Escape(SignatureBuilder.GetMethodName(newEnum))}())"))
+                    .WithExpressionBody(Syntax.Arrow($"{_context.Support}.ComEnumerator.FromObject({arguments})"))
                     .WithSemicolonToken(Token(SyntaxKind.SemicolonToken))
                     .WithDocumentation("Returns an enumerator that iterates through the collection, so that it can be used in foreach loops."),
                 newEnum,

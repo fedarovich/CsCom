@@ -14,7 +14,7 @@ public readonly record struct ComCurrency(long Value)
     public static implicit operator decimal(ComCurrency value) => value.ToDecimal();
 
     /// <summary>Converts a <see cref="decimal"/> to a <see cref="ComCurrency"/>.</summary>
-    /// <exception cref="System.OverflowException">The value is out of the range of a currency value.</exception>
+    /// <exception cref="global::System.OverflowException">The value is out of the range of a currency value.</exception>
     public static implicit operator ComCurrency(decimal value) => new(decimal.ToOACurrency(value));
 
     /// <inheritdoc/>

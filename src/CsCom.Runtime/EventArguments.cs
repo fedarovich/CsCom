@@ -37,8 +37,9 @@ public readonly unsafe ref struct EventArguments
     /// <param name="parameters">The arguments; can be <see langword="null"/>.</param>
     /// <param name="result">
     /// The variable that receives the result; <see langword="null"/> if the caller expects none. It must be initialized,
-    /// since <see cref="SetResult"/> clears its value; <see cref="DispatchEventSink.InvokeHandler"/> initializes the variable
-    /// of the caller of <c>IDispatch::Invoke</c>, which may not be.
+    /// since <see cref="SetResult"/> clears its value;
+    /// <see cref="DispatchEventSink.InvokeHandler(IDispatchEventHandler, int, DispParams*, ComVariant*, ExcepInfo*)"/>
+    /// initializes the variable of the caller of <c>IDispatch::Invoke</c>, which may not be.
     /// </param>
     public EventArguments(DispParams* parameters, ComVariant* result)
     {
@@ -64,6 +65,12 @@ public readonly unsafe ref struct EventArguments
             return VariantMarshaller.ConvertToManaged(*variant);
         }
 
+        // An argument that is passed by reference without a reference, which VariantCopyInd would read.
+        if (variant->GetRawDataRef<nint>() == 0)
+        {
+            return null;
+        }
+
         ComVariant value = default;
         Marshal.ThrowExceptionForHR(OleNativeMethods.VariantCopyInd(&value, variant));
         try
@@ -83,6 +90,32 @@ public readonly unsafe ref struct EventArguments
     /// <summary>Gets an argument converted to a late-bound wrapper.</summary>
     /// <param name="index">The position of the argument in the declaration of the member.</param>
     public T? GetWrapper<T>(int index) where T : class, IDispatchWrapper<T> => ComConvert.ToWrapper<T>(GetValue(index));
+
+    /// <summary>
+    /// Gets an object argument converted to a unique object of <typeparamref name="T"/>, which is not shared with other
+    /// references to the COM object and belongs to the caller, like an interface pointer that is marshalled with
+    /// <see cref="UniqueComObjectMarshaller{T}"/>: <see cref="ComMarshalling.Release"/> releases it at once. An argument
+    /// that holds no object, e.g. an omitted one, is converted like <see cref="Get{T}"/>.
+    /// </summary>
+    /// <param name="index">The position of the argument in the declaration of the member.</param>
+    /// <exception cref="NotSupportedException">
+    /// <typeparamref name="T"/> is an interface that is not a source-generated COM interface, also for an argument that
+    /// holds no object.
+    /// </exception>
+    public T? GetUnique<T>(int index) where T : class
+    {
+        // Like the marshallers, so that a handler fails at its first event rather than at the first one with an object.
+        ComMarshalling.ThrowIfNotComInterface<T>();
+        return TryGetObjectPointer(index, out nint pointer) ? ComMarshalling.ToManaged<T>((void*)pointer, unique: true) : Get<T?>(index);
+    }
+
+    /// <summary>
+    /// Gets an object argument converted to a late-bound wrapper of a unique object, like a pointer that is marshalled with
+    /// <see cref="UniqueDispatchWrapperMarshaller{T}"/>, see <see cref="GetUnique{T}"/>.
+    /// </summary>
+    /// <param name="index">The position of the argument in the declaration of the member.</param>
+    public T? GetUniqueWrapper<T>(int index) where T : class, IDispatchWrapper<T> =>
+        TryGetObjectPointer(index, out nint pointer) ? UniqueDispatchWrapperMarshaller<T>.ConvertToManaged((void*)pointer) : GetWrapper<T>(index);
 
     /// <summary>Gets an array argument converted to an array of <typeparamref name="T"/>.</summary>
     /// <param name="index">The position of the argument in the declaration of the member.</param>
@@ -177,6 +210,20 @@ public readonly unsafe ref struct EventArguments
 
         uint positional = count - named;
         return (uint)index < positional ? _parameters->rgvarg + (count - 1 - (uint)index) : null;
+    }
+
+    // Gets the interface pointer of an argument that holds an object, also by reference or in a VARIANT passed by reference,
+    // without a reference of its own, which the conversion adds; 0 for a null object.
+    private bool TryGetObjectPointer(int index, out nint pointer)
+    {
+        ComVariant* variant = Find(index);
+        if (variant is null)
+        {
+            pointer = 0;
+            return false;
+        }
+
+        return VariantMarshaller.TryGetObjectPointer(variant, out pointer);
     }
 
     private static bool IsOmitted(ComVariant* variant) =>

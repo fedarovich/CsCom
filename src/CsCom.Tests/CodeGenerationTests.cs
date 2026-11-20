@@ -1,7 +1,10 @@
+using System.Runtime.InteropServices;
 using System.Xml.Linq;
 using CsCom.CodeGeneration;
 using CsCom.Configuration;
 using CsCom.Model;
+using CsCom.TypeLibraries;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace CsCom.Tests;
 
@@ -106,6 +109,220 @@ public sealed class CodeGenerationTests : VerifyBase
         StringAssert.Contains(text, "namespace Interop.CsComTest.ComSupport");
         StringAssert.Contains(text, "public unsafe partial interface IDispatch");
         StringAssert.Contains(text, ": global::Interop.CsComTest.ComSupport.IDispatch");
+        StringAssert.Contains(text, "using global::System.Runtime.InteropServices;");
+    }
+
+    [TestMethod]
+    public void TheSupportCodeTakesTheTypesOfDotNetFromTheGlobalNamespace()
+    {
+        // The types of the library or of the application around the namespace of the support code can have the names of the
+        // types of .NET that it uses, e.g. Action, Exception or Task, and a namespace around it can be named System. So the
+        // using directives are in the namespace, where they take precedence over the enclosing namespaces, and global, and
+        // the qualified names start with global::System. The names of .NET in the code are qualified too, so that types in
+        // the namespace cannot hide them either (SupportCodeQualificationTests). LibrarySetBuildsWithoutWarnings compiles
+        // it among such types.
+        var documents = Generate(new CodeGenerationOptions
+        {
+            Namespace = "Interop.CsComTest",
+            SupportCode = SupportCodeMode.Public,
+            Dynamic = true,
+            ToolVersion = TestEnvironment.ToolVersion,
+        });
+
+        var support = documents.Where(static d => d.RelativePath.StartsWith("ComSupport/", StringComparison.Ordinal)).ToList();
+        Assert.IsNotEmpty(support);
+        foreach (var document in support)
+        {
+            var root = (Microsoft.CodeAnalysis.CSharp.Syntax.CompilationUnitSyntax)Microsoft.CodeAnalysis.CSharp.CSharpSyntaxTree.ParseText(document.GetText()).GetRoot();
+            Assert.IsEmpty(root.Usings, document.RelativePath);
+            foreach (var directive in root.DescendantNodes().OfType<Microsoft.CodeAnalysis.CSharp.Syntax.UsingDirectiveSyntax>())
+            {
+                StringAssert.StartsWith(directive.Name!.ToString(), "global::", document.RelativePath);
+            }
+
+            // Also in the documentation comments, whose cref attributes are resolved like the code.
+            var unqualified = root.DescendantNodes(descendIntoTrivia: true)
+                .OfType<Microsoft.CodeAnalysis.CSharp.Syntax.IdentifierNameSyntax>()
+                .Where(static name => name.Identifier.Text == "System" && name.Parent switch
+                {
+                    Microsoft.CodeAnalysis.CSharp.Syntax.QualifiedNameSyntax qualified => qualified.Left == name,
+                    Microsoft.CodeAnalysis.CSharp.Syntax.MemberAccessExpressionSyntax access => access.Expression == name,
+                    Microsoft.CodeAnalysis.CSharp.Syntax.QualifiedCrefSyntax cref => cref.Container == name,
+                    _ => false,
+                })
+                .Select(static name => name.Parent!.ToString())
+                .ToList();
+            Assert.IsEmpty(unqualified, $"{document.RelativePath}: {string.Join(", ", unqualified)}");
+        }
+    }
+
+    [TestMethod]
+    public void TheSupportCodeKeepsTheTriviaBeforeItsNamespace()
+    {
+        // The using directives move into the namespace; the comments between them and the namespace stay between them and
+        // the members, in their order.
+        const string Source = """
+            // Header.
+            using System;
+
+            // Before the namespace.
+            // Right before it.
+            namespace CsCom.Runtime;
+
+            public static class Sample
+            {
+            }
+            """;
+        var options = new CodeGenerationOptions { Namespace = "Interop.CsComTest", SupportCode = SupportCodeMode.Public, Dynamic = true };
+        string text = SupportCodeProvider.Adapt("Sample.cs", Source, options).ToFullString();
+        Assert.IsEmpty(Microsoft.CodeAnalysis.CSharp.CSharpSyntaxTree.ParseText(text).GetDiagnostics(), text);
+        string[] parts =
+        [
+            "// Header.",
+            "namespace Interop.CsComTest.ComSupport;",
+            "using global::System;",
+            "// Before the namespace.",
+            "// Right before it.",
+            "public static class Sample",
+        ];
+        int[] positions = [.. parts.Select(part => text.IndexOf(part, StringComparison.Ordinal))];
+        CollectionAssert.DoesNotContain(positions, -1, text);
+        CollectionAssert.AreEqual(positions.Order().ToArray(), positions, text);
+    }
+
+    [TestMethod]
+    public void TheSupportCodeQualifiesTheNamesOfItsUsingDirectives()
+    {
+        // At the top of the file, the names of the using directives are looked up in the global namespace, which they name
+        // in the namespace, also in the target of an alias; a name that is qualified with an alias already keeps it.
+        const string Source = """
+            using System;
+            using global::System.Text;
+            using static System.Math;
+            using Guids = System.Collections.Generic.List<System.Guid>;
+            using Pair = (System.Guid Id, int Count);
+            using unsafe Pointer = int*;
+            using Handle = nint;
+
+            namespace CsCom.Runtime;
+
+            public static class Sample
+            {
+            }
+            """;
+        var options = new CodeGenerationOptions { Namespace = "Interop.CsComTest", SupportCode = SupportCodeMode.Public };
+        var root = SupportCodeProvider.Adapt("Sample.cs", Source, options);
+        string text = root.ToFullString();
+        Assert.IsEmpty(Microsoft.CodeAnalysis.CSharp.CSharpSyntaxTree.ParseText(text).GetDiagnostics(), text);
+        Assert.IsEmpty(root.Usings, text);
+        string[] usings = [.. root.DescendantNodes().OfType<Microsoft.CodeAnalysis.CSharp.Syntax.UsingDirectiveSyntax>().Select(static u => u.ToString())];
+        CollectionAssert.AreEqual(
+            new[]
+            {
+                "using global::System;",
+                "using global::System.Text;",
+                "using static global::System.Math;",
+                "using Guids = global::System.Collections.Generic.List<global::System.Guid>;",
+                "using Pair = (global::System.Guid Id, int Count);",
+                "using unsafe Pointer = int*;",
+                "using Handle = nint;",
+            },
+            usings,
+            text);
+    }
+
+    [TestMethod]
+    [DataRow("namespace CsCom.Runtime { public static class Sample { } }", DisplayName = "Block-scoped namespace")]
+    [DataRow("using System; public static class Sample { }", DisplayName = "No namespace")]
+    [DataRow("public static class Before { } namespace CsCom.Runtime; public static class Sample { }", DisplayName = "Type before the namespace")]
+    [DataRow("global using System; namespace CsCom.Runtime; public static class Sample { }", DisplayName = "Global using directive")]
+    [DataRow("[assembly: System.CLSCompliant(false)] namespace CsCom.Runtime; public static class Sample { }", DisplayName = "Assembly attribute")]
+    [DataRow("extern alias Other; namespace CsCom.Runtime; public static class Sample { }", DisplayName = "Extern alias")]
+    [DataRow("namespace CsCom.Runtime.Other; public static class Sample { }", DisplayName = "Other namespace")]
+    [DataRow("namespace CsCom.Runtime; using System; public static class Sample { }", DisplayName = "Using directive in the namespace")]
+    [DataRow("namespace CsCom.Runtime; extern alias Other; public static class Sample { }", DisplayName = "Extern alias in the namespace")]
+    public void TheSupportCodeRejectsAFileThatTheSingleFileModeCannotMerge(string source)
+    {
+        // The single-file mode keeps only the using directives, without their trivia, and the members of the namespace of
+        // each file, and a using directive in the namespace would be looked up elsewhere once the namespace is renamed;
+        // GetFiles checks every file of the support code.
+        var options = new CodeGenerationOptions { Namespace = "Interop.CsComTest", SupportCode = SupportCodeMode.Public };
+        var exception = Assert.ThrowsExactly<InvalidOperationException>(() => SupportCodeProvider.Adapt("Sample.cs", source, options));
+        StringAssert.Contains(exception.Message, "Sample.cs");
+    }
+
+    [TestMethod]
+    [DataRow("#if true\nusing System;\n#endif\nnamespace CsCom.Runtime; public static class Sample { }", "#if true", 1, DisplayName = "Before the using directives")]
+    [DataRow("using System;\n#if true\nusing System.Text;\n#endif\nnamespace CsCom.Runtime; public static class Sample { }", "#if true", 2, DisplayName = "Among the using directives")]
+    [DataRow("using System;\n#pragma warning disable CA1822 // A reason.\nnamespace CsCom.Runtime; public static class Sample { }", "#pragma warning disable CA1822 // A reason.", 2, DisplayName = "After the using directives")]
+    [DataRow("#pragma warning disable CA1822\nnamespace CsCom.Runtime; public static class Sample { }", "#pragma warning disable CA1822", 1, DisplayName = "Before a namespace without using directives")]
+    [DataRow("namespace\n#if true\nCsCom.Runtime;\n#endif\npublic static class Sample { }", "#if true", 2, DisplayName = "In the namespace declaration")]
+    [DataRow("namespace CsCom.Runtime;\npublic static class Sample\n{\n#nullable disable\n}", "#nullable disable", 4, DisplayName = "In a member")]
+    [DataRow("namespace CsCom.Runtime;\npublic static class Sample { }\n#pragma warning restore CA1822", "#pragma warning restore CA1822", 3, DisplayName = "At the end of the file")]
+    [DataRow("namespace CsCom.Runtime;\n#if NET11_0_OR_GREATER\npublic static class Sample { }\n#endif", "#if NET11_0_OR_GREATER", 2, DisplayName = "Excluded code")]
+    public void TheSupportCodeRejectsAPreprocessorDirective(string source, string directive, int line)
+    {
+        // The single-file mode merges the members of all files into one namespace, where a directive in front of a member
+        // would apply to the files that follow too, and one at the end of a file would be lost; the code that a directive
+        // excludes is not parsed, so it would not be adapted. Comments are kept, see
+        // TheSupportCodeKeepsTheTriviaBeforeItsNamespace.
+        var options = new CodeGenerationOptions { Namespace = "Interop.CsComTest", SupportCode = SupportCodeMode.Public };
+        var exception = Assert.ThrowsExactly<InvalidOperationException>(() => SupportCodeProvider.Adapt("Sample.cs", source, options));
+        StringAssert.Contains(exception.Message, "Sample.cs");
+        StringAssert.Contains(exception.Message, $"'{directive}' at line {line}:");
+    }
+
+    [TestMethod]
+    [DataRow("using static CsCom.Runtime.OleNativeMethods; namespace CsCom.Runtime; public static class Sample { }", "CsCom.Runtime", 1, DisplayName = "Static using directive")]
+    [DataRow("using Alias = CsCom.Runtime.Other; namespace CsCom.Runtime; public static class Sample { }", "CsCom.Runtime", 1, DisplayName = "Alias")]
+    [DataRow("using Alias = System.Collections.Generic.List<CsCom.Runtime.Other>; namespace CsCom.Runtime; public static class Sample { }", "CsCom.Runtime", 1, DisplayName = "Type argument of an alias")]
+    [DataRow("using CsCom.Runtime; namespace CsCom.Runtime; public static class Sample { }", "CsCom.Runtime", 1, DisplayName = "Using directive of the namespace")]
+    [DataRow("using static global::CsCom.Runtime.Other; namespace CsCom.Runtime; public static class Sample { }", "global::CsCom", 1, DisplayName = "Global alias")]
+    [DataRow("namespace CsCom.Runtime; public static class Sample { private static readonly CsCom.Runtime.Other? Field; }", "CsCom.Runtime", 1, DisplayName = "Type")]
+    [DataRow("namespace CsCom.Runtime; public static class Sample { public static int Value => CsCom.Runtime.Other.Value; }", "CsCom.Runtime", 1, DisplayName = "Member access")]
+    [DataRow("namespace CsCom.Runtime; public static class Sample { public static int Value => Runtime.Other.Value; }", "Runtime.Other", 1, DisplayName = "Member access in the enclosing namespace")]
+    [DataRow("namespace CsCom.Runtime; public static class Sample { public static object Type => typeof(global::CsCom.Runtime.Other); }", "global::CsCom", 1, DisplayName = "Global alias in the code")]
+    [DataRow("namespace CsCom.Runtime;\n/// <summary><see cref=\"CsCom.Runtime.Other\"/></summary>\npublic static class Sample { }", "CsCom.Runtime", 2, DisplayName = "Cref")]
+    [DataRow("namespace CsCom.Runtime;\n/// <summary><see cref=\"Runtime.Other\"/></summary>\npublic static class Sample { }", "Runtime.Other", 2, DisplayName = "Cref in the enclosing namespace")]
+    public void TheSupportCodeRejectsANameOfItsNamespace(string source, string name, int line)
+    {
+        // The namespace is renamed in the generated projects, where such a name fails to compile, or names a type of the
+        // CsCom.Runtime package that the project references through another library; the rewriter qualifies the names of
+        // the using directives with global::. Runtime is found in the enclosing namespace CsCom.
+        var options = new CodeGenerationOptions { Namespace = "Interop.CsComTest", SupportCode = SupportCodeMode.Public };
+        var exception = Assert.ThrowsExactly<InvalidOperationException>(() => SupportCodeProvider.Adapt("Sample.cs", source, options));
+        StringAssert.Contains(exception.Message, "Sample.cs");
+        StringAssert.Contains(exception.Message, $"'{name}' at line {line}:");
+    }
+
+    [TestMethod]
+    public void TheSupportCodeAcceptsRuntimeWhereItDoesNotNameItsNamespace()
+    {
+        // After a dot, Runtime is a member of what precedes it, and alone it names the namespace only in nameof, whose text
+        // is the same: a member called Runtime is a member, also in an initializer and as the name of an argument.
+        const string Source = """
+            using System.Runtime.InteropServices;
+
+            namespace CsCom.Runtime;
+
+            /// <summary>Uses <see cref="System.Runtime.InteropServices.Marshal"/>.</summary>
+            public sealed class Sample
+            {
+                public int Runtime { get; init; }
+
+                /// <summary>Returns <paramref name="Runtime"/>.</summary>
+                public static int Get(int Runtime) => Runtime;
+
+                public Sample Copy() => new() { Runtime = this.Runtime };
+
+                public static string Name() => nameof(Runtime);
+
+                public static object Anonymous() => new { Runtime = Get(Runtime: 1) };
+            }
+            """;
+        var options = new CodeGenerationOptions { Namespace = "Interop.CsComTest", SupportCode = SupportCodeMode.Public };
+        string text = SupportCodeProvider.Adapt("Sample.cs", Source, options).ToFullString();
+        StringAssert.Contains(text, "new() { Runtime = this.Runtime }");
     }
 
     [TestMethod]
@@ -139,6 +356,312 @@ public sealed class CodeGenerationTests : VerifyBase
 
         return Verify(ToTargets(documents.Where(static d => d.RelativePath is "IStrings.cs" or "ICalculator.cs" or "IShape.cs" or "IShapeEventsDual.cs")))
             .UseParameters(mode);
+    }
+
+    [TestMethod]
+    public void GeneratesPerParameterInterfaceMarshalling()
+    {
+        var documents = Generate(new CodeGenerationOptions { Namespace = "Interop.CsComTest" }, """
+            <CsCom>
+              <ModelTransformers>
+                <SetMarshalling Type="^IShape$" Member="^Parent$" Interfaces="unique" />
+                <SetMarshalling Type="^IShape$" Member="^Dispatch$" Parameter="^Dispatch$" Interfaces="unique" />
+              </ModelTransformers>
+            </CsCom>
+            """);
+
+        string shape = documents.Single(static d => d.RelativePath == "IShape.cs").GetText();
+        const string Dispatch = "global::CsCom.Runtime.IDispatch";
+        static string Using(string marshaller, string type) =>
+            $"global::System.Runtime.InteropServices.Marshalling.MarshalUsing(typeof(global::CsCom.Runtime.{marshaller}<{type}>))";
+
+        // Without a parameter selector, the return value and the parameters of both accessors change; with it, only the
+        // parameter does, and the return value keeps the marshaller of shared objects, like the other members.
+        StringAssert.Contains(shape, $"[return: {Using("UniqueComObjectMarshaller", "IShape")}]\r\n    IShape? get_Parent();");
+        StringAssert.Contains(shape, $"void putref_Parent([{Using("UniqueComObjectMarshaller", "IShape")}] IShape? Parent);");
+        StringAssert.Contains(
+            shape,
+            $"[return: {Using("ComObjectMarshaller", Dispatch)}]\r\n    {Dispatch}? Dispatch([{Using("UniqueComObjectMarshaller", Dispatch)}] {Dispatch}? Dispatch);");
+        StringAssert.Contains(shape, $"[return: {Using("ComObjectMarshaller", "IShape")}]\r\n    IShape? Clone();");
+    }
+
+    [TestMethod]
+    public void AUniqueParameterOfAnEventIsUniqueThroughIDispatchToo()
+    {
+        // The marshaller of the parameter gives the handler an object of its own when the event is raised through the
+        // vtable, and so does the DispatchHandler when it is raised through IDispatch::Invoke, which passes the object in a
+        // VARIANT. A closed sink releases nothing: a managed source in the same process can call it directly, with its own
+        // objects, which the sink cannot tell from those that the marshaller created.
+        string events = Generate(new ObjectEventTransformer { Unique = true });
+        const string Dispatch = "global::CsCom.Runtime.IDispatch";
+        StringAssert.Contains(
+            events,
+            $"void Renamed([global::System.Runtime.InteropServices.Marshalling.MarshalUsing(typeof(global::CsCom.Runtime.UniqueComObjectMarshaller<{Dispatch}>))] {Dispatch}? Name);");
+        StringAssert.Contains(events, "case 3:");
+        StringAssert.Contains(events, $"__handler.Renamed(arguments.GetUnique<{Dispatch}>(0));");
+        StringAssert.Contains(
+            Flatten(events),
+            $"public void Renamed({Dispatch}? Name) {{ if (!__gate.TryEnter()) {{ return; }} try {{ __handler.Renamed(Name); }} finally {{ __gate.Exit(); }} }}");
+        Assert.IsFalse(events.Contains("ComMarshalling.Release(", StringComparison.Ordinal));
+        Assert.IsFalse(events.Contains("FinalRelease", StringComparison.Ordinal));
+
+        // A late-bound wrapper.
+        events = Generate(new ObjectEventTransformer { Unique = true, Wrapper = true });
+        StringAssert.Contains(
+            Flatten(events),
+            "public void Renamed(DShapeEvents? Name) { if (!__gate.TryEnter()) { return; } try { __handler.Renamed(Name); } finally { __gate.Exit(); } }");
+        StringAssert.Contains(events, "__handler.Renamed(arguments.GetUniqueWrapper<DShapeEvents>(0));");
+        Assert.IsFalse(events.Contains("FinalRelease", StringComparison.Ordinal));
+
+        // An object that is passed in and out is passed back to the caller, so it is always a shared object.
+        events = Generate(new ObjectEventTransformer { Unique = true, ByReference = true });
+        StringAssert.Contains(
+            events,
+            $"void Renamed([global::System.Runtime.InteropServices.Marshalling.MarshalUsing(typeof(global::CsCom.Runtime.ComObjectMarshaller<{Dispatch}>))] ref {Dispatch}? Name);");
+        StringAssert.Contains(events, $"var __a0 = arguments.Get<{Dispatch}?>(0);");
+        Assert.IsFalse(events.Contains("GetUnique", StringComparison.Ordinal));
+        Assert.IsFalse(events.Contains("FinalRelease", StringComparison.Ordinal));
+
+        static string Flatten(string text) => string.Join(' ', text.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+
+        // The generated code compiles; the test compiler does not run the LibraryImport generator, which the functions of
+        // modules need.
+        static string Generate(ObjectEventTransformer transformer)
+        {
+            var pipeline = new InteropPipeline();
+            pipeline.ModelTransformers.Add(transformer);
+            var library = pipeline.ReadTypeLibrary(TestEnvironment.TestTypeLibrary);
+            library.Types.RemoveAll(static t => t is ModuleDefinition);
+            string text = pipeline
+                .GenerateCode(library, new CodeGenerationOptions { Namespace = "Interop.CsComTest", SingleFile = true, SingleFileName = "Test.cs" })
+                .Single()
+                .GetText();
+            using var runtime = new MemoryStream(File.ReadAllBytes(typeof(CsCom.Runtime.DispatchObject).Assembly.Location));
+            TestCompiler.Compile("UniqueEvents", text, reference: runtime);
+            return text;
+        }
+    }
+
+    [TestMethod]
+    public void TheFieldsOfTheSinkOfAConnectionPointGiveWayToTheEvents()
+    {
+        // The sink implements the event interface with its names: a field named like one of its methods would clash with
+        // it, and one named like a parameter would be hidden by it, so the fields take other names. The generated code
+        // compiles; the test compiler does not run the LibraryImport generator, which the functions of modules need.
+        var pipeline = new InteropPipeline();
+        pipeline.ModelTransformers.Add(new SinkFieldNamesTransformer());
+        var library = pipeline.ReadTypeLibrary(TestEnvironment.TestTypeLibrary);
+        library.Types.RemoveAll(static t => t is ModuleDefinition);
+        string text = pipeline
+            .GenerateCode(library, new CodeGenerationOptions { Namespace = "Interop.CsComTest", SingleFile = true, SingleFileName = "Test.cs" })
+            .Single()
+            .GetText();
+        using var runtime = new MemoryStream(File.ReadAllBytes(typeof(CsCom.Runtime.DispatchObject).Assembly.Location));
+        TestCompiler.Compile("SinkFieldNames", text, reference: runtime);
+
+        StringAssert.Contains(text, "private readonly global::CsCom.Runtime.EventGate __gate_2;");
+        StringAssert.Contains(text, "if (!__gate_2.TryEnter())");
+        StringAssert.Contains(text, "__handler_2.Moved(__handler, __dispatch);");
+        StringAssert.Contains(text, "global::CsCom.Runtime.DispatchEventSink.InvokeHandler(__gate_2, __dispatch_2,");
+    }
+
+    [TestMethod]
+    public void TheEnumeratorIsOwnedOnlyWhenItIsUniqueAndReturnedThroughCom()
+    {
+        // A unique enumerator belongs to foreach when the call went through COM, so that the marshaller created it, and not
+        // when a managed implementation returned an object of its own. A shared enumerator is never owned.
+        const string Call = "global::CsCom.Runtime.ComEnumerator.FromObject(@this.get__NewEnum(), ownsEnumerator: (object)@this is global::System.Runtime.InteropServices.Marshalling.ComObject);";
+        string shared = Generate(new CodeGenerationOptions { Namespace = "Interop.CsComTest" })
+            .Single(static d => d.RelativePath == "IShape.cs").GetText();
+        StringAssert.Contains(shared, "global::CsCom.Runtime.ComEnumerator.FromObject(@this.get__NewEnum());");
+        Assert.IsFalse(shared.Contains("ownsEnumerator", StringComparison.Ordinal));
+
+        string unique = Generate(new CodeGenerationOptions { Namespace = "Interop.CsComTest" }, """
+            <CsCom>
+              <ModelTransformers>
+                <SetMarshalling TypeName="IShape" MemberName="_NewEnum" Interfaces="unique" />
+              </ModelTransformers>
+            </CsCom>
+            """).Single(static d => d.RelativePath == "IShape.cs").GetText();
+        StringAssert.Contains(unique, Call);
+    }
+
+    [TestMethod]
+    [DataRow(EventStyle.Events)]
+    [DataRow(EventStyle.Observable)]
+    public void OnlyTheMembersOfEventsWithPointersAreUnsafe(EventStyle style)
+    {
+        // The sink class is not unsafe, only the handler method of an event with a pointer is: the compilation shows that
+        // nothing else needs an unsafe context. A part of the user's own is not affected either way, since the modifier of
+        // a partial declaration applies to its part only.
+        var pipeline = new InteropPipeline();
+        var library = pipeline.ReadTypeLibrary(TestEnvironment.TestTypeLibrary);
+        var moved = library.Types.OfType<InterfaceDefinition>().Single(static i => i.Name == "IShapeEventsVt").Methods.Single(static m => m.Name == "Moved");
+        moved.Parameters[0].Type = new PointerTypeReference(new PrimitiveTypeReference(System.Runtime.InteropServices.VarEnum.VT_VOID));
+        moved.Parameters[0].Flags = ParameterFlags.In;
+
+        // The test compiler does not run the LibraryImport generator, which the functions of modules need.
+        library.Types.RemoveAll(static t => t is ModuleDefinition);
+        string text = pipeline
+            .GenerateCode(library, new CodeGenerationOptions { Namespace = "Interop.CsComTest", SingleFile = true, SingleFileName = "Test.cs", EventStyle = style })
+            .Single()
+            .GetText();
+
+        StringAssert.Contains(text, "public sealed partial class IShapeEventsVtSink : IShapeEventsVtHandler, global::System.IDisposable, global::System.IAsyncDisposable");
+        StringAssert.Contains(text, "unsafe void IShapeEventsVtHandler.Moved(void* X, int Y)");
+        using var runtime = new MemoryStream(File.ReadAllBytes(typeof(CsCom.Runtime.DispatchObject).Assembly.Location));
+        TestCompiler.Compile("PointerEvents", text, reference: runtime);
+    }
+
+    [TestMethod]
+    public void TheFieldsOfObservablesDoNotClashWithTheMembersOfTheSink()
+    {
+        // The sink has a method __Complete, which the field of an event named Complete must not clash with.
+        var pipeline = new InteropPipeline();
+        var library = pipeline.ReadTypeLibrary(TestEnvironment.TestTypeLibrary);
+        var methods = library.Types.OfType<InterfaceDefinition>().Single(static i => i.Name == "IShapeEventsVt").Methods;
+        methods.Single(static m => m.Name == "Renamed").Name = "Complete";
+
+        // The test compiler does not run the LibraryImport generator, which the functions of modules need.
+        library.Types.RemoveAll(static t => t is ModuleDefinition);
+        string text = pipeline
+            .GenerateCode(library, new CodeGenerationOptions { Namespace = "Interop.CsComTest", SingleFile = true, SingleFileName = "Test.cs", EventStyle = EventStyle.Observable })
+            .Single()
+            .GetText();
+
+        StringAssert.Matches(text, new System.Text.RegularExpressions.Regex(@"private void __Complete\(\) => global::CsCom\.Runtime\.EventSubject\.Complete\([^)]*\b__Complete_2\b[^)]*\);"));
+        using var runtime = new MemoryStream(File.ReadAllBytes(typeof(CsCom.Runtime.DispatchObject).Assembly.Location));
+        TestCompiler.Compile("ObservableNames", text, reference: runtime);
+    }
+
+    [TestMethod]
+    [DataRow(false)]
+    [DataRow(true)]
+    public void TheEnumeratorOfADispinterfaceIsItsObject(bool unique)
+    {
+        // A late-bound wrapper is no IEnumVARIANT: its COM object is, which ComEnumerator.FromObject enumerates, and foreach
+        // releases when the marshaller created a unique object for the wrapper, and never when it is shared.
+        var pipeline = new InteropPipeline();
+        var library = pipeline.ReadTypeLibrary(TestEnvironment.TestTypeLibrary);
+        var dispinterface = library.Types.OfType<InterfaceDefinition>().Single(static i => i.Name == "DShapeEvents");
+        var newEnum = library.Types.OfType<InterfaceDefinition>().Single(static i => i.Name == "IShape").Methods
+            .Single(static m => m.MemberId == -4 && m.InvokeKind == InvokeKind.PropertyGet);
+        var retval = newEnum.RetvalParameter!;
+        // The retval is the address of an interface pointer, which type libraries describe as a pointer to the interface.
+        retval.Type = new PointerTypeReference(new PointerTypeReference(new UserDefinedTypeReference(dispinterface)));
+        if (unique)
+        {
+            retval.Marshalling = new MarshallingOverrides { Interfaces = InterfaceMarshalling.Unique };
+        }
+
+        // The test compiler does not run the LibraryImport generator, which the functions of modules need.
+        library.Types.RemoveAll(static t => t is ModuleDefinition);
+        string text = pipeline
+            .GenerateCode(library, new CodeGenerationOptions { Namespace = "Interop.CsComTest", SingleFile = true, SingleFileName = "Test.cs" })
+            .Single()
+            .GetText();
+
+        const string Call = "global::CsCom.Runtime.ComEnumerator.FromObject(@this.get__NewEnum()";
+        StringAssert.Contains(
+            text,
+            unique ? $"{Call}, ownsEnumerator: (object)@this is global::System.Runtime.InteropServices.Marshalling.ComObject);" : $"{Call});");
+        using var runtime = new MemoryStream(File.ReadAllBytes(typeof(CsCom.Runtime.DispatchObject).Assembly.Location));
+        TestCompiler.Compile("DispatchEnumerator", text, reference: runtime);
+    }
+
+    [TestMethod]
+    public void InterfacePointersAreTheTypesThatAreMappedToUniqueObjects()
+    {
+        // SetMarshalling asks TypeMapper.IsInterfacePointer whether the marshaller of interface pointers applies to a
+        // parameter, which has to agree with the mapping of the types.
+        var options = new CodeGenerationOptions { Namespace = "Interop.CsComTest" };
+        var library = new TypeLibraryReader().Read(TestEnvironment.TestTypeLibrary);
+        new CsCom.Transformations.AliasResolver().Transform(library, new CsCom.Transformations.TransformationContext { Options = options, Logger = NullLogger.Instance });
+        var mapper = new TypeMapper(new EmitContext(library, options, new ModelAnnotations(), NullLogger.Instance), options.Namespace)
+            .WithMarshalling(new MarshallingOverrides { Interfaces = InterfaceMarshalling.Unique });
+
+        var types = library.Types.OfType<InterfaceDefinition>()
+            .Where(static i => i.InterfaceKind != InterfaceKind.Dispatch)
+            .SelectMany(static i => i.Methods)
+            .SelectMany(static m => m.Parameters.Select(static p => TypeMapper.TryGetByRefElement(p.Type, out var element) ? element : p.Type).Append(m.ReturnType))
+            .Where(static t => t is not PrimitiveTypeReference { VarType: VarEnum.VT_VOID or VarEnum.VT_HRESULT })
+            .Distinct()
+            .ToList();
+
+        var pointers = types.Where(TypeMapper.IsInterfacePointer).ToList();
+        CollectionAssert.AreEqual(types.Where(t => mapper.MapValue(t).IsUnique).ToList(), pointers);
+
+        // The library has the kinds of interface pointers: IUnknown, IDispatch, an interface, a dispinterface and a coclass.
+        Assert.IsTrue(pointers.Count >= 5, string.Join(", ", pointers));
+    }
+
+    [TestMethod]
+    public void TheMappingsAndPredicatesOfInterfacePointersAgreeOnAliases()
+    {
+        // A coclass whose default interface is an alias of a dispinterface, which the pipeline resolves before the code is
+        // emitted, so the model is built by hand: the predicates of the transformers and the emitters and the mappings
+        // classify the interface pointers the same way.
+        var dispatch = new InterfaceDefinition { Name = "DShape", OriginalName = "DShape", Guid = Guid.NewGuid(), InterfaceKind = InterfaceKind.Dispatch };
+        var alias = new AliasDefinition { Name = "ShapeAlias", OriginalName = "ShapeAlias", Target = new UserDefinedTypeReference(dispatch) };
+        var coClass = new CoClassDefinition { Name = "Shape", OriginalName = "Shape", Guid = Guid.NewGuid() };
+        coClass.Interfaces.Add(new CoClassInterface(new UserDefinedTypeReference(alias), IsDefault: true, IsSource: false, IsRestricted: false));
+        var library = new TypeLibrary { Name = "Aliases" };
+        library.Types.AddRange([dispatch, alias, coClass]);
+        var options = new CodeGenerationOptions { Namespace = "Interop.Aliases" };
+        var mapper = new TypeMapper(new EmitContext(library, options, new ModelAnnotations(), NullLogger.Instance), options.Namespace);
+
+        foreach (TypeReference type in new TypeReference[] { new UserDefinedTypeReference(coClass), new PointerTypeReference(new UserDefinedTypeReference(coClass)) })
+        {
+            Assert.IsTrue(TypeMapper.IsInterfacePointer(type), type.ToString());
+            Assert.IsTrue(TypeMapper.IsDispatchWrapper(type), type.ToString());
+            Assert.AreEqual("DShape?", mapper.MapValue(type).Name, type.ToString());
+            Assert.AreEqual("DShape?", mapper.MapLateBound(type).Name, type.ToString());
+        }
+    }
+
+    [TestMethod]
+    public void SetMarshallingAppliesToTheOptionsThatTheMemberTypesRead()
+    {
+        // SetMarshalling does not match the types that none of its changes applies to. Whether a change applies is declared
+        // by the TypeMapper next to the code that reads the options, and checked here against the code that it generates, in
+        // both directions: an option applies exactly when one of its values changes the code of the test library, which has
+        // a structure with fields of every type that an option changes.
+        MarshallingOverrides[][] options =
+        [
+            [.. Enum.GetValues<ValueMarshalling>().Select(static v => new MarshallingOverrides { Options = new() { Dates = v } })],
+            [.. Enum.GetValues<ValueMarshalling>().Select(static v => new MarshallingOverrides { Options = new() { Currencies = v } })],
+            [.. Enum.GetValues<ValueMarshalling>().Select(static v => new MarshallingOverrides { Options = new() { Booleans = v } })],
+            [.. Enum.GetValues<BstrMarshalling>().Select(static v => new MarshallingOverrides { Options = new() { Bstrs = v } })],
+            [.. Enum.GetValues<SafeArrayMarshalling>().Select(static v => new MarshallingOverrides { Options = new() { SafeArrays = v } })],
+            [.. Enum.GetValues<InterfaceMarshalling>().Select(static v => new MarshallingOverrides { Interfaces = v })],
+        ];
+
+        string baseline = Generate(null, lateBound: false);
+        foreach (var changes in options)
+        {
+            bool changesFields = changes.Any(change => Generate(change, lateBound: false) != baseline);
+            bool changesLateBound = changes.Any(change => Generate(change, lateBound: true) != baseline);
+            foreach (var change in changes)
+            {
+                Assert.AreEqual(changesFields, TypeMapper.AppliesToFields(change), $"{change} changes the fields of structures: {changesFields}.");
+                Assert.AreEqual(changesLateBound, TypeMapper.AppliesToLateBound(change), $"{change} changes the late-bound wrappers: {changesLateBound}.");
+            }
+        }
+
+        static string Generate(MarshallingOverrides? change, bool lateBound)
+        {
+            var pipeline = new InteropPipeline();
+            if (change is not null)
+            {
+                pipeline.ModelTransformers.Add(new MemberMarshallingTransformer(change, lateBound));
+            }
+
+            var documents = pipeline.GenerateCode(
+                pipeline.ReadTypeLibrary(TestEnvironment.TestTypeLibrary),
+                new CodeGenerationOptions { Namespace = "Interop.CsComTest", ToolVersion = TestEnvironment.ToolVersion },
+                null);
+            return string.Concat(documents.OrderBy(static d => d.RelativePath, StringComparer.Ordinal).Select(static d => d.GetText()));
+        }
     }
 
     [TestMethod]
@@ -1271,6 +1794,108 @@ public sealed class CodeGenerationTests : VerifyBase
 
     private static IEnumerable<Target> ToTargets(IEnumerable<GeneratedDocument> documents) =>
         documents.Select(static d => new Target("cs", d.GetText(), Path.ChangeExtension(d.RelativePath, null).Replace('/', '_')));
+}
+
+/// <summary>
+/// Names a method and parameters of the event interface <c>IShapeEventsDual</c> like the fields of the generated sink
+/// of the connection point: <c>Renamed</c> becomes <c>__gate</c>, and the parameters of <c>Moved</c> <c>__handler</c>
+/// and <c>__dispatch</c>.
+/// </summary>
+internal sealed class SinkFieldNamesTransformer : CsCom.Transformations.IModelTransformer
+{
+    public void Transform(TypeLibrary library, CsCom.Transformations.TransformationContext context)
+    {
+        if (library.Types.OfType<InterfaceDefinition>().SingleOrDefault(static i => i.Name == "IShapeEventsDual") is not { } events)
+        {
+            return;
+        }
+
+        events.Methods.Single(static m => m.Name == "Renamed").Name = "__gate";
+        var moved = events.Methods.Single(static m => m.Name == "Moved");
+        moved.Parameters[0].Name = "__handler";
+        moved.Parameters[1].Name = "__dispatch";
+    }
+}
+
+/// <summary>
+/// Makes the argument of the event <c>IShapeEventsDual.Renamed</c>, whose DISPID is 3, an <c>IDispatch</c> pointer.
+/// </summary>
+internal sealed class ObjectEventTransformer : CsCom.Transformations.IModelTransformer
+{
+    /// <summary>Gets a value indicating whether the pointer is passed in and out, as <c>[in, out] IDispatch**</c>.</summary>
+    public bool ByReference { get; init; }
+
+    /// <summary>Gets a value indicating whether the parameter is marshalled as a unique object, like with <c>SetMarshalling</c>.</summary>
+    public bool Unique { get; init; }
+
+    /// <summary>Gets a value indicating whether the parameter is a <c>DShapeEvents</c> pointer, a late-bound wrapper.</summary>
+    public bool Wrapper { get; init; }
+
+    public void Transform(TypeLibrary library, CsCom.Transformations.TransformationContext context)
+    {
+        // The transformers also run on the libraries whose types are imported, e.g. stdole.
+        if (library.Types.OfType<InterfaceDefinition>().SingleOrDefault(static i => i.Name == "IShapeEventsDual") is not { } events)
+        {
+            return;
+        }
+
+        var method = events.Methods.Single(static m => m.Name == "Renamed");
+        var parameter = method.Parameters[0];
+        TypeReference dispatch = Wrapper
+            ? new PointerTypeReference(new UserDefinedTypeReference(library.Types.OfType<InterfaceDefinition>().Single(static i => i.Name == "DShapeEvents")))
+            : new PrimitiveTypeReference(System.Runtime.InteropServices.VarEnum.VT_DISPATCH);
+        if (Unique)
+        {
+            parameter.Marshalling = new MarshallingOverrides { Interfaces = InterfaceMarshalling.Unique };
+        }
+
+        if (ByReference)
+        {
+            parameter.Type = new PointerTypeReference(dispatch);
+            parameter.Flags = ParameterFlags.In | ParameterFlags.Out;
+        }
+        else
+        {
+            parameter.Type = dispatch;
+        }
+    }
+}
+
+/// <summary>
+/// Changes the marshalling options of all the members of the dispinterfaces, or of all the fields of the structures,
+/// like <c>SetMarshalling</c>, but whether or not the changes apply to them.
+/// </summary>
+internal sealed class MemberMarshallingTransformer(MarshallingOverrides marshalling, bool lateBound) : CsCom.Transformations.IModelTransformer
+{
+    public void Transform(TypeLibrary library, CsCom.Transformations.TransformationContext context)
+    {
+        if (!lateBound)
+        {
+            foreach (var field in library.Types.OfType<RecordDefinition>().SelectMany(static r => r.Fields))
+            {
+                field.Marshalling = marshalling;
+            }
+
+            return;
+        }
+
+        foreach (var dispinterface in library.Types.OfType<InterfaceDefinition>().Where(static i => i.InterfaceKind == InterfaceKind.Dispatch))
+        {
+            foreach (var property in dispinterface.Properties)
+            {
+                property.Marshalling = marshalling;
+            }
+
+            foreach (var method in dispinterface.Methods)
+            {
+                method.ReturnMarshalling = marshalling;
+                foreach (var parameter in method.Parameters)
+                {
+                    parameter.Marshalling = marshalling;
+                }
+            }
+        }
+    }
 }
 
 /// <summary>

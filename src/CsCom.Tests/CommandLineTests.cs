@@ -60,6 +60,9 @@ public sealed class CommandLineTests
                 SafeArrays = CodeGeneration.SafeArrayMarshalling.Wrapper,
             },
             CsComManifest.Read(directory).Marshalling);
+
+        // The marshaller of interface pointers is no option of a project.
+        Assert.IsFalse(File.ReadAllText(Path.Combine(directory, CsComManifest.FileName)).Contains("interfaces", StringComparison.OrdinalIgnoreCase));
         StringAssert.Contains(File.ReadAllText(Path.Combine(directory, CsComManifest.FileName)), "\"dates\": \"wrapper\"");
         StringAssert.Contains(File.ReadAllText(Path.Combine(directory, CsComManifest.FileName)), "\"bstrs\": \"wrapper\"");
         StringAssert.Contains(File.ReadAllText(Path.Combine(directory, CsComManifest.FileName)), "\"safeArrays\": \"wrapper\"");

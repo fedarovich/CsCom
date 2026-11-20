@@ -342,8 +342,10 @@ cscom reference remove Excel.Application
 </CsCom>
 ```
 
-- **Order:** the transformers run in the order of their elements. The model transformers run after the aliases are resolved and
-  before the names are sanitized, so they see the resolved aliases and the names they produce are made valid and unique.
+- **Order:** the transformers run in the order of their elements, and each sees the model as the elements before it left it,
+  e.g. the names that a rename produced and the types that `SetType` set. The model transformers run after the aliases are
+  resolved and before the names are sanitized, so they see the resolved aliases and the names they produce are made valid
+  and unique.
 - **Validation:** unknown transformers, attributes and child elements are reported with their location, e.g.
   `cscom.xml(3,6): Unknown model transformer <Rename>.` Nothing is written when the file is not valid.
 - **`project update`:** `project create` records the files in `cscom.json` by library name, relative to the project directory, and
@@ -383,7 +385,7 @@ The type selector (`Type`/`TypeName`) can be combined with `Kind`, except for th
 | `RenameType` | `Type`, `NewName` | Renames the matching types. |
 | `RenameMember` | `Type` (optional), `Member`, `Parameter` (optional), `NewName` | Renames the matching members: methods and properties of interfaces (the accessors of a property together), fields of structures, members of enums, and functions and constants of modules. With `Parameter`, renames the matching parameters of the matching methods instead. |
 | `RenameMembersToPascalCase` | `Type` and `Member` (both optional) | Converts the names of the matching members, or of all members, to PascalCase, see below. Parameters and types are not renamed. |
-| `SetMarshalling` | `Type`, `Member` and `Parameter` (all optional); at least one of `Dates`, `Currencies`, `Booleans` (`bcl\|none\|wrapper`), `Bstrs` (`string\|wrapper\|none`) and `SafeArrays` (`array\|sysarray\|wrapper\|none`) | Changes the [marshalling options](#marshalling-options) of the parameters and return values of the matching methods, and of the matching dispinterface properties and structure fields. With `Parameter`, only of the matching parameters, including `[retval]` parameters. Later elements override the values set by earlier ones. |
+| `SetMarshalling` | `Type`, `Member` and `Parameter` (all optional); at least one of `Dates`, `Currencies`, `Booleans` (`bcl\|none\|wrapper`), `Bstrs` (`string\|wrapper\|none`), `SafeArrays` (`array\|sysarray\|wrapper\|none`) and `Interfaces` (`shared\|unique`) | Changes the [marshalling options](#marshalling-options) of the parameters and return values of the matching methods, and of the matching dispinterface properties and structure fields. With `Parameter`, only of the matching parameters, including `[retval]` parameters. Later elements override the values set by earlier ones. A type that none of the attributes applies to does not match: only `SafeArrays` applies to dispinterfaces, and only `Dates`, `Currencies`, `Booleans` and `Bstrs` to structures; `Interfaces` only applies to interface pointers that are not passed in and out, see [Interface pointers](#interface-pointers): the other attributes apply to the matching parameters whatever their types, but an element with only `Interfaces` applies to the interface pointers at its point, so a `SetType` that makes a parameter an interface pointer goes before it. |
 | `RemoveEnumPrefix` | `Type` (optional) | Removes the prefix shared by the members of the matching enums, or of all enums. |
 | `ExcludeType` | `Type` and/or `Kind` | Removes the matching types. References to interfaces, dispinterfaces and coclasses become `IDispatch*` (if they are dispatchable) or `IUnknown*`, references to enums `long`, and pointers to structures `void*`. Structures used by value and base interfaces of kept interfaces cannot be removed. |
 | `SetType` | `Type` (optional), `Member`, `Parameter` (optional), `To` | Changes the type of the matching parameters, or without `Parameter` of the members themselves (return values, property values, dispinterface properties, structure fields), to the type named `To` of the library, or of another library that is generated with it, e.g. a `long` that is meant to be an enum. The type is only required when something matches. Parameters passed by reference keep their pointer. Vtable and dual interfaces, functions and structures only accept compatible types: 4-byte integers to enums, interface pointers to interfaces, and structures of the same size; dispinterfaces accept any type. |
@@ -466,7 +468,8 @@ foreach (object? key in dictionary)                 // _NewEnum via IEnumVARIANT
   properties can get indexer syntax too, see [Named indexers](#named-indexers).
 - **Dispinterfaces** can only be called through `IDispatch::Invoke`, so they become late-bound wrapper classes with methods,
   properties and indexers that invoke the members by their DISPIDs.
-- **Coclasses** become static classes with the `Clsid` and a `Create()` method that returns the default interface.
+- **Coclasses** become static classes with the `Clsid` and a `Create()` method that returns the default interface;
+  `Create(unique: true)` returns it in an object of its own, which can be released at once, see [Interface pointers](#interface-pointers).
   With `--dynamic`, coclasses whose default interface supports `IDispatch` also get `CreateDynamic()`, see [Late binding with `dynamic`](#late-binding-with-dynamic).
   Their event (`[source]`) interfaces get a handler interface and a sink class, see [Events](#events).
 - **Enums** become enums and **structs and unions** become structs with the layout of the COM structures, whose `DATE`,
@@ -691,9 +694,140 @@ value, so optional parameters whose default is `true` or non-zero become require
 are generated. The options do not affect late-bound dispinterface wrappers, constants and the elements of `SAFEARRAY`s, which use
 the .NET types.
 
-All marshalling options, including `--bstr-marshalling` and `--safearray-marshalling`, can be changed for individual methods,
-parameters, dispinterface properties and structure fields with the `SetMarshalling` element of the
-[configuration file](#model-transformers).
+All marshalling options, including `--bstr-marshalling` and `--safearray-marshalling`, can be changed for individual
+methods, parameters, dispinterface properties and structure fields with the `SetMarshalling` element of the
+[configuration file](#model-transformers), which also selects the marshaller of interface pointers.
+
+### Interface pointers
+
+The interface pointers of parameters and return values are converted to shared managed objects: one per COM object, which
+all the references to it share, like `ComInterfaceMarshaller<T>` of .NET. Its COM references are released when it is
+garbage collected. The marshaller is `ComObjectMarshaller<T>` of CsCom.Runtime.
+
+`SetMarshalling` selects unique objects for single members and parameters instead, with `UniqueComObjectMarshaller<T>`:
+an object per interface pointer, like `UniqueComInterfaceMarshaller<T>` of .NET, which belongs to whoever receives it and
+can be released at once. The pointer of a managed object that is exposed to COM, such as your implementation of a callback
+interface, is converted to that object itself, as with shared objects, also with your own `ComWrappers`; releasing it does
+nothing. As with shared objects, that is the pointer that the instance of the support code has created: the pointer that
+another `ComWrappers` has created for a managed object is called through COM, like a COM object:
+
+```xml
+<SetMarshalling TypeName="IWorkbooks" MemberName="Open" Interfaces="unique" />
+```
+
+To tell the pointer of a managed object that the instance of the support code has created from one of another
+`ComWrappers`, a unique conversion compares it with the interface that the instance has for the object, and the instance
+creates that interface when it has none yet, e.g. when only another `ComWrappers` has exposed the object: the object
+then keeps that unused interface for as long as it lives, since .NET cannot ask an instance for its interface without
+creating it. An instance whose strategy cannot expose the object leaves the pointer to COM, as one of another
+`ComWrappers`. This costs nothing for the pointers of COM objects and for shared objects, which `ComWrappers` unwraps
+itself.
+
+It applies to the parameters and return values of vtable and dual interfaces and of the functions of modules, whether
+their type is an interface, a late-bound dispinterface wrapper, `IDispatch` or `IUnknown`. It does not apply to:
+
+- a pointer that is passed in and out (`[in, out]`, a `ref` parameter), which is passed back to its caller;
+- dispinterfaces and structures: the arguments and results of late-bound wrappers and of `dynamic` calls, and the objects
+  in `VARIANT`s and `SAFEARRAY`s are always shared objects, and the pointers in the fields of structures are not converted.
+
+A handler of a dual event interface gets a unique object whichever way the event is raised: through the vtable, or through
+`IDispatch::Invoke`, whose `VARIANT` holds the object. A hand-written `IDispatchEventHandler` reads such an argument with
+`EventArguments.GetUnique<T>` or `GetUniqueWrapper<T>`.
+
+Nothing releases a unique object for you: the code that receives it, such as your implementation of a callback interface,
+releases it, or leaves it to the garbage collector. The handlers of an event share its unique arguments: every handler
+of the event of a generated sink, and every observer of an observable, gets the same object, so release it only where
+no other handler uses it, or leave it to the garbage collector; `EventArguments.GetUnique<T>` of a hand-written
+`IDispatchEventHandler` creates an object per call. A closed event sink does not release the unique arguments of the
+events that it no longer passes on, because it cannot tell them from objects that a managed source in the same process
+passes to it directly: they are left to the garbage collector.
+
+**Unique objects** can be released without waiting for the garbage collector, with `ComMarshalling.Release` of the
+support code or `ComObject.FinalRelease()` of .NET; a late-bound wrapper has its object in `Dispatch`, which
+`ComMarshalling.Release` releases for a wrapper, also one of your own that implements `IDispatchWrapper<T>`, which is an
+`IDispatchProvider`. It leaves a managed object that is exposed to COM (`[GeneratedComClass]`) alone, also when it
+implements `IDispatchProvider`; `ComMarshalling.IsExposedToCom` tells whether an object is one. It releases the object
+of an `UnknownWrapper`, and rejects a `DispatchWrapper`, as where an object is passed to COM. Release an object only
+when no other thread uses it: a call that passes it to a COM object at the same time can use its interface pointer after
+the release.
+
+```csharp
+IDictionary dictionary = Dictionary.Create(unique: true);  // or ComActivator.CreateInstance<IDictionary>(clsid, unique: true)
+ComMarshalling.Release(dictionary);                        // the object must not be used afterwards
+((ComObject)(object)dictionary).FinalRelease();            // the same
+```
+
+All the activation methods of `ComActivator` have an overload with the `unique` parameter: `CreateInstance<T>`,
+`CreateDispatchInstance<T>`, `GetActiveInstance<T>`, `TryGetActiveInstance<T>` and `BindToMoniker<T>`; without it the
+object is shared. Only the object itself is
+unique: the objects that its members return are shared ones, unless `SetMarshalling` makes them unique too. A unique
+object does not compare equal to another object of the same COM object, and releasing does nothing for shared objects.
+The support code does not keep a unique object alive: when `SetMarshalling` makes `_NewEnum` unique, `foreach` over a
+COM object of the generated interface releases the enumerator when it ends, also the object of a late-bound wrapper when
+`_NewEnum` returns a dispinterface (one that your own implementation of the interface returns stays yours, and so does a
+wrapper of yours that is exposed to COM, whose pointer the collection returns), and a disconnected event sink holds no
+reference to its source: one whose disconnection failed with a transient error keeps it until another disconnection
+succeeds or gives up. `IConnectionPointContainer.FindConnectionPoint` of the support code returns the connection point
+of a COM object in a unique object too, which belongs to the caller: release it with `ComMarshalling.Release`. To
+enumerate a unique enumerator yourself, use `new ComEnumerator(enumerator, ownsEnumerator: true)` or
+`ComEnumerator.FromObject(value, ownsEnumerator: true)`: they release it when they are disposed, and `FromObject` also
+when it does not implement `IEnumVARIANT`. `FromObject` takes what the value stands for, as `ComMarshalling.Release`
+does: the COM object of a late-bound wrapper, which it releases, and an object of yours that is exposed to COM, also in
+a late-bound wrapper, itself or, when it is no enumerator, the `Dispatch` that it provides, which it never releases.
+Without `ownsEnumerator`, disposing them releases nothing.
+
+**Your own `StrategyBasedComWrappers`** creates the managed objects when it is set at startup, before the first COM object
+is created. Once the support code has converted an interface pointer, setting another instance throws an
+`InvalidOperationException`; setting the same one again does not:
+
+```csharp
+ComMarshalling.ComWrappers = new MyComWrappers();          // class MyComWrappers : StrategyBasedComWrappers
+```
+
+All the generated code and the support code use it then, for shared and for unique objects: the interface pointers of the
+generated interfaces, `ComActivator`, the `VARIANT` and `SAFEARRAY` marshallers, the late-bound wrappers, the `dynamic`
+objects and the event sinks. Without it they use the instance of .NET. Hand-written COM interfaces whose interface pointers
+are marshalled by `ComInterfaceMarshaller<T>` of .NET, which is the default of `[GeneratedComInterface]`, do not use it:
+give their parameters `[MarshalUsing(typeof(ComObjectMarshaller<T>))]`, otherwise a COM object gets two managed objects,
+or `UniqueComObjectMarshaller<T>` for unique objects. A late-bound wrapper is marshalled by the `DispatchWrapperMarshaller<T>`
+of its `[NativeMarshalling]` attribute, and as a unique object by `UniqueDispatchWrapperMarshaller<T>`.
+A managed object in a `VARIANT` is exposed to COM when its class is a `[GeneratedComClass]`, with or without your own
+instance; pass an object that only your instance can expose in an `UnknownWrapper`, unless it implements
+`IDispatchProvider`: such an object is a late-bound wrapper wherever it goes to COM, also in an `UnknownWrapper`. An
+object that is exposed to COM is passed itself, also when it implements `IDispatchProvider`, in a `VARIANT`, a
+`SAFEARRAY` and an `IUnknown` parameter alike, and as a parameter of its own type when it is a late-bound wrapper that
+implements `IDispatch`, so that its pointer converts back to it; a late-bound or `dynamic` wrapper is passed as its COM
+object there, and in a parameter of a COM interface too, also one that a wrapper of yours implements itself, e.g.
+`IDispatch` by forwarding: its COM object is asked for the interface. The pointer converts back to the object for
+an interface that it implements; for another declaration of the interface, e.g. of another interop assembly, it gets a
+COM object of its own, which calls the object through COM, where `ComInterfaceMarshaller<T>` of .NET throws an
+`InvalidCastException`: a new one for each conversion, also of a shared parameter, which is not shared, so that
+`ComMarshalling.Release` releases it. The object comes back itself from a `VARIANT` or a `SAFEARRAY`, and where a
+late-bound wrapper, `EventArguments.Get<T>` or an array converts it to an interface that its class does not implement,
+it is asked through its COM interface the same way, e.g. for another declaration of the interface; when that does not
+answer, the COM object of its `Dispatch` is asked for the interface, as when the `VARIANT` held that object. Only
+where an interface is required that it does not implement, `IDispatch` in a `SAFEARRAY` of `IDispatch`, in a
+dispinterface wrapper and for `dynamic`, and `IEnumVARIANT` in `ComEnumerator.FromObject`, it stands for the COM object
+of its `Dispatch`, like the source of events. A late-bound or `dynamic` wrapper of such an object, e.g. the one that a
+dispinterface wrapper makes of it when a call returns it, stands for it with this rule, also as the source of events,
+in `ComEnumerator.FromObject`, where a late-bound wrapper converts it to an interface, and in a parameter of a COM
+interface that the wrapper implements. A COM object that fails `QueryInterface` with another error than
+`E_NOINTERFACE`, e.g. the proxy of a server that has ended, throws the exception of its `HRESULT`, also in
+`ComEnumerator.FromObject`, rather than an `InvalidCastException`. An `UnknownWrapper` stands
+for its object wherever an object goes to COM: in an `IUnknown` parameter, a `SAFEARRAY`, as the source of events, for
+`ComDynamic` and in `ComEnumerator.FromObject` as in a `VARIANT`, where it is passed as `VT_UNKNOWN`, and
+`new UnknownWrapper(null)` passes a null object, where `null` passes an empty `VARIANT`. A `DispatchWrapper` is
+rejected everywhere with an `ArgumentException`, as by
+`ComVariantMarshaller` of .NET in a `VARIANT`: the interface of such a wrapper itself would only have `IUnknown`. The
+interfaces must be `[GeneratedComInterface]`s also when your instance has a strategy of its own for the details of
+interfaces: the marshallers and `ComActivator` take their identifiers from the generated attributes, and fail with a
+`NotSupportedException` for another interface, `ComActivator` also for a class other than `object` and `ComObject`,
+e.g. a late-bound wrapper, which `CreateDispatchInstance` creates, and before anything else: before it looks up a
+ProgID, creates or gets the object. Such a strategy must give the details of `IDispatch` of the support code too, which
+the late-bound wrappers, the `dynamic` objects and the events call: a `VARIANT` trusts the strategy, so that a COM
+object without `IDispatch` is asked for it only once, and passes an object whose strategy has none as `VT_UNKNOWN`;
+only a `SAFEARRAY` of `IDispatch` asks the object itself.
+With the `public` and `internal` support code, every generated project has its own `ComMarshalling`.
 
 ### Optional parameters
 
@@ -791,13 +925,17 @@ IDispatch dispatch = dictionary;                   // conversions to IDispatch, 
 DShapeEvents events = shape.GetEvents();           // and the late-bound wrappers of dispinterfaces
 ```
 
-- **Returned objects:** COM objects returned by dynamic calls are dynamic as well, so calls can be chained. There is one dynamic
-  object per COM object, so `==` compares COM objects (`if (sheet == excel.ActiveSheet)`), like the runtime callable wrappers
-  of the built-in COM interop. The dynamic objects are attached to the managed objects of the COM objects and do not keep them
-  alive.
-- **Properties:** assigning a COM object to a property or an indexer uses `PROPERTYPUTREF`, like VB's `Set`, and a property
-  put when the object has no such setter. A property that requires arguments, or can only be set, can be indexed with its
-  arguments: `dictionary.Item["a"]`, `dictionary.Key["a"] = "b"`. So can a property whose parameters are all optional, such as
+- **Returned objects:** COM objects returned by dynamic calls are dynamic as well, so calls can be chained. There is one
+  dynamic object per COM object, so `==` compares COM objects (`if (sheet == excel.ActiveSheet)`), like the runtime
+  callable wrappers of the built-in COM interop. The dynamic objects are attached to the managed objects of the COM
+  objects and do not keep them alive. An object of yours that is exposed to COM (`[GeneratedComClass]`), which a COM
+  object returns as itself, is made dynamic like by `ComDynamic.ToDynamic`, also in events and `foreach`: itself when it
+  implements `IDispatch`, and otherwise the COM object of its `Dispatch`; one that has neither is returned as it is.
+- **Properties:** assigning an object to a property or an indexer uses `PROPERTYPUTREF`, like VB's `Set`, and a property
+  put when the object has no such setter: a COM object, a late-bound or `dynamic` wrapper, an object of yours that is
+  exposed to COM (`[GeneratedComClass]`) or an `UnknownWrapper`, i.e. every value that is passed as an object. A property
+  that requires arguments, or can only be set, can be indexed with its arguments: `dictionary.Item["a"]`,
+  `dictionary.Key["a"] = "b"`. So can a property whose parameters are all optional, such as
   Excel's `Range.Value`, when the object has type information: `range.Value[xlRangeValueMSPersistXML]`. Without type
   information such a property is read at once and brackets index its value; pass the arguments in parentheses instead.
 - **Methods:** a method that is read without parentheses is not invoked when the type information of the object describes it
@@ -818,8 +956,10 @@ DShapeEvents events = shape.GetEvents();           // and the late-bound wrapper
   themselves only after their window has lost the focus once, so an instance that has just been started may not be found.
 - **Events:** `+=` and `-=` add and remove handlers of the events of the source dispinterfaces of the object's coclass, found
   through `IProvideClassInfo` or, without it, through the first coclass of the type library whose default interface is that
-  of the object. A handler is a delegate with at most the parameters of the event, so a lambda needs a cast. Its `ref` and
-  `out` parameters and its result are returned to the COM object:
+  of the object. An object of yours that is exposed to COM (`[GeneratedComClass]`) is late bound itself when it implements
+  `IDispatch`, its events included, and otherwise through the COM object of its `Dispatch`. A handler is a delegate with at
+  most the parameters of the event, so a lambda needs a cast. Its `ref` and `out` parameters and its result are returned to
+  the COM object:
 
   ```csharp
   excel.WorkbookOpen += (Action<dynamic>)(book => Console.WriteLine(book.Name));
@@ -833,7 +973,31 @@ DShapeEvents events = shape.GetEvents();           // and the late-bound wrapper
   The object is connected to the event interface while it has handlers, so remove them, on the thread that added them, when
   they are no longer needed: the COM object holds the handlers, and handlers that refer to the object keep both alive. Only
   dispinterfaces are supported; dual and vtable event interfaces need the generated sinks (see [Events](#events)).
-- **Releasing objects:** the COM references are released when the objects are garbage collected, and finalizers do not run
+
+  Adding and removing handlers is safe from several threads and from within a handler, and never waits for another
+  thread:
+
+  - `+=` returns only when the object is connected, and throws without adding the handler when it cannot be connected;
+    a connection error is reported by the `+=` that caused it.
+  - `-=` and `RemoveEventHandlers` never fail. A removed handler gets no more events, also when the object cannot be
+    disconnected at the moment, e.g. because the server is busy or the call comes from another apartment: the connection
+    then passes no events on and is disconnected again by the next `+=`, `-=` or `RemoveEventHandlers` of that object.
+    Any other error than the transient ones listed in [Events](#events) gives the connection up, also the exception of a
+    connection point that is a managed object, which counts as its `HRESULT`: the source keeps the closed sink until it
+    releases it.
+  - `+=` and `-=` of the same handler on several threads take effect one after another, each at some moment between its
+    call and its return, as for a .NET event: a `-=` that runs while a `+=` on another thread has not returned yet can
+    come before it, and then leaves the handler of that `+=`. A `+=` that fails adds nothing, also when a `-=` removed
+    its handler meanwhile.
+  - Each event reaches each handler once, with the limitations below: when several threads connect the object at the same
+    time, only one connection passes the events on, and the others are disconnected.
+
+  Limitations: an event that is running on another thread can still call a handler after `-=` returns, if it had reached
+  the handler before; it does not call one that was removed before it reached it. When several threads connect the first
+  handlers at the same time, an event that a multi-threaded object raises meanwhile can be missed, and when a connection
+  that has already received events then fails to connect, the events around the switch to another connection can be
+  missed or doubled.
+- **Releasing objects:** the COM references of the `dynamic` objects are released when the objects are garbage collected, and finalizers do not run
   when the process exits. An Office application exits after `Quit()` only when all its objects are released, so let them go
   out of scope and call `GC.Collect()` and `GC.WaitForPendingFinalizers()`, otherwise it keeps running for minutes. This
   applies to the objects of the generated interfaces and late-bound wrappers too, see [Limitations](#limitations).
@@ -874,9 +1038,24 @@ sealed class Handler : IAppEventsHandler
 using var connection = AppEventsSink.Connect(app, new Handler());
 ```
 
-With `interface`, `<Interface>Sink` is a static class with only `Connect`, and `none` generates no event code. The observables
-are hot: events are not buffered, and disposing the sink completes them. They are plain `IObservable<T>`s, so they work with
-Reactive Extensions without depending on it.
+With `interface`, `<Interface>Sink` is a static class with only `Connect`, and `none` generates no event code. An event
+that the source raises while the sink connects, e.g. its state during `IConnectionPoint::Advise`, reaches no handler or
+observer with `events` and `observable`, since they can only subscribe once the sink has been created; a handler passed
+to `Connect` receives it, but gets the connection only after `Advise` has returned. The observables are hot: events are
+not buffered, and disposing the sink completes them, once no handler runs any more. When no handler runs, `Dispose`
+completes them at once. It does not wait for a running handler, on another thread or the one that disposes the sink: the
+handler completes them itself when it returns, on its thread and in the event call of the source, like the values that
+it pushes. So `OnCompleted` has the constraints of `OnNext`, and an exception of an observer fails that event call like
+one of `OnNext`. Unlike the exception of `OnNext`, it stops neither the other observers nor the other observables, since
+an observer that missed the completion would never be completed: once all of them are completed, it is thrown as it is,
+or in an `AggregateException` when several observers threw. `DisposeAsync` completes them in the synchronization context
+of the caller, and throws the exceptions of the observers to it. The observables are plain `IObservable<T>`s, so they
+work with Reactive Extensions without depending on it.
+
+An event named like a member of the sink class or of `object`, e.g. `Dispose`, `DisposeAsync`, `Connect`, `Iid` or
+`Equals`, gets the suffix `Event` for its .NET event or observable, e.g. `DisposeAsyncEvent`; the method of the handler
+interface keeps its name. The sink class is partial and implements `IDisposable` and `IAsyncDisposable`, so a part of your
+own cannot declare `Dispose` or `DisposeAsync`.
 
 All kinds of event interfaces are supported:
 
@@ -887,19 +1066,103 @@ All kinds of event interfaces are supported:
 - **Dual interfaces** are implemented in the same way, and the sink also implements `IDispatch::Invoke`, which event sources often use.
 
 The source can be any object returned by the generated code: a COM interface, a late-bound wrapper or a `dynamic` object.
+An object of yours that is exposed to COM (`[GeneratedComClass]`), also in a late-bound or `dynamic` wrapper, raises
+the events itself, or else, when it implements `IDispatchProvider`, the COM object in its `Dispatch` does, e.g. for a
+decorator of a COM object. A source that does not raise the events of the interface fails with an
+`InvalidOperationException`: it does not implement `IConnectionPointContainer`, or has no connection point of the
+interface. Any other error of the source, e.g. of a server that has ended or is busy (`RPC_E_CALL_REJECTED`), throws the
+exception of its `HRESULT`, a `COMException`, so that a connection to a busy server can be tried again.
 `EventConnection.Advise` and `EventConnection.AdviseDispatch` of the support code connect hand-written sinks.
 
 Events are delivered on the threads chosen by COM: a single-threaded apartment (STA) object, such as an Office application,
 delivers them through the message loop of the thread that connected the sink. Dispose the sink on that thread, because
 `IConnectionPoint::Unadvise` must be called from the same apartment; there is no finalizer that disconnects it.
-`EventConnection.Disconnect` returns the `HRESULT` of the disconnection, and a connection that another thread failed to
-disconnect (`RPC_E_WRONG_THREAD`) can still be disconnected from the right one. An exception thrown
-by a handler is returned to the source as `DISP_E_EXCEPTION` with the error information (or as the `HRESULT` for vtable calls),
-and most sources ignore it.
+`EventConnection.Disconnect` returns the `HRESULT` of the disconnection and never throws: the exception of a connection
+point that is a managed object is returned as its `HRESULT`, as a call through COM would return it. A disconnection that
+can succeed later leaves the connection connected (`EventConnection.IsConnected` stays `true`), and another call of
+`Disconnect` or `Dispose` retries it. These transient errors are `RPC_E_WRONG_THREAD` from another thread than the one
+that connected the sink, `RPC_E_CALL_REJECTED` and `RPC_E_SERVERCALL_RETRYLATER` from a busy server, and
+`RPC_E_CANTCALLOUT_INASYNCCALL`, `RPC_E_CANTCALLOUT_INEXTERNALCALL` and `RPC_E_CANTCALLOUT_ININPUTSYNCCALL`. Any other error
+gives the connection up, and once the connection is over, `Disconnect` returns the `HRESULT` that ended it: `S_OK`, or the
+error that gave it up. `Disconnect` does not wait for another call that is disconnecting the same sink at the moment, but
+returns `S_FALSE` at once; it returns any success of `Unadvise` as `S_OK`, so that `S_FALSE` means nothing else. An
+exception thrown by a handler is returned to the source as `DISP_E_EXCEPTION` with the error information, whose code is
+`E_FAIL` when the `HResult` of the exception is no error code, e.g. `S_FALSE`, and without its description when its
+`Message` throws (or as the `HRESULT` for vtable calls), and most sources ignore it.
+
+Every connection has an `EventGate` of its own, which it closes first when it is disconnected, and when it cannot be
+established. Once the gate is closed, no handler call starts, also when the source could not be told and still calls the
+sink: the sink accepts the events without passing them on, with default results. A call that started before still
+completes, since COM does not wait for it either; `DisposeAsync` of the connection or of a generated sink waits for it:
+
+```csharp
+await using var events = new AppEventsSink(app);  // DisposeAsync completes when no handler runs any more
+```
+
+Like `Dispose`, `DisposeAsync` must run on the thread that connected the sink when the source is a single-threaded apartment
+object, e.g. Office. An `await` before the end of the scope can resume on another thread, e.g. on the thread pool of a
+console application, and the disconnection then fails with `RPC_E_WRONG_THREAD` and leaves the sink connected. Unlike
+`Dispose`, `DisposeAsync` reports a transient error, which leaves the sink connected: once no handler runs any more, it
+throws a `COMException` with the `HRESULT` if the sink is still connected then, and a generated sink of the observable
+style completes its observables first. Another call can have disconnected the sink in the meantime, e.g. `Dispose` on
+the right thread: `DisposeAsync` then completes, and it waits for a call that is disconnecting the sink at that moment.
+When an observer throws too, the sink throws both in an `AggregateException`, the `COMException` first, so that an observer
+cannot hide it. Dispose the sink again then, e.g. on the right thread; the exception of `await using` replaces an exception
+of its body.
+When another call is disconnecting the sink at the moment, `DisposeAsync` waits for it without blocking, and reports its
+error the same way, also when `DisposeAsync` is called on the right thread: it does not disconnect the sink again, which
+it would have to do on the thread of its caller, while that thread may be blocked waiting for it. Dispose the sink again
+on that thread then.
+Use `await using` where the code resumes on the same thread, e.g. in the synchronization context of a user interface
+thread, and otherwise call `Dispose` on that thread.
+
+Do not block on `DisposeAsync` in a handler of the same connection, since it waits for that handler too, nor in an
+observer's `OnCompleted`. With the observable style, `DisposeAsync` completes the observables once no handler runs any more,
+in the synchronization context of the caller, e.g. on the thread of a user interface. So do not block on it (`Wait()`,
+`Result`) on a thread with a synchronization context either: when a handler is running, the completion waits for that
+thread, which waits for the completion. Await it there, or call `Dispose`, which does not wait.
+
+`EventConnection.DisposeWithCompletion(completion)` disconnects like `Dispose`, and calls the completion once no handler
+call is running any more, without waiting for it and without a synchronization context: at once when none runs, otherwise
+on the thread of the last running call, when its handler has returned. Its exception is thrown to the caller in the first
+case, and fails the event call like an exception of a handler in the second. `Dispose` of the observable style uses it.
+Every call adds its completion: they run one at a time, in the order of the calls. An exception does not stop the
+others, which other calls may have added: once all of them ran, the exception of the one that failed is thrown, or an
+`AggregateException` of them when several failed. A completion that is added while others run, also by one of them, runs
+after them on their thread, and its exception is that thread's. A sink that was passed to `Advise` itself has no gate, so
+its completion runs at once. `DisposeAsync` waits for the completions that the last running handler call runs, but not
+for one that runs at once on another thread: when `Dispose` of the observable style and `DisposeAsync` run at the same
+time on two threads, `DisposeAsync` can complete while the other thread still completes the observers.
+
+The generated sinks and those of `AdviseDispatch` use the gate. A hand-written sink gets it when `EventConnection.Advise`
+creates the sink for the connection, and passes an event to its handler between `TryEnter` and `Exit`. Call `Exit` exactly
+once after each `TryEnter` that returned `true`, and never after one that returned `false`: the gate counts the running
+events, so an `Exit` too many while another event runs counts that event as finished, and `DisposeAsync` can complete while
+its handler still runs; one when no event runs throws an `InvalidOperationException`. The last `Exit` of a closed gate runs
+the completions of `DisposeWithCompletion`, and throws their exceptions as above: handle them like an exception of the
+handler. `EventGate.IsClosed` tells whether the gate is closed, which it is from the start of the first disconnection, also
+one that leaves the sink connected.
+
+```csharp
+using var connection = EventConnection.Advise(source, iid, gate => new ChangeSink(handler, gate));
+
+// in ChangeSink, for every event:
+if (!gate.TryEnter()) return;   // the connection is disconnected
+try { handler.Changed(); } finally { gate.Exit(); }
+```
+
+A sink that also implements `IDispatch`, e.g. for a dual event interface, passes the invocations of `IDispatch::Invoke` to
+an `IDispatchEventHandler` with `DispatchEventSink.InvokeHandler(gate, handler, …)`, which enters and exits the gate,
+accepts the invocation with an empty result when it is closed, whatever its `DISPID`, since it does not ask the handler any
+more, and returns the exception of a completion like one of the handler. The exception of a completion replaces the result
+of the handler, also its error, as a `finally` block would, and as the generated sinks do.
+
+A sink that is passed to `Advise` itself has no gate: it gets events until the source is told, and `DisposeAsync` does not
+wait for its handler calls.
 
 ### Support code
 
-The generated code depends on a few support types: `IDispatch`, `IEnumVARIANT`, `ComActivator`, the `VARIANT`, `SAFEARRAY`, `BSTR`, `DATE` and `CURRENCY` marshallers, the
+The generated code depends on a few support types: `IDispatch`, `IEnumVARIANT`, `ComActivator`, `ComMarshalling`, the `VARIANT`, `SAFEARRAY`, `BSTR`, `DATE` and `CURRENCY` marshallers, the
 base class of the late-bound wrappers and the event sinks; with `--dynamic`, also the `dynamic` support. With `--support-code package`, the generated project references the **CsCom.Runtime**
 NuGet package, and **CsCom.Runtime.Dynamic** with `--dynamic`. With `public` or `internal`, the support code is emitted into the project, in the `<Namespace>.ComSupport` namespace.
 In the `internal` mode all generated types are internal, because a public interface cannot derive from an internal `IDispatch`.
@@ -911,9 +1174,11 @@ The generated projects disable runtime marshalling, which source-generated COM i
 - Events of the generated interfaces are connected through the sink classes rather than through events of the COM interfaces as
   with TlbImp (`app.WorkbookOpen += ...`), because C# has no extension events; `dynamic` objects support `+=` for the events
   of dispinterfaces.
-- COM objects cannot be released manually: the generated interfaces, the late-bound wrappers and the `dynamic` objects share
-  one wrapper per COM object, whose references are released when it is garbage collected, and `ComObject.FinalRelease()` of
-  .NET only releases unique wrappers, so it does nothing for them. Finalizers do not run when the process exits, and an
+- By default COM objects cannot be released manually: the generated interfaces, the late-bound wrappers and the `dynamic`
+  objects share one wrapper per COM object, whose references are released when it is garbage collected, and
+  `ComObject.FinalRelease()` of .NET only releases unique wrappers, which `Create(unique: true)` and the `unique`
+  [marshaller of `SetMarshalling`](#interface-pointers) create; `dynamic` objects, and the objects in `VARIANT`s and `SAFEARRAY`s
+  are always shared. Finalizers do not run when the process exits, and an
   out-of-process server such as an Office application only exits after `Quit()` once all its objects are released, not only
   the application object: let them go out of scope and call `GC.Collect()` and `GC.WaitForPendingFinalizers()`.
   `ComBstr`, `ComSafeArray<T>` and the event sinks are disposable and are released at once.
@@ -989,6 +1254,8 @@ dotnet test src/CsCom.slnx --no-build                                       # al
   several times and fails with the stacks of the allocations if a `BSTR`, a `SAFEARRAY` or other memory of the COM task
   allocator is not freed, or if the reference count of a COM object changes. It registers an `IMallocSpy` for the test process
   and disables the `BSTR` cache of OLE Automation.
+- [`docs/known-issues.md`](docs/known-issues.md) lists the known issues that are not fixed, with the reasons why and
+  what a fix would take.
 
 ### Benchmarks
 

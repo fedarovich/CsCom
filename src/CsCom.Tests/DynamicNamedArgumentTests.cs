@@ -160,6 +160,28 @@ public sealed unsafe partial class DynamicNamedArgumentTests
         Assert.AreEqual(1, recorder.Calls.Count);
     }
 
+    [TestMethod]
+    public void AssignsTheObjectsThatArePassedAsObjectsByReference()
+    {
+        // Every value that VariantMarshaller passes as VT_DISPATCH or VT_UNKNOWN is assigned by reference: also a managed
+        // object that is exposed to COM ([GeneratedComClass]) and the object of an UnknownWrapper. Other values are not.
+        var recorder = new Recorder(LoadShapeEvents());
+        dynamic shape = ((IDispatch)recorder).AsDynamic();
+        var exposed = new Recorder(typeInfo: null);
+
+        shape.Title = exposed;
+        Assert.AreEqual(DispatchFlags.PropertyPutRef, recorder.Calls[^1].Flags);
+        Assert.AreSame(exposed, recorder.Calls[^1].Named.Single().Value);
+
+        shape.Title = new UnknownWrapper(exposed);
+        Assert.AreEqual(DispatchFlags.PropertyPutRef, recorder.Calls[^1].Flags);
+        Assert.AreSame(exposed, recorder.Calls[^1].Named.Single().Value);
+
+        shape.Title = "text";
+        Assert.AreEqual(DispatchFlags.PropertyPut, recorder.Calls[^1].Flags);
+        Assert.AreEqual(3, recorder.Calls.Count);
+    }
+
     private static void AssertCall(Call call, int dispId, DispatchFlags flags, object?[] positional, (int DispId, object? Value)[] named)
     {
         Assert.AreEqual((dispId, flags), (call.DispId, call.Flags));

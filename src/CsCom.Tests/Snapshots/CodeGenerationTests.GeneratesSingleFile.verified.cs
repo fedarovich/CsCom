@@ -135,8 +135,9 @@ namespace Interop.CsComTest
 
         double get_Area();
 
-        void putref_Parent(IShape? Parent);
+        void putref_Parent([global::System.Runtime.InteropServices.Marshalling.MarshalUsing(typeof(global::CsCom.Runtime.ComObjectMarshaller<IShape>))] IShape? Parent);
 
+        [return: global::System.Runtime.InteropServices.Marshalling.MarshalUsing(typeof(global::CsCom.Runtime.ComObjectMarshaller<IShape>))]
         IShape? get_Parent();
 
         [return: global::System.Runtime.InteropServices.Marshalling.MarshalUsing(typeof(global::CsCom.Runtime.VariantMarshaller))]
@@ -157,14 +158,16 @@ namespace Interop.CsComTest
 
         int get_Coordinate(int index);
 
-        [return: global::System.Runtime.InteropServices.Marshalling.MarshalUsing(typeof(global::System.Runtime.InteropServices.Marshalling.ComInterfaceMarshaller<object>))]
+        [return: global::System.Runtime.InteropServices.Marshalling.MarshalUsing(typeof(global::CsCom.Runtime.ComObjectMarshaller<object>))]
         object? get__NewEnum();
 
+        [return: global::System.Runtime.InteropServices.Marshalling.MarshalUsing(typeof(global::CsCom.Runtime.ComObjectMarshaller<IShape>))]
         IShape? Clone();
 
         DShapeEvents? GetEvents();
 
-        global::CsCom.Runtime.IDispatch? Dispatch(global::CsCom.Runtime.IDispatch? Dispatch);
+        [return: global::System.Runtime.InteropServices.Marshalling.MarshalUsing(typeof(global::CsCom.Runtime.ComObjectMarshaller<global::CsCom.Runtime.IDispatch>))]
+        global::CsCom.Runtime.IDispatch? Dispatch([global::System.Runtime.InteropServices.Marshalling.MarshalUsing(typeof(global::CsCom.Runtime.ComObjectMarshaller<global::CsCom.Runtime.IDispatch>))] global::CsCom.Runtime.IDispatch? Dispatch);
 
         [return: global::System.Runtime.InteropServices.Marshalling.MarshalUsing(typeof(global::CsCom.Runtime.DateMarshaller))]
         global::System.DateTime Dates([global::System.Runtime.InteropServices.Marshalling.MarshalUsing(typeof(global::CsCom.Runtime.DateMarshaller))] global::System.DateTime Date, [global::System.Runtime.InteropServices.Marshalling.MarshalUsing(typeof(global::CsCom.Runtime.CurrencyMarshaller))] decimal Money, decimal Amount);
@@ -327,7 +330,7 @@ namespace Interop.CsComTest
     /// <summary>
     /// Connects to the DShapeEvents events of a COM object and raises them as .NET events. Dispose the sink to disconnect it.
     /// </summary>
-    public sealed partial class DShapeEventsSink : IDShapeEventsHandler, global::System.IDisposable
+    public sealed partial class DShapeEventsSink : IDShapeEventsHandler, global::System.IDisposable, global::System.IAsyncDisposable
     {
         /// <summary>
         /// The interface identifier (IID) of the DShapeEvents event interface.
@@ -387,6 +390,11 @@ namespace Interop.CsComTest
         {
             __connection.Dispose();
         }
+
+        /// <summary>
+        /// Disconnects the sink from the events, and completes when no handler runs any more. Call it on the thread that connected the sink. Throws a COMException when the sink could not be disconnected and stays connected: dispose it again, e.g. on that thread.
+        /// </summary>
+        public global::System.Threading.Tasks.ValueTask DisposeAsync() => __connection.DisposeAsync();
 
         /// <summary>
         /// Connects a handler to the DShapeEvents events of a COM object.
@@ -542,6 +550,7 @@ namespace Interop.CsComTest
 
         void Integers(sbyte c, byte b, short s, ushort us, int i, uint ui, long h, ulong uh, float f);
 
+        [return: global::System.Runtime.InteropServices.Marshalling.MarshalUsing(typeof(global::CsCom.Runtime.ComObjectMarshaller<global::CsCom.Runtime.IEnumVARIANT>))]
         global::CsCom.Runtime.IEnumVARIANT? enumerator();
     }
 
@@ -730,7 +739,7 @@ namespace Interop.CsComTest
     /// <summary>
     /// Connects to the _ShapeEvents events of a COM object and raises them as .NET events. Dispose the sink to disconnect it.
     /// </summary>
-    public sealed partial class _ShapeEventsSink : _ShapeEventsHandler, global::System.IDisposable
+    public sealed partial class _ShapeEventsSink : _ShapeEventsHandler, global::System.IDisposable, global::System.IAsyncDisposable
     {
         /// <summary>
         /// The interface identifier (IID) of the _ShapeEvents event interface.
@@ -775,6 +784,11 @@ namespace Interop.CsComTest
         {
             __connection.Dispose();
         }
+
+        /// <summary>
+        /// Disconnects the sink from the events, and completes when no handler runs any more. Call it on the thread that connected the sink. Throws a COMException when the sink could not be disconnected and stays connected: dispose it again, e.g. on that thread.
+        /// </summary>
+        public global::System.Threading.Tasks.ValueTask DisposeAsync() => __connection.DisposeAsync();
 
         /// <summary>
         /// Connects a handler to the _ShapeEvents events of a COM object.
@@ -925,7 +939,7 @@ namespace Interop.CsComTest
     /// <summary>
     /// Connects to the IShapeEventsVt events of a COM object and raises them as .NET events. Dispose the sink to disconnect it.
     /// </summary>
-    public sealed partial class IShapeEventsVtSink : IShapeEventsVtHandler, global::System.IDisposable
+    public sealed partial class IShapeEventsVtSink : IShapeEventsVtHandler, global::System.IDisposable, global::System.IAsyncDisposable
     {
         /// <summary>
         /// The interface identifier (IID) of the IShapeEventsVt event interface.
@@ -972,6 +986,11 @@ namespace Interop.CsComTest
         }
 
         /// <summary>
+        /// Disconnects the sink from the events, and completes when no handler runs any more. Call it on the thread that connected the sink. Throws a COMException when the sink could not be disconnected and stays connected: dispose it again, e.g. on that thread.
+        /// </summary>
+        public global::System.Threading.Tasks.ValueTask DisposeAsync() => __connection.DisposeAsync();
+
+        /// <summary>
         /// Connects a handler to the IShapeEventsVt events of a COM object.
         /// </summary>
         /// <param name="source">The COM object that raises the events.</param>
@@ -980,7 +999,7 @@ namespace Interop.CsComTest
         public static global::CsCom.Runtime.EventConnection Connect(object source, IShapeEventsVtHandler handler)
         {
             global::System.ArgumentNullException.ThrowIfNull(handler);
-            return global::CsCom.Runtime.EventConnection.Advise(source, Iid, new ComSink(handler));
+            return global::CsCom.Runtime.EventConnection.Advise(source, Iid, gate => new ComSink(handler, gate));
         }
 
         void IShapeEventsVtHandler.Moved(int X, int Y) => this.Moved?.Invoke(X, Y);
@@ -1001,25 +1020,89 @@ namespace Interop.CsComTest
         }
 
         /// <summary>
-        /// Implements the IShapeEventsVt event interface and passes the events to the handler.
+        /// Implements the IShapeEventsVt event interface and passes the events to the handler until the gate of its connection is closed.
         /// </summary>
         [global::System.Runtime.InteropServices.Marshalling.GeneratedComClass]
         private sealed partial class ComSink : IShapeEventsVt
         {
             private readonly IShapeEventsVtHandler __handler;
 
-            public ComSink(IShapeEventsVtHandler handler)
+            private readonly global::CsCom.Runtime.EventGate __gate;
+
+            public ComSink(IShapeEventsVtHandler handler, global::CsCom.Runtime.EventGate gate)
             {
                 __handler = handler;
+                __gate = gate;
             }
 
-            public void Moved(int X, int Y) => __handler.Moved(X, Y);
+            public void Moved(int X, int Y)
+            {
+                if (!__gate.TryEnter())
+                {
+                    return;
+                }
 
-            public void Closing(ref bool Cancel) => __handler.Closing(ref Cancel);
+                try
+                {
+                    __handler.Moved(X, Y);
+                }
+                finally
+                {
+                    __gate.Exit();
+                }
+            }
 
-            public void Renamed(string? Name) => __handler.Renamed(Name);
+            public void Closing(ref bool Cancel)
+            {
+                if (!__gate.TryEnter())
+                {
+                    return;
+                }
 
-            public string? Describe(object? Value, out int length) => __handler.Describe(Value, out length);
+                try
+                {
+                    __handler.Closing(ref Cancel);
+                }
+                finally
+                {
+                    __gate.Exit();
+                }
+            }
+
+            public void Renamed(string? Name)
+            {
+                if (!__gate.TryEnter())
+                {
+                    return;
+                }
+
+                try
+                {
+                    __handler.Renamed(Name);
+                }
+                finally
+                {
+                    __gate.Exit();
+                }
+            }
+
+            public string? Describe(object? Value, out int length)
+            {
+                if (!__gate.TryEnter())
+                {
+                    length = default;
+                    return default;
+                }
+
+                try
+                {
+                    return __handler.Describe(Value, out length);
+                }
+                finally
+                {
+                    __gate.Exit();
+                }
+            }
         }
     }
 
@@ -1092,7 +1175,7 @@ namespace Interop.CsComTest
     /// <summary>
     /// Connects to the IShapeEventsDual events of a COM object and raises them as .NET events. Dispose the sink to disconnect it.
     /// </summary>
-    public sealed partial class IShapeEventsDualSink : IShapeEventsDualHandler, global::System.IDisposable
+    public sealed partial class IShapeEventsDualSink : IShapeEventsDualHandler, global::System.IDisposable, global::System.IAsyncDisposable
     {
         /// <summary>
         /// The interface identifier (IID) of the IShapeEventsDual event interface.
@@ -1139,6 +1222,11 @@ namespace Interop.CsComTest
         }
 
         /// <summary>
+        /// Disconnects the sink from the events, and completes when no handler runs any more. Call it on the thread that connected the sink. Throws a COMException when the sink could not be disconnected and stays connected: dispose it again, e.g. on that thread.
+        /// </summary>
+        public global::System.Threading.Tasks.ValueTask DisposeAsync() => __connection.DisposeAsync();
+
+        /// <summary>
         /// Connects a handler to the IShapeEventsDual events of a COM object.
         /// </summary>
         /// <param name="source">The COM object that raises the events.</param>
@@ -1147,7 +1235,7 @@ namespace Interop.CsComTest
         public static global::CsCom.Runtime.EventConnection Connect(object source, IShapeEventsDualHandler handler)
         {
             global::System.ArgumentNullException.ThrowIfNull(handler);
-            return global::CsCom.Runtime.EventConnection.Advise(source, Iid, new ComSink(handler));
+            return global::CsCom.Runtime.EventConnection.Advise(source, Iid, gate => new ComSink(handler, gate));
         }
 
         void IShapeEventsDualHandler.Moved(int X, int Y) => this.Moved?.Invoke(X, Y);
@@ -1218,28 +1306,92 @@ namespace Interop.CsComTest
         }
 
         /// <summary>
-        /// Implements the IShapeEventsDual event interface and passes the events to the handler.
+        /// Implements the IShapeEventsDual event interface and passes the events to the handler until the gate of its connection is closed.
         /// </summary>
         [global::System.Runtime.InteropServices.Marshalling.GeneratedComClass]
         private sealed unsafe partial class ComSink : IShapeEventsDual
         {
             private readonly IShapeEventsDualHandler __handler;
 
+            private readonly global::CsCom.Runtime.EventGate __gate;
+
             private readonly DispatchHandler __dispatch;
 
-            public ComSink(IShapeEventsDualHandler handler)
+            public ComSink(IShapeEventsDualHandler handler, global::CsCom.Runtime.EventGate gate)
             {
                 __handler = handler;
+                __gate = gate;
                 __dispatch = new DispatchHandler(handler);
             }
 
-            public void Moved(int X, int Y) => __handler.Moved(X, Y);
+            public void Moved(int X, int Y)
+            {
+                if (!__gate.TryEnter())
+                {
+                    return;
+                }
 
-            public void Closing(ref bool Cancel) => __handler.Closing(ref Cancel);
+                try
+                {
+                    __handler.Moved(X, Y);
+                }
+                finally
+                {
+                    __gate.Exit();
+                }
+            }
 
-            public void Renamed(string? Name) => __handler.Renamed(Name);
+            public void Closing(ref bool Cancel)
+            {
+                if (!__gate.TryEnter())
+                {
+                    return;
+                }
 
-            public string? Describe(object? Value, out int length) => __handler.Describe(Value, out length);
+                try
+                {
+                    __handler.Closing(ref Cancel);
+                }
+                finally
+                {
+                    __gate.Exit();
+                }
+            }
+
+            public void Renamed(string? Name)
+            {
+                if (!__gate.TryEnter())
+                {
+                    return;
+                }
+
+                try
+                {
+                    __handler.Renamed(Name);
+                }
+                finally
+                {
+                    __gate.Exit();
+                }
+            }
+
+            public string? Describe(object? Value, out int length)
+            {
+                if (!__gate.TryEnter())
+                {
+                    length = default;
+                    return default;
+                }
+
+                try
+                {
+                    return __handler.Describe(Value, out length);
+                }
+                finally
+                {
+                    __gate.Exit();
+                }
+            }
 
             int global::CsCom.Runtime.IDispatch.GetTypeInfoCount(out uint pctinfo)
             {
@@ -1263,7 +1415,7 @@ namespace Interop.CsComTest
                 return unchecked((int)0x80020006);
             }
 
-            int global::CsCom.Runtime.IDispatch.Invoke(int dispIdMember, in global::System.Guid riid, uint lcid, ushort wFlags, global::CsCom.Runtime.DispParams* pDispParams, global::System.Runtime.InteropServices.Marshalling.ComVariant* pVarResult, global::CsCom.Runtime.ExcepInfo* pExcepInfo, uint* puArgErr) => global::CsCom.Runtime.DispatchEventSink.InvokeHandler(__dispatch, dispIdMember, pDispParams, pVarResult, pExcepInfo);
+            int global::CsCom.Runtime.IDispatch.Invoke(int dispIdMember, in global::System.Guid riid, uint lcid, ushort wFlags, global::CsCom.Runtime.DispParams* pDispParams, global::System.Runtime.InteropServices.Marshalling.ComVariant* pVarResult, global::CsCom.Runtime.ExcepInfo* pExcepInfo, uint* puArgErr) => global::CsCom.Runtime.DispatchEventSink.InvokeHandler(__gate, __dispatch, dispIdMember, pDispParams, pVarResult, pExcepInfo);
         }
     }
 
@@ -1281,7 +1433,14 @@ namespace Interop.CsComTest
         /// Creates an instance of the Shape class.
         /// </summary>
         /// <param name="context">The context in which the code that manages the newly created object will run.</param>
-        public static IShape Create(global::CsCom.Runtime.ClassContext context = global::CsCom.Runtime.ComActivator.DefaultContext) => global::CsCom.Runtime.ComActivator.CreateInstance<IShape>(Clsid, context);
+        public static IShape Create(global::CsCom.Runtime.ClassContext context = global::CsCom.Runtime.ComActivator.DefaultContext) => Create(false, context);
+
+        /// <summary>
+        /// Creates an instance of the Shape class. If unique is set, the instance has a managed object of its own, which ComMarshalling.Release releases at once.
+        /// </summary>
+        /// <param name="unique">Whether the COM object gets a managed object of its own rather than the one that all the references to it share.</param>
+        /// <param name="context">The context in which the code that manages the newly created object will run.</param>
+        public static IShape Create(bool unique, global::CsCom.Runtime.ClassContext context = global::CsCom.Runtime.ComActivator.DefaultContext) => global::CsCom.Runtime.ComActivator.CreateInstance<IShape>(Clsid, unique, context);
     }
 
     /// <summary>
@@ -1309,7 +1468,14 @@ namespace Interop.CsComTest
         /// Creates an instance of the ShapeEvents class.
         /// </summary>
         /// <param name="context">The context in which the code that manages the newly created object will run.</param>
-        public static DShapeEvents Create(global::CsCom.Runtime.ClassContext context = global::CsCom.Runtime.ComActivator.DefaultContext) => global::CsCom.Runtime.ComActivator.CreateDispatchInstance<DShapeEvents>(Clsid, context);
+        public static DShapeEvents Create(global::CsCom.Runtime.ClassContext context = global::CsCom.Runtime.ComActivator.DefaultContext) => Create(false, context);
+
+        /// <summary>
+        /// Creates an instance of the ShapeEvents class. If unique is set, the instance has a managed object of its own, which ComMarshalling.Release releases at once.
+        /// </summary>
+        /// <param name="unique">Whether the COM object gets a managed object of its own rather than the one that all the references to it share.</param>
+        /// <param name="context">The context in which the code that manages the newly created object will run.</param>
+        public static DShapeEvents Create(bool unique, global::CsCom.Runtime.ClassContext context = global::CsCom.Runtime.ComActivator.DefaultContext) => global::CsCom.Runtime.ComActivator.CreateDispatchInstance<DShapeEvents>(Clsid, unique, context);
     }
 
     /// <summary>

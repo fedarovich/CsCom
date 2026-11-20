@@ -24,7 +24,7 @@ public sealed class LibrarySetReference
     public string? ConfigurationPath { get; init; }
 
     /// <summary>The changes to the representation of <c>DATE</c>, <c>CURRENCY</c>, <c>VARIANT_BOOL</c>, <c>BSTR</c> and <c>SAFEARRAY</c> values.</summary>
-    public MarshallingOverrides Marshalling { get; init; } = new();
+    public MarshallingOptionOverrides Marshalling { get; init; } = new();
 
     /// <summary>The code generated for the event (source) interfaces.</summary>
     public EventStyle? EventStyle { get; init; }

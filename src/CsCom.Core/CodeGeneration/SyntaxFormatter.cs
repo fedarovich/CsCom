@@ -142,7 +142,6 @@ internal static class SyntaxFormatter
             return visited.WithMembers(members);
         }
 
-
         public override SyntaxToken VisitToken(SyntaxToken token)
         {
             var visited = base.VisitToken(token);

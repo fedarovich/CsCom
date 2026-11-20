@@ -10,7 +10,7 @@ namespace CsCom.Runtime;
 /// <remarks>
 /// Unlike <see cref="VariantMarshaller"/>, <see langword="null"/> is passed as an omitted argument
 /// (<c>VT_ERROR</c> with <c>DISP_E_PARAMNOTFOUND</c>), so that the COM object applies its default value.
-/// Pass <see cref="System.DBNull.Value"/> to pass <c>VT_NULL</c>.
+/// Pass <see cref="global::System.DBNull.Value"/> to pass <c>VT_NULL</c>.
 /// </remarks>
 [CustomMarshaller(typeof(object), MarshalMode.Default, typeof(OptionalVariantMarshaller))]
 public static class OptionalVariantMarshaller

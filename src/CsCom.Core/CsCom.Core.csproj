@@ -14,16 +14,29 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- The support code emitted into generated projects in the "public" and "internal" support code modes. -->
-    <EmbeddedResource Include="..\CsCom.Runtime\**\*.cs"
-                      Exclude="..\CsCom.Runtime\bin\**;..\CsCom.Runtime\obj\**"
-                      LogicalName="CsCom.Runtime/%(RecursiveDir)%(Filename)%(Extension)"
-                      Visible="false" />
-    <!-- The late binding with dynamic, emitted with the dynamic option only. -->
-    <EmbeddedResource Include="..\CsCom.Runtime.Dynamic\**\*.cs"
-                      Exclude="..\CsCom.Runtime.Dynamic\bin\**;..\CsCom.Runtime.Dynamic\obj\**"
-                      LogicalName="CsCom.Runtime.Dynamic/%(RecursiveDir)%(Filename)%(Extension)"
-                      Visible="false" />
+    <!--
+      The support code emitted into generated projects in the "public" and "internal" support code modes, and the late binding
+      with dynamic, emitted with the dynamic option only. They are embedded as the copies whose names of .NET the
+      QualifySupportCode task qualifies (see EmbedSupportCode below), under these logical names.
+    -->
+    <CsComSupportSource Include="..\CsCom.Runtime\**\*.cs"
+                        Exclude="..\CsCom.Runtime\bin\**;..\CsCom.Runtime\obj\**"
+                        LogicalName="CsCom.Runtime/%(RecursiveDir)%(Filename)%(Extension)" />
+    <CsComSupportSource Include="..\CsCom.Runtime.Dynamic\**\*.cs"
+                        Exclude="..\CsCom.Runtime.Dynamic\bin\**;..\CsCom.Runtime.Dynamic\obj\**"
+                        LogicalName="CsCom.Runtime.Dynamic/%(RecursiveDir)%(Filename)%(Extension)" />
+    <!-- The fast up-to-date check of Visual Studio, which does not see the copies, builds the project when they change. -->
+    <UpToDateCheckInput Include="@(CsComSupportSource)" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      Built before this project, which runs the task of CsCom.SupportCode and binds the support code against the compile
+      references of the net10.0 build of CsCom.Runtime, the lowest .NET of the generated projects. Neither is referenced, nor
+      a dependency of the packages.
+    -->
+    <ProjectReference Include="..\CsCom.SupportCode\CsCom.SupportCode.csproj" ReferenceOutputAssembly="false" PrivateAssets="all" />
+    <ProjectReference Include="..\CsCom.Runtime\CsCom.Runtime.csproj" ReferenceOutputAssembly="false" PrivateAssets="all" SetTargetFramework="TargetFramework=net10.0" />
   </ItemGroup>
 
   <ItemGroup>
@@ -41,5 +54,76 @@
       <_Parameter1>windows</_Parameter1>
     </AssemblyAttribute>
   </ItemGroup>
+
+  <!--
+    The support code is checked and its names of .NET are qualified with global:: when this project is built, so that a type of
+    the application cannot hide them in a generated project (see SupportCodeQualifier of CsCom.SupportCode). The task runs in
+    a task host of .NET: in the MSBuild node, its assembly would stay loaded after the build, so that the next build could not
+    replace it, and Visual Studio runs MSBuild on .NET Framework, with a Roslyn of its own. Its path is evaluated before any
+    target runs, so it is the output path of CsCom.SupportCode, which _PrepareSupportCodeQualification checks.
+  -->
+  <PropertyGroup>
+    <_CsComSupportCodeTask>$([MSBuild]::NormalizePath('$(MSBuildThisFileDirectory)', '..', 'CsCom.SupportCode', 'bin', '$(Configuration)', 'net10.0', 'CsCom.SupportCode.dll'))</_CsComSupportCodeTask>
+    <!-- Before the names of the resources are created, after the references, which build CsCom.SupportCode and CsCom.Runtime. -->
+    <PrepareResourcesDependsOn>EmbedSupportCode;$(PrepareResourcesDependsOn)</PrepareResourcesDependsOn>
+  </PropertyGroup>
+
+  <UsingTask TaskName="CsCom.SupportCode.QualifySupportCode" AssemblyFile="$(_CsComSupportCodeTask)" TaskFactory="TaskHostFactory" Runtime="NET" />
+
+  <Target Name="_PrepareSupportCodeQualification">
+    <MSBuild Projects="..\CsCom.SupportCode\CsCom.SupportCode.csproj" Targets="GetTargetPath">
+      <Output TaskParameter="TargetOutputs" PropertyName="_CsComSupportCodeBuiltTask" />
+    </MSBuild>
+    <Error Condition="'$(_CsComSupportCodeBuiltTask)' != '$(_CsComSupportCodeTask)'"
+           Text="CsCom.SupportCode was built to '$(_CsComSupportCodeBuiltTask)', but the QualifySupportCode task is loaded from '$(_CsComSupportCodeTask)'." />
+    <MSBuild Projects="..\CsCom.Runtime\CsCom.Runtime.csproj" Targets="GetSupportCodeReferences" Properties="TargetFramework=net10.0">
+      <Output TaskParameter="TargetOutputs" ItemName="_CsComSupportCodeReference" />
+    </MSBuild>
+
+    <PropertyGroup>
+      <_CsComSupportCodeDirectory>$([MSBuild]::NormalizeDirectory('$(MSBuildProjectDirectory)', '$(IntermediateOutputPath)', 'SupportCode'))</_CsComSupportCodeDirectory>
+      <_CsComSupportCodeInputs>$(IntermediateOutputPath)SupportCode.inputs</_CsComSupportCodeInputs>
+      <_CsComSupportCodeStamp>$(IntermediateOutputPath)SupportCode.stamp</_CsComSupportCodeStamp>
+    </PropertyGroup>
+
+    <!--
+      A copy that is missing, e.g. after a part of obj was deleted, qualifies the code again: the stamp alone would keep the
+      target up to date, and EmbedSupportCode would embed files that do not exist.
+    -->
+    <ItemGroup>
+      <_CsComQualifiedSupportCode Include="@(CsComSupportSource->'$(_CsComSupportCodeDirectory)%(LogicalName)')" />
+      <_CsComMissingSupportCode Include="@(_CsComQualifiedSupportCode)" Condition="!Exists('%(FullPath)')" />
+    </ItemGroup>
+    <Delete Files="$(_CsComSupportCodeStamp)" Condition="'@(_CsComMissingSupportCode)' != ''" />
+
+    <!-- A file that is deleted or renamed, or another version of the references, changes the list, which qualifies the code again. -->
+    <WriteLinesToFile File="$(_CsComSupportCodeInputs)"
+                      Lines="@(CsComSupportSource->'%(FullPath)|%(LogicalName)');@(_CsComSupportCodeReference)"
+                      Overwrite="true"
+                      WriteOnlyWhenDifferent="true" />
+    <ItemGroup>
+      <FileWrites Include="$(_CsComSupportCodeInputs);$(_CsComSupportCodeStamp)" />
+    </ItemGroup>
+  </Target>
+
+  <!--
+    The output is a stamp rather than the copies, so that MSBuild does not run the task with the changed files only: they are
+    bound together. _PrepareSupportCodeQualification deletes the stamp when a copy is missing.
+  -->
+  <Target Name="_QualifySupportCode"
+          DependsOnTargets="_PrepareSupportCodeQualification"
+          Inputs="@(CsComSupportSource);@(_CsComSupportCodeReference);$(_CsComSupportCodeInputs);$(_CsComSupportCodeTask)"
+          Outputs="$(_CsComSupportCodeStamp)">
+    <QualifySupportCode Sources="@(CsComSupportSource)" References="@(_CsComSupportCodeReference)" OutputDirectory="$(_CsComSupportCodeDirectory)" />
+    <Touch Files="$(_CsComSupportCodeStamp)" AlwaysCreate="true" />
+  </Target>
+
+  <!-- Embeds the copies also when they are up to date. The design-time builds of Visual Studio do not need them. -->
+  <Target Name="EmbedSupportCode" DependsOnTargets="_QualifySupportCode" Condition="'$(DesignTimeBuild)' != 'true'">
+    <ItemGroup>
+      <EmbeddedResource Include="@(_CsComQualifiedSupportCode)" Visible="false" />
+      <FileWrites Include="@(_CsComQualifiedSupportCode)" />
+    </ItemGroup>
+  </Target>
 
 </Project>

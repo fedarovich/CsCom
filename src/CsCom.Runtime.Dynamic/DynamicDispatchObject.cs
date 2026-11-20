@@ -10,6 +10,7 @@ using System.Linq.Expressions;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
+using System.Runtime.InteropServices.Marshalling;
 using System.Threading;
 
 namespace CsCom.Runtime;
@@ -30,7 +31,8 @@ namespace CsCom.Runtime;
 /// <item><description>The object converts to <see cref="IDispatch"/>, to the COM interfaces it implements, to late-bound wrappers and to the value of its default member.</description></item>
 /// <item><description><c>d.Event += handler</c> and <c>d.Event -= handler</c> add and remove handlers of the events of the source dispinterfaces of its coclass.</description></item>
 /// </list>
-/// COM objects returned by the members are wrapped as well. There is one wrapper per COM object, so wrappers of the same object
+/// COM objects returned by the members are wrapped as well, and so are the objects of the application that are exposed
+/// to COM, as by <see cref="ComDynamic.ToDynamic"/>. There is one wrapper per COM object, so wrappers of the same object
 /// are equal, like the runtime callable wrappers of the built-in COM interop. The debugger shows the properties described by
 /// the type information of the object.
 /// </remarks>
@@ -243,14 +245,21 @@ public sealed class DynamicDispatchObject : DynamicObject, IDispatchProvider, IE
     }
 
     /// <summary>
-    /// Wraps the COM objects that implement <see cref="IDispatch"/>, including the elements of object arrays, for late binding.
+    /// Wraps the values that COM objects return for late binding, as <see cref="ComDynamic.ToDynamic"/> does, including the
+    /// elements of object arrays: a COM object that implements <see cref="IDispatch"/>, and an object of the application
+    /// that is exposed to COM, which its pointer converts back to, itself when it implements <see cref="IDispatch"/> and
+    /// otherwise through the <see cref="IDispatchProvider.Dispatch"/> that it provides. A value that cannot be late bound
+    /// is returned as it is.
     /// </summary>
     internal static object? Wrap(object? value)
     {
         switch (value)
         {
             case null:
-            case IDispatchProvider:
+
+            // A dynamic object comes here again when it is converted to object, e.g. by IndexedProperty.TryConvert: it is
+            // returned as it is, rather than looked up again through its Dispatch below.
+            case DynamicDispatchObject:
                 return value;
             case object?[] array when array.GetType() == typeof(object[]):
                 var result = new object?[array.Length];
@@ -285,10 +294,13 @@ public sealed class DynamicDispatchObject : DynamicObject, IDispatchProvider, IE
                 }
 
                 return result3D;
-            case IDispatch dispatch:
-                return GetOrCreate(dispatch);
+
+            // The rule of ComDynamic for the objects that the application passes to it, also for an object of the
+            // application that a VARIANT returns itself, e.g. a decorator of a COM object, which a VARIANT held as the COM
+            // object that it provides before. Only the values of VariantMarshaller.ConvertToManaged and of this method
+            // reach it, so no late-bound wrapper does: it would get the dynamic object of its COM object, as from ToDynamic.
             default:
-                return value;
+                return ComDynamic.TryGetDispatch(value, out IDispatch? dispatch) && dispatch is not null ? GetOrCreate(dispatch) : value;
         }
     }
 
@@ -303,8 +315,18 @@ public sealed class DynamicDispatchObject : DynamicObject, IDispatchProvider, IE
         }
     }
 
-    private static bool IsComObject(object? value) =>
-        value is IDispatchProvider || (value is not null && ComWrappers.TryGetComInstance(value, out nint unknown) && Release(unknown));
+    // Whether the value is an object that VariantMarshaller passes as VT_DISPATCH or VT_UNKNOWN, which a property takes by
+    // reference: a COM object, a late-bound or dynamic wrapper, the object of an UnknownWrapper, or a managed object that is
+    // exposed to COM. The cases follow the order of VariantMarshaller.ConvertToUnmanaged, and the last one is its test,
+    // with the public API only; TheDynamicSupportFollowsTheRulesOfTheRuntime of the tests keeps them in line. A ComObject
+    // is one without asking for its pointer, which ComWrappers still returns when the object has been released.
+    private static bool IsComObject(object? value) => value switch
+    {
+        null => false,
+        ComObject or IDispatchProvider or UnknownWrapper => true,
+        ValueType or string => false,
+        _ => ComWrappers.TryGetComInstance(value, out nint unknown) ? Release(unknown) : ComMarshalling.IsExposedToCom(value),
+    };
 
     private static bool Release(nint unknown)
     {
@@ -348,7 +370,9 @@ public sealed class DynamicDispatchObject : DynamicObject, IDispatchProvider, IE
         DynamicEventSink? sink;
         lock (EventSinksLock)
         {
-            sink = _eventSinks?.GetValueOrDefault(eventInterface.Iid);
+            // Not ?.: the extension method is called through its receiver, which the support code of generated projects
+            // calls through its class (see SupportCodeQualifier).
+            sink = _eventSinks is null ? null : _eventSinks.GetValueOrDefault(eventInterface.Iid);
         }
 
         sink?.Remove(member, handler);
@@ -809,6 +833,12 @@ public sealed class DynamicDispatchObject : DynamicObject, IDispatchProvider, IE
 /// <summary>
 /// Gives late-bound access to COM objects through <c>dynamic</c>.
 /// </summary>
+/// <remarks>
+/// A late-bound wrapper or a <c>dynamic</c> object stands for its COM object. An object of the application that is exposed
+/// to COM (<see cref="GeneratedComClassAttribute"/>) is late bound itself when it implements <c>IDispatch</c>, also when it
+/// implements <see cref="IDispatchProvider"/>, and otherwise through the <see cref="IDispatchProvider.Dispatch"/> that it
+/// provides, also for its events.
+/// </remarks>
 public static class ComDynamic
 {
     internal const string RequiresDynamicCodeMessage = "Late binding with dynamic requires dynamic code generation and is not compatible with Native AOT.";
@@ -910,31 +940,40 @@ public static class ComDynamic
     }
 
     /// <summary>
-    /// Returns the COM object for late binding with <c>dynamic</c>.
+    /// Returns the COM object for late binding with <c>dynamic</c>, like <see cref="ToDynamic"/>.
     /// </summary>
     /// <param name="dispatch">The <see cref="IDispatch"/> interface of the object, or a dual interface derived from it.</param>
     [RequiresDynamicCode(RequiresDynamicCodeMessage)]
     public static dynamic AsDynamic(this IDispatch dispatch)
     {
-        return DynamicDispatchObject.GetOrCreate(dispatch);
+        ArgumentNullException.ThrowIfNull(dispatch);
+        return GetWrapper(dispatch) ?? throw NoComObject(dispatch);
     }
 
     /// <summary>
-    /// Returns the COM object wrapped by a late-bound dispinterface wrapper for late binding with <c>dynamic</c>.
+    /// Returns the COM object of a late-bound dispinterface wrapper for late binding with <c>dynamic</c>, like
+    /// <see cref="ToDynamic"/>: a wrapper of the application that is exposed to COM and implements <see cref="IDispatch"/>
+    /// is late bound itself.
     /// </summary>
     /// <param name="wrapper">The late-bound wrapper.</param>
     [RequiresDynamicCode(RequiresDynamicCodeMessage)]
     public static dynamic AsDynamic(this DispatchObject wrapper)
     {
         ArgumentNullException.ThrowIfNull(wrapper);
-        return DynamicDispatchObject.GetOrCreate(wrapper.Dispatch);
+        return GetWrapper(wrapper) ?? throw NoComObject(wrapper);
     }
 
     /// <summary>
     /// Returns a COM object, e.g. one returned in a <c>VARIANT</c>, for late binding with <c>dynamic</c>.
     /// </summary>
-    /// <param name="comObject">A COM object that implements <c>IDispatch</c>, a late-bound wrapper, or <see langword="null"/>.</param>
+    /// <param name="comObject">
+    /// A COM object that implements <c>IDispatch</c>, a late-bound wrapper, or <see langword="null"/>; a late-bound wrapper
+    /// whose <see cref="IDispatchProvider.Dispatch"/> is <see langword="null"/>, against its contract, is converted to
+    /// <see langword="null"/> too. An <see cref="UnknownWrapper"/> stands for its object, as where an object is passed to
+    /// COM.
+    /// </param>
     /// <exception cref="InvalidCastException">The object does not implement <c>IDispatch</c>.</exception>
+    /// <exception cref="ArgumentException">The object is a <see cref="DispatchWrapper"/>.</exception>
     [RequiresDynamicCode(RequiresDynamicCodeMessage)]
     public static dynamic? ToDynamic(object? comObject)
     {
@@ -945,27 +984,28 @@ public static class ComDynamic
     /// Gets the name of the type of a COM object from its type information, like VB's <c>TypeName</c>, e.g. the name of the
     /// default interface of its class.
     /// </summary>
-    /// <param name="comObject">A COM object that implements <c>IDispatch</c>, a late-bound wrapper or a <c>dynamic</c> object.</param>
+    /// <param name="comObject">
+    /// A COM object that implements <c>IDispatch</c>, a late-bound wrapper or a <c>dynamic</c> object, or an
+    /// <see cref="UnknownWrapper"/> of one.
+    /// </param>
     /// <returns>The name, or <see langword="null"/> if the object provides no type information.</returns>
     /// <exception cref="InvalidCastException">The object does not implement <c>IDispatch</c>.</exception>
+    /// <exception cref="ArgumentException">The object is a <see cref="DispatchWrapper"/>.</exception>
     public static string? GetTypeName(object comObject)
     {
         ArgumentNullException.ThrowIfNull(comObject);
-        IDispatch dispatch = comObject switch
-        {
-            IDispatchProvider provider => provider.Dispatch,
-            IDispatch direct => direct,
-            _ => throw new InvalidCastException($"The object of type {comObject.GetType()} does not implement IDispatch."),
-        };
-
-        return ComDispatch.GetTypeName(dispatch);
+        return ComDispatch.GetTypeName((Unwrap(comObject) is { } value ? GetDispatch(value) : null) ?? throw NoComObject(comObject));
     }
 
     /// <summary>
     /// Adds a handler of an event of a COM object, like <c>d.Event += handler</c>, also for events whose names are those of
     /// methods or properties of the object.
     /// </summary>
-    /// <param name="comObject">A COM object that implements <c>IDispatch</c>, a late-bound wrapper or a <c>dynamic</c> object.</param>
+    /// <param name="comObject">
+    /// A COM object that implements <c>IDispatch</c>, a late-bound wrapper or a <c>dynamic</c> object, or an
+    /// <see cref="UnknownWrapper"/> of one; a <see cref="DispatchWrapper"/> is rejected with an
+    /// <see cref="ArgumentException"/>.
+    /// </param>
     /// <param name="eventName">The name of a method of a source dispinterface of the coclass of the object.</param>
     /// <param name="handler">
     /// The handler: a delegate with at most the parameters of the event, which receives the arguments converted to the types of
@@ -973,20 +1013,27 @@ public static class ComDynamic
     /// </param>
     /// <exception cref="ArgumentException">The object has no such event, or the handler has more parameters than the event.</exception>
     /// <exception cref="InvalidOperationException">The object does not raise the events of the source dispinterface.</exception>
+    /// <exception cref="COMException">
+    /// Connecting to the object failed with another error, e.g. of a server that has ended or is busy.
+    /// </exception>
     [RequiresDynamicCode(RequiresDynamicCodeMessage)]
     public static void AddEventHandler(object comObject, string eventName, Delegate handler)
     {
         ArgumentNullException.ThrowIfNull(comObject);
         ArgumentException.ThrowIfNullOrEmpty(eventName);
         ArgumentNullException.ThrowIfNull(handler);
-        GetWrapper(comObject).AddEventHandler(eventName, handler);
+        (GetWrapper(comObject) ?? throw NoComObject(comObject)).AddEventHandler(eventName, handler);
     }
 
     /// <summary>
     /// Removes a handler of an event of a COM object, like <c>d.Event -= handler</c>. The connection to the source
     /// dispinterface is closed when it has no handlers left.
     /// </summary>
-    /// <param name="comObject">A COM object that implements <c>IDispatch</c>, a late-bound wrapper or a <c>dynamic</c> object.</param>
+    /// <param name="comObject">
+    /// A COM object that implements <c>IDispatch</c>, a late-bound wrapper or a <c>dynamic</c> object, or an
+    /// <see cref="UnknownWrapper"/> of one; a <see cref="DispatchWrapper"/> is rejected with an
+    /// <see cref="ArgumentException"/>.
+    /// </param>
     /// <param name="eventName">The name of the event.</param>
     /// <param name="handler">The handler to remove.</param>
     /// <exception cref="ArgumentException">The object has no such event.</exception>
@@ -996,27 +1043,95 @@ public static class ComDynamic
         ArgumentNullException.ThrowIfNull(comObject);
         ArgumentException.ThrowIfNullOrEmpty(eventName);
         ArgumentNullException.ThrowIfNull(handler);
-        GetWrapper(comObject).RemoveEventHandler(eventName, handler);
+        (GetWrapper(comObject) ?? throw NoComObject(comObject)).RemoveEventHandler(eventName, handler);
     }
 
     /// <summary>
     /// Removes the handlers of all events of a COM object added through <c>dynamic</c> and closes the connections to its
     /// source dispinterfaces.
     /// </summary>
-    /// <param name="comObject">A COM object that implements <c>IDispatch</c>, a late-bound wrapper or a <c>dynamic</c> object.</param>
+    /// <param name="comObject">
+    /// A COM object that implements <c>IDispatch</c>, a late-bound wrapper or a <c>dynamic</c> object, or an
+    /// <see cref="UnknownWrapper"/> of one; a <see cref="DispatchWrapper"/> is rejected with an
+    /// <see cref="ArgumentException"/>.
+    /// </param>
     [RequiresDynamicCode(RequiresDynamicCodeMessage)]
     public static void RemoveEventHandlers(object comObject)
     {
         ArgumentNullException.ThrowIfNull(comObject);
-        GetWrapper(comObject).RemoveEventHandlers();
+        (GetWrapper(comObject) ?? throw NoComObject(comObject)).RemoveEventHandlers();
     }
 
+    // The dynamic object of a value; null for a late-bound wrapper without a COM object, or an UnknownWrapper of null,
+    // which stand for no object.
     [RequiresDynamicCode(RequiresDynamicCodeMessage)]
-    private static DynamicDispatchObject GetWrapper(object comObject) => comObject switch
+    private static DynamicDispatchObject? GetWrapper(object comObject) => Unwrap(comObject) switch
     {
-        DynamicDispatchObject dynamicObject => dynamicObject,
-        IDispatchProvider provider => DynamicDispatchObject.GetOrCreate(provider.Dispatch),
-        IDispatch dispatch => DynamicDispatchObject.GetOrCreate(dispatch),
-        _ => throw new InvalidCastException($"The object of type {comObject.GetType()} does not implement IDispatch."),
+        null => null,
+        DynamicDispatchObject wrapper => wrapper,
+        var value => GetDispatch(value) is { } dispatch ? DynamicDispatchObject.GetOrCreate(dispatch) : null,
     };
+
+    // The object that a value stands for where the support code uses an object of the application as a COM object, as
+    // ComDynamic late binds it and connects to its events: an UnknownWrapper stands for its object, also a nested one, and
+    // a DispatchWrapper is rejected. Null for an UnknownWrapper of null. CsCom.Runtime.Dynamic may only use the public API:
+    // this is the copy of the internal ComMarshalling.UnwrapUnknownWrapper, with its message, which
+    // TheDynamicSupportFollowsTheRulesOfTheRuntime of the tests keeps in line.
+    private static object? Unwrap(object comObject)
+    {
+        object? value = comObject;
+        while (value is UnknownWrapper wrapper)
+        {
+            value = wrapper.WrappedObject;
+        }
+
+        return value is DispatchWrapper
+            ? throw new ArgumentException("A DispatchWrapper cannot be passed to COM: pass the object itself, or an UnknownWrapper.", nameof(comObject))
+            : value;
+    }
+
+    // The IDispatch through which an object is late bound; the exception of an object that does not implement IDispatch.
+    private static IDispatch? GetDispatch(object comObject) =>
+        TryGetDispatch(comObject, out IDispatch? dispatch)
+            ? dispatch
+            : throw new InvalidCastException($"The object of type {comObject.GetType()} does not implement IDispatch.");
+
+    // The IDispatch through which an object is late bound, by the rule of IDispatchProvider where an IDispatch is required:
+    // a late-bound or dynamic wrapper stands for its COM object, and for no object, null, when its Dispatch is null
+    // against its contract. An object of the application that is exposed to COM is late bound itself when it implements
+    // IDispatch, and otherwise through the IDispatch that it provides, e.g. a decorator of a COM object; one that provides
+    // none does not implement IDispatch, which returns false. Its events are those of that object then too: the events of
+    // a dynamic object are found in the type information of its IDispatch. ToDynamic and the other methods of the class
+    // late bind the objects that they are given with it, and DynamicDispatchObject.Wrap those that COM objects return.
+    // CsCom.Runtime.Dynamic may only use the public API: this is the copy of the rule of ComConvert.ToWrapper, with the
+    // internal ComMarshalling.IsLateBoundWrapper and TryGetProvidedDispatch, which
+    // TheDynamicSupportFollowsTheRulesOfTheRuntime of the tests keeps in line with the runtime. A COM object is tested
+    // first: it is no IDispatchProvider, which its strategy would look up on every call.
+    internal static bool TryGetDispatch(object comObject, out IDispatch? dispatch)
+    {
+        if (comObject is not ComObject && comObject is IDispatchProvider provider)
+        {
+            if (!ComMarshalling.IsExposedToCom(comObject))
+            {
+                dispatch = provider.Dispatch;
+                return true;
+            }
+
+            if (comObject is not IDispatch && provider.Dispatch is { } provided)
+            {
+                dispatch = provided;
+                return true;
+            }
+        }
+
+        dispatch = comObject as IDispatch;
+        return dispatch is not null;
+    }
+
+    // A late-bound wrapper without a COM object, or an UnknownWrapper of null, is rejected like null where an object is
+    // required. The value is unwrapped again only on this path, and finds what the caller found: an UnknownWrapper does
+    // not change, and a DispatchWrapper has thrown already.
+    private static ArgumentNullException NoComObject(object comObject) => Unwrap(comObject) is { } value
+        ? new(nameof(comObject), $"The late-bound wrapper of type {value.GetType()} has no COM object: its Dispatch is null.")
+        : new(nameof(comObject), "The UnknownWrapper wraps no object.");
 }

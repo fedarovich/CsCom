@@ -19,6 +19,11 @@ internal sealed record ManagedType(string Name, string? Marshalling = null, bool
 
     public bool IsReference => Name.EndsWith('?');
 
+    /// <summary>
+    /// Whether the type is an interface pointer with <see cref="InterfaceMarshalling.Unique"/>, which is converted to a
+    /// managed object of its own.
+    /// </summary>
+    public bool IsUnique { get; init; }
 }
 
 /// <summary>
@@ -58,23 +63,29 @@ internal sealed class TypeMapper
     private readonly string _namespace;
     private readonly MarshallingOptions _marshalling;
 
+    // The marshaller of interface pointers is no option of a project: only a member or a parameter selects unique objects.
+    private readonly InterfaceMarshalling _interfaces;
+
     public TypeMapper(EmitContext context, string currentNamespace)
         : this(context, currentNamespace, context.Options.Marshalling)
     {
     }
 
-    private TypeMapper(EmitContext context, string currentNamespace, MarshallingOptions marshalling)
+    private TypeMapper(EmitContext context, string currentNamespace, MarshallingOptions marshalling, InterfaceMarshalling interfaces = InterfaceMarshalling.Shared)
     {
         _context = context;
         _namespace = currentNamespace;
         _marshalling = marshalling;
+        _interfaces = interfaces;
     }
 
     /// <summary>
     /// Gets a mapper that applies the changes of a member of the model to the marshalling options of the project.
     /// </summary>
     public TypeMapper WithMarshalling(MarshallingOverrides? overrides) =>
-        overrides is null ? this : new TypeMapper(_context, _namespace, overrides.Apply(_context.Options.Marshalling));
+        overrides is null
+            ? this
+            : new TypeMapper(_context, _namespace, overrides.Options.Apply(_context.Options.Marshalling), overrides.Interfaces ?? InterfaceMarshalling.Shared);
 
     /// <summary>
     /// Whether the type is an interface or a class, so that a single pointer to it is passed as the interface pointer.
@@ -98,28 +109,67 @@ internal sealed class TypeMapper
     }
 
     /// <summary>
+    /// Gets the interface that a type is passed as by an interface pointer: an interface or dispinterface, <c>IUnknown</c>
+    /// or <c>IDispatch</c>, or <c>IEnumVARIANT</c>; <see langword="null"/> when the type is no interface pointer. An alias
+    /// is its target, a coclass its default interface, or <c>IUnknown</c> without one, and a pointer to an interface or a
+    /// coclass is the interface pointer itself.
+    /// </summary>
+    /// <remarks>
+    /// The mappings of interface pointers (<see cref="MapValue"/>, <see cref="MapLateBound"/>) and the predicates of the
+    /// transformers and emitters (<see cref="IsInterfacePointer"/>, <see cref="IsDispatchWrapper"/>) all use it, so that
+    /// they agree on every type.
+    /// </remarks>
+    internal static TypeReference? GetPointerInterface(TypeReference type) => type switch
+    {
+        PrimitiveTypeReference { VarType: VarEnum.VT_UNKNOWN or VarEnum.VT_DISPATCH } => type,
+        WellKnownTypeReference { Type: WellKnownType.IEnumVariant } => type,
+        UserDefinedTypeReference { Definition: InterfaceDefinition } => type,
+        UserDefinedTypeReference { Definition: AliasDefinition alias } => GetPointerInterface(alias.Target),
+        UserDefinedTypeReference { Definition: CoClassDefinition coClass } =>
+            coClass.DefaultInterface?.Interface is { } defaultInterface && GetPointerInterface(defaultInterface) is { } pointer ? pointer : Unknown,
+        PointerTypeReference pointer when IsInterfaceLike(pointer.ElementType) => GetPointerInterface(pointer.ElementType),
+        _ => null,
+    };
+
+    private static readonly PrimitiveTypeReference Unknown = new(VarEnum.VT_UNKNOWN);
+
+    /// <summary>
+    /// Whether <see cref="MapValue"/> maps the type to an interface pointer, whose marshaller is selected by
+    /// <see cref="MarshallingOverrides.Interfaces"/>.
+    /// </summary>
+    internal static bool IsInterfacePointer(TypeReference type) => GetPointerInterface(type) is not null;
+
+    /// <summary>
+    /// Whether the type is mapped to a late-bound wrapper of a dispinterface, which is no COM object itself but has one in
+    /// its <c>Dispatch</c> property: a dispinterface, an alias of one, a coclass whose default interface is one, or a
+    /// pointer to them.
+    /// </summary>
+    internal static bool IsDispatchWrapper(TypeReference type) =>
+        GetPointerInterface(type) is UserDefinedTypeReference { Definition: InterfaceDefinition { InterfaceKind: InterfaceKind.Dispatch } };
+
+    /// <summary>
     /// Maps a type passed by value in a source-generated COM or P/Invoke signature.
     /// </summary>
     public ManagedType MapValue(TypeReference type)
     {
+        if (GetPointerInterface(type) is { } pointerInterface)
+        {
+            return MapInterface(pointerInterface);
+        }
+
         switch (type)
         {
             case PrimitiveTypeReference primitive:
                 return MapPrimitive(primitive.VarType);
             case WellKnownTypeReference { Type: WellKnownType.Guid }:
                 return new ManagedType("global::System.Guid");
-            case WellKnownTypeReference { Type: WellKnownType.IEnumVariant }:
-                return new ManagedType($"{_context.Support}.IEnumVARIANT?");
             case UserDefinedTypeReference { Definition: var definition }:
                 return definition switch
                 {
                     EnumDefinition or RecordDefinition => new ManagedType(_context.GetTypeName(definition, _namespace)),
                     AliasDefinition alias => MapValue(alias.Target),
-                    InterfaceDefinition or CoClassDefinition => MapInterface(type),
                     _ => ManagedType.IntPtr,
                 };
-            case PointerTypeReference pointer when IsInterfaceLike(pointer.ElementType):
-                return MapInterface(pointer.ElementType);
             case PointerTypeReference pointer:
                 return MapPointer(pointer);
             case SafeArrayTypeReference array:
@@ -131,8 +181,23 @@ internal sealed class TypeMapper
     }
 
     /// <summary>
+    /// Whether one of the changes has an effect on the fields of structures: it declares the options that
+    /// <see cref="MapField"/> and <see cref="GetFieldConversion"/> read, which the tests check against the generated code in
+    /// both directions. <c>SetMarshalling</c> does not match a structure otherwise.
+    /// </summary>
+    internal static bool AppliesToFields(MarshallingOverrides overrides) =>
+        overrides.Options is { Dates: not null } or { Currencies: not null } or { Booleans: not null } or { Bstrs: not null };
+
+    /// <summary>
+    /// Whether one of the changes has an effect on the late-bound wrappers of dispinterfaces: it declares the options that
+    /// <see cref="MapLateBound"/> reads, which the tests check against the generated code in both directions.
+    /// <c>SetMarshalling</c> does not match a dispinterface otherwise.
+    /// </summary>
+    internal static bool AppliesToLateBound(MarshallingOverrides overrides) => overrides.Options.SafeArrays is not null;
+
+    /// <summary>
     /// Maps the type of a field of a structure, which must be blittable. Values converted to .NET types are stored as the COM
-    /// type, see <see cref="GetFieldConversion"/>.
+    /// type, see <see cref="GetFieldConversion"/>. The options that it reads are those of <see cref="AppliesToFields"/>.
     /// </summary>
     public ManagedType MapField(TypeReference type)
     {
@@ -190,7 +255,8 @@ internal sealed class TypeMapper
     }
 
     /// <summary>
-    /// Maps a type used by a late-bound dispinterface wrapper, whose values are converted to and from <c>VARIANT</c>s.
+    /// Maps a type used by a late-bound dispinterface wrapper, whose values are converted to and from <c>VARIANT</c>s. The
+    /// options that it reads are those of <see cref="AppliesToLateBound"/>.
     /// </summary>
     public LateBoundType MapLateBound(TypeReference type)
     {
@@ -304,8 +370,8 @@ internal sealed class TypeMapper
             "short",
             "ComBool"),
         VarEnum.VT_VARIANT => new("object?", VariantMarshalling(optional: false)),
-        VarEnum.VT_UNKNOWN => new("object?", UnknownMarshalling),
-        VarEnum.VT_DISPATCH => new($"{_context.Support}.IDispatch?"),
+
+        // IUnknown and IDispatch are interface pointers, which MapValue maps with MapInterface.
         VarEnum.VT_VOID => ManagedType.Void,
         VarEnum.VT_FILETIME => new($"{Syntax.InteropNamespace}.ComTypes.FILETIME"),
         VarEnum.VT_CLSID => new("global::System.Guid"),
@@ -325,8 +391,33 @@ internal sealed class TypeMapper
     public string VariantMarshalling(bool optional) =>
         $"{Syntax.MarshallingNamespace}.MarshalUsing(typeof({_context.Support}.{(optional ? "OptionalVariantMarshaller" : "VariantMarshaller")}))";
 
-    private static string UnknownMarshalling =>
-        $"{Syntax.MarshallingNamespace}.MarshalUsing(typeof({Syntax.MarshallingNamespace}.ComInterfaceMarshaller<object>))";
+    /// <summary>
+    /// Maps an interface pointer to the nullable type with the marshaller selected by
+    /// <see cref="MarshallingOverrides.Interfaces"/>.
+    /// </summary>
+    /// <param name="type">The C# type.</param>
+    /// <param name="isWrapper">Whether the type is a late-bound wrapper of a dispinterface rather than a COM interface or an <see cref="object"/>.</param>
+    private ManagedType MapInterfacePointer(string type, bool isWrapper = false)
+    {
+        // Without a marshaller, a COM interface would be marshalled with ComInterfaceMarshaller<T> of .NET, which does not
+        // use the ComWrappers of ComMarshalling, and an object as a VARIANT. A shared wrapper is marshalled with the
+        // marshaller of its NativeMarshalling attribute.
+        bool isUnique = _interfaces == InterfaceMarshalling.Unique;
+        string? marshaller = (isUnique, isWrapper) switch
+        {
+            (true, true) => "UniqueDispatchWrapperMarshaller",
+            (false, true) => null,
+            (true, false) => "UniqueComObjectMarshaller",
+            (false, false) => "ComObjectMarshaller",
+        };
+
+        return new ManagedType(
+            type + "?",
+            marshaller is null ? null : $"{Syntax.MarshallingNamespace}.MarshalUsing(typeof({_context.Support}.{marshaller}<{type}>))")
+        {
+            IsUnique = isUnique,
+        };
+    }
 
     /// <summary>
     /// Maps a <c>SAFEARRAY</c> as selected by <see cref="MarshallingOptions.SafeArrays"/>: to a one-dimensional array marshalled
@@ -417,25 +508,16 @@ internal sealed class TypeMapper
         }
     }
 
-    private ManagedType MapInterface(TypeReference type)
+    // Maps an interface that GetPointerInterface returned.
+    private ManagedType MapInterface(TypeReference pointerInterface) => pointerInterface switch
     {
-        switch (type)
-        {
-            case UserDefinedTypeReference { Definition: InterfaceDefinition definition }:
-                return new ManagedType(_context.GetTypeName(definition, _namespace) + "?");
-            case UserDefinedTypeReference { Definition: CoClassDefinition coClass }:
-                return coClass.DefaultInterface?.Interface switch
-                {
-                    UserDefinedTypeReference defaultInterface => MapInterface(defaultInterface),
-                    PrimitiveTypeReference { VarType: VarEnum.VT_DISPATCH } => MapPrimitive(VarEnum.VT_DISPATCH),
-                    _ => MapPrimitive(VarEnum.VT_UNKNOWN),
-                };
-            case WellKnownTypeReference { Type: WellKnownType.IEnumVariant }:
-                return new ManagedType($"{_context.Support}.IEnumVARIANT?");
-            default:
-                return MapPrimitive(VarEnum.VT_UNKNOWN);
-        }
-    }
+        UserDefinedTypeReference { Definition: InterfaceDefinition definition } => MapInterfacePointer(
+            _context.GetTypeName(definition, _namespace),
+            isWrapper: definition.InterfaceKind == InterfaceKind.Dispatch),
+        WellKnownTypeReference { Type: WellKnownType.IEnumVariant } => MapInterfacePointer($"{_context.Support}.IEnumVARIANT"),
+        PrimitiveTypeReference { VarType: VarEnum.VT_DISPATCH } => MapInterfacePointer($"{_context.Support}.IDispatch"),
+        _ => MapInterfacePointer("object"),
+    };
 
     private ManagedType MapPointer(PointerTypeReference pointer)
     {
@@ -445,9 +527,10 @@ internal sealed class TypeMapper
         return new ManagedType(element.Name + "*", IsPointer: true);
     }
 
+    // Maps an interface pointer like MapValue does: IUnknown and IDispatch are plain objects of late binding.
     private LateBoundType MapLateBoundInterface(TypeReference type)
     {
-        switch (type)
+        switch (GetPointerInterface(type))
         {
             case UserDefinedTypeReference { Definition: InterfaceDefinition { InterfaceKind: InterfaceKind.Dispatch } definition }:
             {
@@ -461,12 +544,8 @@ internal sealed class TypeMapper
                 return new LateBoundType(name + "?", x => $"ToInterface<{name}>({x})");
             }
 
-            case UserDefinedTypeReference { Definition: CoClassDefinition coClass }:
-                return coClass.DefaultInterface?.Interface is UserDefinedTypeReference defaultInterface
-                    ? MapLateBoundInterface(defaultInterface)
-                    : LateBoundType.Object;
-            case WellKnownTypeReference { Type: WellKnownType.IEnumVariant }:
-                return MapLateBound(type);
+            case WellKnownTypeReference { Type: WellKnownType.IEnumVariant } enumerator:
+                return MapLateBound(enumerator);
             default:
                 return LateBoundType.Object;
         }

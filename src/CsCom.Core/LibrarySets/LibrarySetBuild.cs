@@ -181,7 +181,7 @@ public sealed partial class LibrarySetBuild
             ReferencePaths = [.. reference.ReferencePath.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
                 .Select(path => Path.GetFullPath(Path.Combine(projectDirectory, path)))],
             ConfigurationPath = string.IsNullOrWhiteSpace(reference.Config) ? null : Path.GetFullPath(Path.Combine(projectDirectory, reference.Config.Trim())),
-            Marshalling = new MarshallingOverrides
+            Marshalling = new MarshallingOptionOverrides
             {
                 Dates = ParseEnum<ValueMarshalling>(reference.DateMarshalling, "DateMarshalling", item),
                 Currencies = ParseEnum<ValueMarshalling>(reference.CurrencyMarshalling, "CurrencyMarshalling", item),

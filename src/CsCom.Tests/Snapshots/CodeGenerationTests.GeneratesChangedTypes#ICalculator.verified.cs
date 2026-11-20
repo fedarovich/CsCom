@@ -54,5 +54,6 @@ public unsafe partial interface ICalculator
 
     void Integers(sbyte c, byte b, short s, ushort us, int i, uint ui, long h, ulong uh, float f);
 
+    [return: global::System.Runtime.InteropServices.Marshalling.MarshalUsing(typeof(global::CsCom.Runtime.ComObjectMarshaller<global::CsCom.Runtime.IEnumVARIANT>))]
     global::CsCom.Runtime.IEnumVARIANT? enumerator();
 }

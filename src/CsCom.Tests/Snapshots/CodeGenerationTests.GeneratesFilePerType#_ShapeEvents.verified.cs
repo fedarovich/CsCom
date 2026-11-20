@@ -101,7 +101,7 @@ public delegate string? _ShapeEvents_DescribeEventHandler(object? Value, out int
 /// <summary>
 /// Connects to the _ShapeEvents events of a COM object and raises them as .NET events. Dispose the sink to disconnect it.
 /// </summary>
-public sealed partial class _ShapeEventsSink : _ShapeEventsHandler, global::System.IDisposable
+public sealed partial class _ShapeEventsSink : _ShapeEventsHandler, global::System.IDisposable, global::System.IAsyncDisposable
 {
     /// <summary>
     /// The interface identifier (IID) of the _ShapeEvents event interface.
@@ -146,6 +146,11 @@ public sealed partial class _ShapeEventsSink : _ShapeEventsHandler, global::Syst
     {
         __connection.Dispose();
     }
+
+    /// <summary>
+    /// Disconnects the sink from the events, and completes when no handler runs any more. Call it on the thread that connected the sink. Throws a COMException when the sink could not be disconnected and stays connected: dispose it again, e.g. on that thread.
+    /// </summary>
+    public global::System.Threading.Tasks.ValueTask DisposeAsync() => __connection.DisposeAsync();
 
     /// <summary>
     /// Connects a handler to the _ShapeEvents events of a COM object.

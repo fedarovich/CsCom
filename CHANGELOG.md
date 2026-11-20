@@ -3,6 +3,156 @@
 The notable changes of CsCom, CsCom.Build, CsCom.Runtime and CsCom.Runtime.Dynamic, which are released together with the
 same version. The versions up to 2.0.0 are not described here.
 
+## 4.0.0-rc.1 - 2026-11-20
+
+### Changed
+
+- **Interface pointers:** the interface pointers in the parameters and return values of the generated interfaces are
+  marshalled by `ComObjectMarshaller<T>` of CsCom.Runtime, which behaves like `ComInterfaceMarshaller<T>` of .NET unless
+  `ComMarshalling.ComWrappers` is set. `IUnknown` pointers had `ComInterfaceMarshaller<object>`, the other pointers no
+  marshaller.
+- **Managed objects in `VARIANT`s:** `VariantMarshaller` exposes a managed object whose class is a `[GeneratedComClass]`
+  itself, as `VT_DISPATCH` when it implements `IDispatch`, and the object of an `UnknownWrapper` as `VT_UNKNOWN`; they
+  were left to `ComVariantMarshaller` of .NET. `dynamic` assigns both to a property with `PROPERTYPUTREF`, like a COM
+  object; it assigned them by value. An `UnknownWrapper` stands for its object in an `IUnknown` parameter, a `SAFEARRAY`
+  and as the source of events too, which used a COM interface of the wrapper itself, and for `ComDynamic` and
+  `ComEnumerator.FromObject`, which threw an `InvalidCastException`; a `DispatchWrapper` is rejected there with an
+  `ArgumentException`, like in a `VARIANT`.
+- **Events:** `IConnectionPointContainer.FindConnectionPoint` of CsCom.Runtime returns the connection point in a unique
+  object, and `EventConnection` releases it when the sink is disconnected, so that a disconnected sink does not keep its
+  source alive until the garbage collection. `EventConnection.Disconnect` returns `S_FALSE` while another call is
+  disconnecting the sink, without waiting for it; it returned `S_OK`, also when that call then left the sink connected.
+  It returns any success of `IConnectionPoint::Unadvise` as `S_OK`, so that `S_FALSE` means nothing else.
+  A connection that a busy server refuses to disconnect, e.g. with `RPC_E_CALL_REJECTED` or
+  `RPC_E_SERVERCALL_RETRYLATER`, stays connected like one that is disconnected from the wrong thread, and can be
+  disconnected by another call; it was given up. `EventConnection.IsConnected` tells whether the sink is still
+  connected. `Disconnect` never throws: the exception of a connection point that is a managed object is returned as its
+  `HRESULT`, as through COM. A `Disconnect` after the connection has been given up returns the error that ended it; it
+  returned `S_OK`. `EventConnection` no longer releases a connection point that a managed source returned. A source
+  that fails with another error than one that says that it does not raise the events, e.g. a server that has ended or
+  is busy, throws the exception of its `HRESULT`, a `COMException`, which can be tried again; it threw an
+  `InvalidOperationException` that said that the object does not raise the events, also for `dynamic` objects and the
+  generated sinks.
+- **Events stop at once:** every connection closes its gate first when it is disconnected or cannot be established; once
+  it is closed, no handler call of the generated sinks and of the sinks of `AdviseDispatch` starts, also when the source
+  could not be told and still calls the sink.
+- **Generated sink classes** implement `IAsyncDisposable`, so a `DisposeAsync` of your own in a partial part of one
+  conflicts with theirs, and an event named `DisposeAsync` is renamed like the other reserved names. `Dispose` of the
+  observable style completes the observables once no handler runs any more: at once, or on the thread of a running
+  handler when it returns, where the exception of an observer fails that event call like one of `OnNext`. The exception
+  of an observer no longer stops the completion of the other observers and observables: once all of them are completed,
+  it is thrown as it is, or in an `AggregateException` when several observers threw; so does
+  `EventSubject<T>.OnCompleted`.
+- **Events of `dynamic` objects:** `+=` returns only when the object is connected, and throws without adding the handler
+  when its connection fails, also when another thread adds or removes handlers at the same time; a `+=` that fails
+  removes only the handler that it added, not an equal one that another thread added. `-=` and `RemoveEventHandlers`
+  never fail, stop the events at once, and retry a disconnection that the server refused with the next change of the
+  handlers; any other error gives the connection up, also the exception of a connection point that is a managed object,
+  which counts as its `HRESULT`. A running event does not call a handler that was removed before the event reached it;
+  one that it had reached can still be called after `-=` returns. When several threads connect the object at the same
+  time, only one connection passes the events on: the first that receives an event, or else the first that is
+  established; the README describes the events that can still be missed or doubled then.
+- **Interfaces that are no COM interfaces:** `ComObjectMarshaller<T>`, `UniqueComObjectMarshaller<T>` and
+  `EventArguments.GetUnique<T>` fail with a `NotSupportedException` for an interface that is not a
+  `[GeneratedComInterface]`, also for `null`, and the marshallers with an `ObjectDisposedException` for a COM object
+  that has been released. `ComActivator` fails with the `NotSupportedException` too, also for a class other than
+  `object` and `ComObject`, e.g. a late-bound wrapper, before anything else: before it looks up a ProgID, creates or
+  gets the object; it threw an `InvalidCastException` after starting the server.
+- **Enumerators:** when `SetMarshalling` makes `_NewEnum` unique, the `GetEnumerator()` of a generated interface
+  releases the enumerator of a COM object when it is disposed, e.g. at the end of `foreach`, also the COM object of a
+  late-bound wrapper when `_NewEnum` returns a dispinterface; one that a managed implementation of the interface returns
+  is not released, nor is a wrapper of yours that is exposed to COM. `ComEnumerator` has a constructor and a
+  `FromObject` overload with `ownsEnumerator` for it. Without it, `Dispose()` still does nothing. `FromObject` takes
+  what a value stands for, like `ComMarshalling.Release`: the COM object of a late-bound or `dynamic` wrapper, which it
+  releases with `ownsEnumerator`, and an object that is exposed to COM itself or, when it is no enumerator, through the
+  `Dispatch` that it provides, which it never releases. When asking a COM object for `IEnumVARIANT` fails with another
+  error than `E_NOINTERFACE`, e.g. of a server that has ended, `FromObject` throws the exception of its `HRESULT`; it
+  threw an `InvalidCastException` that said that the object does not implement `IEnumVARIANT`.
+- **Late-bound wrappers and `dynamic` objects** passed to an `IUnknown` parameter of a generated interface are passed as
+  their COM objects, as in a `VARIANT`; such a parameter got a COM interface of the managed wrapper. So is a late-bound
+  wrapper of yours in a parameter of a COM interface that it implements itself, e.g. `IDispatch` by forwarding to its
+  `Dispatch`, whose COM object is asked for the interface, or the COM object that an object of yours in its `Dispatch`
+  provides; it failed with an `InvalidCastException`. A COM object that fails `QueryInterface` with another error than
+  `E_NOINTERFACE` there, e.g. the proxy of a server that has ended, throws the exception of its `HRESULT`; it threw an
+  `InvalidCastException` that said that the object does not implement the interface. A managed object
+  that is exposed to COM (`[GeneratedComClass]`) is passed itself, also when it implements `IDispatchProvider`, in a
+  `VARIANT`, a `SAFEARRAY` and an `IUnknown` parameter alike, so that its pointer converts back to it; a `VARIANT` held
+  its `Dispatch`. A `SAFEARRAY` of `IDispatch` still gets its `Dispatch` when it does not implement `IDispatch` itself.
+  As the source of events, such an object is connected itself when it implements `IConnectionPointContainer`, and its
+  `Dispatch` otherwise, as it always was. A late-bound wrapper converts it back to an interface that it implements, and
+  otherwise asks the COM object of its `Dispatch`; a dispinterface wrapper, `ComDynamic` and the results of `dynamic`
+  calls wrap it itself when it implements `IDispatch`, events included, and its `Dispatch` otherwise. Such a wrapper
+  stands for it with the same rule, also as the source of events, in `ComEnumerator.FromObject` and in the conversions
+  of late-bound wrappers to interfaces. A late-bound wrapper of your own that is such an object is passed itself as a
+  parameter of its type too when it implements `IDispatch`, and converts back to itself. The pointer of such an object
+  converts back to it only for an interface that it implements: for another declaration of the interface, e.g. of
+  another interop assembly, it gets a COM object of its own, which calls it through COM: a new one for each conversion,
+  also of a shared parameter, which `ComMarshalling.Release` releases. It failed with an `InvalidCastException`, as with
+  `ComInterfaceMarshaller<T>` of .NET. Such an object that comes back from a `VARIANT` or a `SAFEARRAY` itself gets a
+  COM object of its own too where a late-bound wrapper, `EventArguments.Get<T>` or an array converts it to another
+  declaration of the interface, e.g. an argument of a dual event that the source raises through `IDispatch::Invoke`;
+  it failed with an `InvalidCastException`.
+- **`IDispatchWrapper<T>`** derives from `IDispatchProvider`, which declares its `Dispatch` property, so that a
+  late-bound wrapper of your own is passed as its COM object and released by `ComMarshalling.Release` like a generated
+  one; a `VARIANT` rejected it, and an `IUnknown` parameter got a COM interface of the wrapper. A wrapper that implements
+  `IDispatchWrapper<T>.Dispatch` explicitly implements `IDispatchProvider.Dispatch` instead.
+- **`SetMarshalling`** warns that nothing matches when none of its attributes applies to the matching types: only
+  `SafeArrays` applies to dispinterfaces, and only `Dates`, `Currencies`, `Booleans` and `Bstrs` to structures; `Interfaces`
+  only applies to interface pointers that are not passed in and out. Such an element had no effect and no warning.
+
+### Added
+
+- **Unique objects:** the methods of `ComActivator` (`CreateInstance<T>`, `CreateDispatchInstance<T>`,
+  `GetActiveInstance<T>`, `TryGetActiveInstance<T>` and `BindToMoniker<T>`) have overloads with a `unique` parameter, which
+  return a COM object in a managed object of its own, and so has `Create` of the generated coclasses, e.g.
+  `Dictionary.Create(unique: true)`. `ComMarshalling.Release` of CsCom.Runtime, like
+  `ComObject.FinalRelease()` of .NET, releases such an object at once, without waiting for the garbage collector; it also
+  takes a late-bound wrapper and the object of an `UnknownWrapper`, rejects a `DispatchWrapper`, and leaves a managed
+  object that is exposed to COM (`[GeneratedComClass]`) alone, also when it implements `IDispatchProvider`;
+  `ComMarshalling.IsExposedToCom` tells whether an object is one. A unique object whose COM object does not implement
+  the requested interface is released before the `InvalidCastException` is thrown.
+- **Unique interface pointers:** the `Interfaces` attribute of `SetMarshalling` selects `unique` objects for the interface
+  pointers of single methods and parameters, with `UniqueComObjectMarshaller<T>` of CsCom.Runtime. Such an object belongs
+  to the code that receives it. A pointer that is passed in and out (`ref`) is always a shared object, because it is
+  passed back. A handler of a dual event interface gets the unique object also when the event is raised through
+  `IDispatch::Invoke`, which `EventArguments.GetUnique<T>` and `GetUniqueWrapper<T>` read from its `VARIANT`.
+- **Custom `ComWrappers`:** `ComMarshalling.ComWrappers` sets the `StrategyBasedComWrappers` that creates the managed
+  objects of the generated code and of the support code: of the interface pointers of the generated interfaces, of
+  `ComActivator`, of `VARIANT`s and `SAFEARRAY`s, of the late-bound wrappers and of the event sinks.
+- **Event gates:** every `EventConnection` has an `EventGate` of its own, which a sink enters with `TryEnter` and exits
+  with `Exit` around each handler call. `EventConnection.Advise(source, iid, Func<EventGate, object>)` creates a
+  hand-written sink with the gate of its connection, and `DispatchEventSink.InvokeHandler(gate, handler, …)` passes an
+  invocation of `IDispatch::Invoke` to a handler through the gate. `EventConnection.DisposeAsync` and `DisposeAsync` of
+  the generated sink classes disconnect, and complete when no handler call that entered the gate is running any more;
+  the observable style then completes the observables, in the synchronization context of the caller. Unlike `Dispose`,
+  they throw a `COMException` then when the sink could not be disconnected, e.g. after an `await` that resumed on
+  another thread than that of a single-threaded apartment object, and no other call has disconnected it by then; when
+  an observer throws too, the observable style throws both in an `AggregateException`, the `COMException` first.
+  `EventConnection.DisposeWithCompletion(Action completion)` disconnects without waiting, and calls the completion then:
+  at once, or on the thread of the last running handler call when it returns. The completions run one at a time, in the
+  order of the calls, and an exception of one does not stop the others. `EventSubject.Complete` and
+  `EventSubject.CompleteAfterAsync`, of the new base class of `EventSubject<T>`, complete several observables that way.
+
+### Fixed
+
+- **Collections whose `_NewEnum` returns a dispinterface:** the `GetEnumerator()` of a generated interface and
+  `ComEnumerator.FromObject` enumerate the COM object of the late-bound wrapper; they threw an `InvalidCastException`.
+- **Objects and arrays passed by reference in `VARIANT`s:** an object passed by reference whose pointer is null, like a
+  `ByRef` object variable of Visual Basic that is `Nothing`, is `null`, and so is an object, an array or a `VARIANT` passed
+  by reference without a reference, also as the argument of an event; they failed.
+- **The `public` and `internal` support code** compiles when a type of the library or of the application in or around
+  its namespace has the name of a type of .NET that it uses, e.g. `Action` of Excel, `Exception` of Outlook or `Task`
+  of Word, also with a `CsComSupportNamespace` of your own, and when a namespace around it is named `System`: it names
+  the types of .NET with `global::` and calls their extension methods through their classes, and imports them in its
+  own namespace.
+- **`EventConnection.AdviseDispatch` with the identifier of `IDispatch`,** e.g. for a source whose generic connection
+  point raises the events through `IDispatch` itself, overflowed the stack: the sink asked itself for `IDispatch`
+  without end.
+- **Exceptions of the handlers of dispinterface events** (`DispatchEventSink.InvokeHandler`): one whose `HResult` is no
+  error code, e.g. a `COMException` of `S_FALSE`, is returned to the source as `E_FAIL`, also in the error information;
+  the source took it for a success. One whose `Message` throws is returned without its description; the event call
+  failed with the exception of the message instead, and leaked the string of its source.
+
 ## 3.0.0 - 2026-11-13
 
 ### Changed

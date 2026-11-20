@@ -347,7 +347,7 @@ public sealed class ProjectGeneratorTests
         {
             Sources = [TestEnvironment.TestTypeLibrary],
             ProjectDirectory = directory,
-            Marshalling = new MarshallingOverrides { Dates = ValueMarshalling.None, Currencies = ValueMarshalling.Wrapper },
+            Marshalling = new MarshallingOptionOverrides { Dates = ValueMarshalling.None, Currencies = ValueMarshalling.Wrapper },
         });
 
         var marshalling = CsComManifest.Read(directory).Marshalling;

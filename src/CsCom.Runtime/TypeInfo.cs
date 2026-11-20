@@ -45,7 +45,7 @@ internal unsafe partial interface ITypeInfo
     int GetDllEntry(int memid, int invKind, nint* pBstrDllName, nint* pBstrName, ushort* pwOrdinal);
 
     [PreserveSig]
-    int GetRefTypeInfo(uint hRefType, out ITypeInfo? ppTInfo);
+    int GetRefTypeInfo(uint hRefType, [MarshalUsing(typeof(ComObjectMarshaller<ITypeInfo>))] out ITypeInfo? ppTInfo);
 
     [PreserveSig]
     int AddressOfMember(int memid, int invKind, void** ppv);
@@ -57,7 +57,7 @@ internal unsafe partial interface ITypeInfo
     int GetMops(int memid, nint* pBstrMops);
 
     [PreserveSig]
-    int GetContainingTypeLib(out ITypeLib? ppTLib, out uint pIndex);
+    int GetContainingTypeLib([MarshalUsing(typeof(ComObjectMarshaller<ITypeLib>))] out ITypeLib? ppTLib, out uint pIndex);
 
     [PreserveSig]
     void ReleaseTypeAttr(TypeAttr* pTypeAttr);
@@ -80,7 +80,7 @@ internal partial interface ITypeLib
     uint GetTypeInfoCount();
 
     [PreserveSig]
-    int GetTypeInfo(uint index, out ITypeInfo? ppTInfo);
+    int GetTypeInfo(uint index, [MarshalUsing(typeof(ComObjectMarshaller<ITypeInfo>))] out ITypeInfo? ppTInfo);
 
     [PreserveSig]
     int GetTypeInfoType(uint index, out int pTKind);

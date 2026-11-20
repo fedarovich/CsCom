@@ -53,7 +53,7 @@ public sealed class LibrarySetTests : VerifyBase
         CollectionAssert.AreEqual(
             new[] { ("CsComTest", "Interop.CsComTest", true), ("ShapeRenderer", "Interop.ShapeRenderer", true), ("stdole", "Interop.stdole", false) },
             result.Libraries.Select(static l => (l.Name, l.Namespace, l.IsReferenced)).ToArray());
-        StringAssert.Contains(GetText(result, "Interop.ShapeRenderer/IShapeRenderer.cs"), "void Render(global::Interop.CsComTest.IShape? shape, global::Interop.CsComTest.Color color);");
+        StringAssert.Contains(GetText(result, "Interop.ShapeRenderer/IShapeRenderer.cs"), "void Render([global::System.Runtime.InteropServices.Marshalling.MarshalUsing(typeof(global::CsCom.Runtime.ComObjectMarshaller<global::Interop.CsComTest.IShape>))] global::Interop.CsComTest.IShape? shape, global::Interop.CsComTest.Color color);");
         Assert.AreEqual(1, result.Documents.Count(static d => d.RelativePath.EndsWith("/IShape.cs", StringComparison.Ordinal)));
     }
 

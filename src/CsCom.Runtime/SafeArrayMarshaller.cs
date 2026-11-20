@@ -9,11 +9,12 @@ namespace CsCom.Runtime;
 /// <see cref="SafeArrayMarshaller"/> and <see cref="ComSafeArrayMarshaller{T}"/>.
 /// </summary>
 /// <remarks>
-/// The variant type of the elements is derived from <typeparamref name="T"/>: <see cref="object"/> is passed as <c>VT_VARIANT</c>,
-/// <see cref="string"/> as <c>VT_BSTR</c>, <see cref="bool"/> as <c>VT_BOOL</c>, <see cref="System.DateTime"/> as <c>VT_DATE</c>,
-/// enums as their underlying integer type, interfaces derived from <see cref="IDispatch"/> as <c>VT_DISPATCH</c> and other
-/// interfaces as <c>VT_UNKNOWN</c>. Use <see cref="UnknownSafeArrayMarshaller"/> for arrays of <c>IUnknown</c> pointers.
-/// Returned arrays are converted to zero-based arrays of <typeparamref name="T"/>.
+/// The variant type of the elements is derived from <typeparamref name="T"/>: <see cref="object"/> is passed as
+/// <c>VT_VARIANT</c>, <see cref="string"/> as <c>VT_BSTR</c>, <see cref="bool"/> as <c>VT_BOOL</c>,
+/// <see cref="DateTime"/> as <c>VT_DATE</c>, enums as their underlying integer type, interfaces derived from
+/// <see cref="IDispatch"/> as <c>VT_DISPATCH</c> and other interfaces as <c>VT_UNKNOWN</c>. Use
+/// <see cref="UnknownSafeArrayMarshaller"/> for arrays of <c>IUnknown</c> pointers. Returned arrays are converted to
+/// zero-based arrays of <typeparamref name="T"/>.
 /// </remarks>
 /// <typeparam name="T">The type of the elements.</typeparam>
 [CustomMarshaller(typeof(CustomMarshallerAttribute.GenericPlaceholder[]), MarshalMode.Default, typeof(SafeArrayMarshaller<>))]

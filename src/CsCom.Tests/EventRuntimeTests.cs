@@ -21,6 +21,136 @@ public sealed unsafe class EventRuntimeTests
     }
 
     [TestMethod]
+    public void ReadsArgumentsPassedByReferenceWithoutAReferenceAsNull()
+    {
+        var variants = stackalloc ComVariant[4];
+        variants[3] = ComVariant.CreateRaw(VarEnum.VT_BYREF | VarEnum.VT_DISPATCH, (nint)0);
+        variants[2] = ComVariant.CreateRaw(VarEnum.VT_BYREF | VarEnum.VT_VARIANT, (nint)0);
+        variants[1] = ComVariant.CreateRaw(VarEnum.VT_BYREF | VarEnum.VT_ARRAY | VarEnum.VT_VARIANT, (nint)0);
+        variants[0] = ComVariant.CreateRaw(VarEnum.VT_BYREF | VarEnum.VT_I4, (nint)0);
+        var parameters = new DispParams { rgvarg = variants, cArgs = 4 };
+
+        var arguments = new EventArguments(&parameters, null);
+
+        Assert.IsNull(arguments.Get<IDispatch?>(0));
+        Assert.IsNull(arguments.GetValue(1));
+        Assert.IsNull(arguments.GetArray<object?>(2));
+        Assert.AreEqual(0, arguments.Get<int>(3));
+    }
+
+    [TestMethod]
+    public void ReadsObjectsAsUniqueObjects()
+    {
+        // An interface pointer that the vtable of a dual event interface passes as a unique object is read as one from the
+        // VARIANT of IDispatch::Invoke too, also by reference and in a VARIANT passed by reference. An argument without an
+        // object is read like Get reads it, with the same error for a value of another type.
+        var dictionary = ComActivator.CreateInstance<IDispatch>("Scripting.Dictionary");
+        nint pointer = (nint)ComObjectMarshaller<IDispatch>.ConvertToUnmanaged(dictionary);
+        ComVariant inner = ComVariant.CreateRaw(VarEnum.VT_DISPATCH, pointer);
+        var variants = stackalloc ComVariant[7];
+        variants[6] = ComVariant.CreateRaw(VarEnum.VT_DISPATCH, pointer);
+        variants[5] = ComVariant.CreateRaw(VarEnum.VT_BYREF | VarEnum.VT_DISPATCH, (nint)(&pointer));
+        variants[4] = ComVariant.CreateRaw(VarEnum.VT_BYREF | VarEnum.VT_VARIANT, (nint)(&inner));
+        variants[3] = ComVariant.CreateRaw(VarEnum.VT_DISPATCH, (nint)0);
+        variants[2] = ComVariant.CreateRaw(VarEnum.VT_ERROR, DISP_E_PARAMNOTFOUND);
+        variants[1] = default;
+        variants[0] = ComVariant.Create(5);
+        var parameters = new DispParams { rgvarg = variants, cArgs = 7 };
+        try
+        {
+            var arguments = new EventArguments(&parameters, null);
+            for (int i = 0; i < 3; i++)
+            {
+                IDispatch? unique = arguments.GetUnique<IDispatch>(i);
+                Assert.IsInstanceOfType<ComObject>(unique);
+                Assert.AreNotSame(dictionary, unique);
+                Assert.AreSame(dictionary, arguments.Get<IDispatch?>(i));
+                ComMarshalling.Release(unique);
+                Assert.ThrowsExactly<ObjectDisposedException>(() => ComObjectMarshaller<object>.ConvertToUnmanaged(unique));
+
+                var wrapper = arguments.GetUniqueWrapper<MemoryLeakTests.Wrapper>(i);
+                Assert.IsNotNull(wrapper);
+                Assert.AreNotSame(dictionary, wrapper.Dispatch);
+                ComMarshalling.Release(wrapper);
+            }
+
+            for (int i = 3; i < 6; i++)
+            {
+                Assert.IsNull(arguments.GetUnique<IDispatch>(i));
+                Assert.IsNull(arguments.GetUniqueWrapper<MemoryLeakTests.Wrapper>(i));
+            }
+
+            // A ref struct cannot be used in a lambda.
+            Type? expected = null;
+            Type? actual = null;
+            try
+            {
+                _ = arguments.Get<IDispatch?>(6);
+            }
+            catch (Exception e)
+            {
+                expected = e.GetType();
+            }
+
+            try
+            {
+                _ = arguments.GetUnique<IDispatch>(6);
+            }
+            catch (Exception e)
+            {
+                actual = e.GetType();
+            }
+
+            Assert.IsNotNull(expected);
+            Assert.AreEqual(expected, actual);
+        }
+        finally
+        {
+            // The VARIANTs borrow the one reference of the pointer.
+            Marshal.Release(pointer);
+        }
+    }
+
+    [TestMethod]
+    public void GetUniqueRejectsAnInterfaceThatIsNoComInterfaceAlsoWithoutAnObject()
+    {
+        // Like the marshallers of such an interface, at its first use rather than at the first event that passes an object:
+        // an omitted, empty, null or missing argument, and one of another type.
+        var variants = stackalloc ComVariant[4];
+        variants[3] = ComVariant.CreateRaw(VarEnum.VT_ERROR, DISP_E_PARAMNOTFOUND);
+        variants[2] = default;
+        variants[1] = ComVariant.CreateRaw(VarEnum.VT_DISPATCH, (nint)0);
+        variants[0] = ComVariant.Create("text");
+        var parameters = new DispParams { rgvarg = variants, cArgs = 4 };
+        try
+        {
+            var arguments = new EventArguments(&parameters, null);
+            for (int i = 0; i <= 4; i++)
+            {
+                Assert.AreEqual(typeof(NotSupportedException), GetUniqueDisposable(arguments, i)?.GetType(), $"Argument {i}");
+            }
+        }
+        finally
+        {
+            variants[0].Dispose();
+        }
+
+        // A ref struct cannot be used in a lambda.
+        static Exception? GetUniqueDisposable(EventArguments arguments, int index)
+        {
+            try
+            {
+                _ = arguments.GetUnique<IDisposable>(index);
+                return null;
+            }
+            catch (Exception e)
+            {
+                return e;
+            }
+        }
+    }
+
+    [TestMethod]
     public void ReadsThePositionalArgumentsInDeclarationOrder()
     {
         // DISPPARAMS stores the positional arguments in reverse order.
@@ -297,6 +427,48 @@ public sealed unsafe class EventRuntimeTests
     }
 
     [TestMethod]
+    [DataRow(1)]
+    [DataRow(0)]
+    public void InvokeHandlerReportsAnExceptionWithoutAnErrorCodeAsAFailure(int code)
+    {
+        // An exception whose HResult is a success, e.g. S_FALSE, would tell the source that the event succeeded.
+        const int E_FAIL = unchecked((int)0x80004005);
+        var parameters = new DispParams();
+        var handler = new ThrowingHandler(() => new COMException("x", code));
+
+        Assert.AreEqual(E_FAIL, DispatchEventSink.InvokeHandler(handler, 1, &parameters, null, null));
+
+        ExcepInfo excepInfo = default;
+        Assert.AreEqual(DISP_E_EXCEPTION, DispatchEventSink.InvokeHandler(handler, 1, &parameters, null, &excepInfo));
+        try
+        {
+            Assert.AreEqual(E_FAIL, excepInfo.scode);
+            Assert.AreEqual("x", Marshal.PtrToStringBSTR(excepInfo.bstrDescription));
+        }
+        finally
+        {
+            Marshal.FreeBSTR(excepInfo.bstrSource);
+            Marshal.FreeBSTR(excepInfo.bstrDescription);
+        }
+    }
+
+    [TestMethod]
+    public void InvokeHandlerReportsAnExceptionWhoseMessageThrowsWithoutItsDescription()
+    {
+        // The exception of the handler is reported, not that of its message, and without strings, which are set completely
+        // or not at all: the caller only frees them with DISP_E_EXCEPTION.
+        var parameters = new DispParams();
+        var handler = new ThrowingHandler(static () => new UnreadableException());
+        ExcepInfo excepInfo = default;
+
+        Assert.AreEqual(DISP_E_EXCEPTION, DispatchEventSink.InvokeHandler(handler, 1, &parameters, null, &excepInfo));
+        Assert.AreEqual(UnreadableException.Code, excepInfo.scode);
+        Assert.AreEqual((nint)0, excepInfo.bstrSource);
+        Assert.AreEqual((nint)0, excepInfo.bstrDescription);
+        Assert.AreEqual(UnreadableException.Code, DispatchEventSink.InvokeHandler(handler, 1, &parameters, null, null));
+    }
+
+    [TestMethod]
     public void InvokeHandlerDoesNotReadTheResultVariableOfTheCaller()
     {
         // The result is an [out] parameter, so the caller may pass a variable that is not initialized. Clearing a VARIANT
@@ -386,6 +558,149 @@ public sealed unsafe class EventRuntimeTests
         Assert.AreEqual(2, completed);
     }
 
+    [TestMethod]
+    public void EventSubjectCompletesEveryObserverWhenOneThrows()
+    {
+        // The completion is final and removes the observers: the exception of one does not stop the others, and the
+        // exceptions are thrown together once every observer is completed.
+        var subject = new EventSubject<int>();
+        var completed = new List<string>();
+        subject.Subscribe(new TestObserver<int>(static _ => { }, () =>
+        {
+            completed.Add("first");
+            throw new InvalidOperationException("first");
+        }));
+        subject.Subscribe(new TestObserver<int>(static _ => { }, () => completed.Add("second")));
+        subject.Subscribe(new TestObserver<int>(static _ => { }, () =>
+        {
+            completed.Add("third");
+            throw new InvalidOperationException("third");
+        }));
+
+        var exception = Assert.ThrowsExactly<AggregateException>(subject.OnCompleted);
+        CollectionAssert.AreEqual(new[] { "first", "second", "third" }, completed);
+        CollectionAssert.AreEqual(new[] { "first", "third" }, exception.InnerExceptions.Select(static e => e.Message).ToArray());
+
+        subject.OnCompleted();
+        subject.Subscribe(new TestObserver<int>(static _ => { }, () => completed.Add("later"))).Dispose();
+        CollectionAssert.AreEqual(new[] { "first", "second", "third", "later" }, completed);
+    }
+
+    [TestMethod]
+    public void EventSubjectThrowsTheExceptionOfASingleObserverAsItIs()
+    {
+        var subject = new EventSubject<int>();
+        var failure = new InvalidOperationException("only");
+        bool completed = false;
+        subject.Subscribe(new TestObserver<int>(static _ => { }, () => throw failure));
+        subject.Subscribe(new TestObserver<int>(static _ => { }, () => completed = true));
+
+        Assert.AreSame(failure, Assert.ThrowsExactly<InvalidOperationException>(subject.OnCompleted));
+        Assert.IsTrue(completed);
+    }
+
+    [TestMethod]
+    public void EventSubjectsAreCompletedTogether()
+    {
+        // The observables of an event sink: the exception of an observer of one does not stop the completion of the others.
+        var first = new EventSubject<int>();
+        var second = new EventSubject<string>();
+        var failure = new InvalidOperationException("first");
+        bool completed = false;
+        first.Subscribe(new TestObserver<int>(static _ => { }, () => throw failure));
+        second.Subscribe(new TestObserver<string>(static _ => { }, () => completed = true));
+
+        Assert.AreSame(failure, Assert.ThrowsExactly<InvalidOperationException>(() => EventSubject.Complete(first, second)));
+        Assert.IsTrue(completed);
+
+        // The subjects are checked before any of them is completed.
+        var third = new EventSubject<int>();
+        bool thirdCompleted = false;
+        third.Subscribe(new TestObserver<int>(static _ => { }, () => thirdCompleted = true));
+        Assert.ThrowsExactly<ArgumentNullException>(() => EventSubject.Complete(third, null!));
+        Assert.IsFalse(thirdCompleted);
+    }
+
+    [TestMethod]
+    public void EventSubjectsAreCompletedAfterTheDisconnectionInTheContextOfTheCaller()
+    {
+        // Like the code after an await: once the disconnection has completed, in the synchronization context of the caller.
+        var subject = new EventSubject<int>();
+        bool completed = false;
+        subject.Subscribe(new TestObserver<int>(static _ => { }, () => completed = true));
+        var disconnection = new TaskCompletionSource();
+        var context = new QueueingContext();
+        var original = SynchronizationContext.Current;
+        Task task;
+        SynchronizationContext.SetSynchronizationContext(context);
+        try
+        {
+            task = EventSubject.CompleteAfterAsync(new ValueTask(disconnection.Task), subject).AsTask();
+        }
+        finally
+        {
+            SynchronizationContext.SetSynchronizationContext(original);
+        }
+
+        Assert.IsFalse(task.IsCompleted);
+        disconnection.SetResult();
+        Assert.IsFalse(completed);
+        Assert.IsFalse(task.IsCompleted);
+
+        context.RunPosts();
+        Assert.IsTrue(completed);
+        Assert.IsTrue(task.IsCompletedSuccessfully);
+    }
+
+    [TestMethod]
+    public void TheExceptionOfTheDisconnectionIsThrownBeforeThoseOfTheObservers()
+    {
+        // Alone, it is thrown as it is, after the completion, so that a COMException of a sink that stays connected can be
+        // caught; with those of the observers, all of them are thrown, the one of the disconnection first.
+        var failure = new COMException("The sink stays connected.", unchecked((int)0x8001010E));
+        var subject = new EventSubject<int>();
+        bool completed = false;
+        subject.Subscribe(new TestObserver<int>(static _ => { }, () => completed = true));
+        Assert.AreSame(failure, Assert.ThrowsExactly<COMException>(() => Wait(EventSubject.CompleteAfterAsync(ValueTask.FromException(failure), subject))));
+        Assert.IsTrue(completed);
+
+        var observerFailure = new InvalidOperationException("observer");
+        var failing = new EventSubject<int>();
+        failing.Subscribe(new TestObserver<int>(static _ => { }, () => throw observerFailure));
+        var both = Assert.ThrowsExactly<AggregateException>(() => Wait(EventSubject.CompleteAfterAsync(ValueTask.FromException(failure), failing)));
+        CollectionAssert.AreEqual(new Exception[] { failure, observerFailure }, both.InnerExceptions.ToArray());
+
+        var alone = new EventSubject<int>();
+        alone.Subscribe(new TestObserver<int>(static _ => { }, () => throw observerFailure));
+        Assert.AreSame(observerFailure, Assert.ThrowsExactly<InvalidOperationException>(() => Wait(EventSubject.CompleteAfterAsync(default, alone))));
+
+        static void Wait(ValueTask task) => task.AsTask().GetAwaiter().GetResult();
+    }
+
+    [TestMethod]
+    public void CompleteAfterAsyncChecksTheSubjectsAtOnce()
+    {
+        // A null subject is rejected when the method is called, not by the task, and no subject is completed then. The
+        // subjects are copied, so that the caller cannot replace one with null while the disconnection runs.
+        var subject = new EventSubject<int>();
+        bool completed = false;
+        subject.Subscribe(new TestObserver<int>(static _ => { }, () => completed = true));
+        var disconnection = new TaskCompletionSource();
+
+        Assert.ThrowsExactly<ArgumentNullException>(() => EventSubject.CompleteAfterAsync(new ValueTask(disconnection.Task), subject, null!));
+        Assert.ThrowsExactly<ArgumentNullException>(() => EventSubject.CompleteAfterAsync(new ValueTask(disconnection.Task), null!));
+        disconnection.SetResult();
+        Assert.IsFalse(completed);
+
+        var pending = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        EventSubject[] subjects = [subject];
+        var task = EventSubject.CompleteAfterAsync(new ValueTask(pending.Task), subjects).AsTask();
+        subjects[0] = null!;
+        pending.SetResult();
+        Assert.IsTrue(task.Wait(TimeSpan.FromSeconds(30)));
+        Assert.IsTrue(completed);
+    }
+
     private sealed class TestHandler : IDispatchEventHandler
     {
         public List<int> DispIds { get; } = [];
@@ -410,6 +725,25 @@ public sealed unsafe class EventRuntimeTests
         }
     }
 
+    /// <summary>A handler that throws the exception that it creates, for every event.</summary>
+    internal sealed class ThrowingHandler(Func<Exception> create) : IDispatchEventHandler
+    {
+        public bool Invoke(int dispId, EventArguments arguments) => throw create();
+    }
+
+    /// <summary>An exception whose message cannot be read.</summary>
+    internal sealed class UnreadableException : Exception
+    {
+        public const int Code = unchecked((int)0x80040001);
+
+        public UnreadableException()
+        {
+            HResult = Code;
+        }
+
+        public override string Message => throw new InvalidOperationException("The message cannot be read.");
+    }
+
     private sealed class TestObserver<T>(Action<T> next, Action? completed = null) : IObserver<T>
     {
         public void OnNext(T value) => next(value);
@@ -417,6 +751,46 @@ public sealed unsafe class EventRuntimeTests
         public void OnError(Exception error) => throw new AssertFailedException("Unexpected error.", error);
 
         public void OnCompleted() => completed?.Invoke();
+    }
+
+    // A synchronization context that runs what is posted to it only when asked, like the one of a user interface thread.
+    private sealed class QueueingContext : SynchronizationContext
+    {
+        private readonly Queue<(SendOrPostCallback Callback, object? State)> _posts = new();
+
+        public override void Post(SendOrPostCallback d, object? state)
+        {
+            lock (_posts)
+            {
+                _posts.Enqueue((d, state));
+            }
+        }
+
+        public void RunPosts()
+        {
+            var original = Current;
+            SetSynchronizationContext(this);
+            try
+            {
+                while (true)
+                {
+                    (SendOrPostCallback Callback, object? State) post;
+                    lock (_posts)
+                    {
+                        if (!_posts.TryDequeue(out post))
+                        {
+                            return;
+                        }
+                    }
+
+                    post.Callback(post.State);
+                }
+            }
+            finally
+            {
+                SetSynchronizationContext(original);
+            }
+        }
     }
 
     /// <summary>Exposes the array conversions of the generated late-bound wrappers.</summary>

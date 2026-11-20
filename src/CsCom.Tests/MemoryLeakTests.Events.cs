@@ -130,6 +130,23 @@ public sealed unsafe partial class MemoryLeakTests
     }
 
     [TestMethod]
+    public void AnExceptionWhoseMessageThrowsLeavesNoStrings()
+    {
+        // The source of the exception is read first: its string is freed when the message throws, since the caller frees
+        // no string that is not in the error information.
+        LeakDetector.AssertNoLeaks(static () =>
+        {
+            var handler = new EventRuntimeTests.ThrowingHandler(static () => new EventRuntimeTests.UnreadableException());
+            var parameters = new DispParams();
+            ExcepInfo excepInfo = default;
+
+            Assert.AreEqual(DISP_E_EXCEPTION, DispatchEventSink.InvokeHandler(handler, 1, &parameters, null, &excepInfo));
+            Assert.AreEqual((nint)0, excepInfo.bstrSource);
+            Assert.AreEqual((nint)0, excepInfo.bstrDescription);
+        });
+    }
+
+    [TestMethod]
     public void EventConnectionsReleaseTheSinkAndTheSource()
     {
         object native = CreateDictionary();

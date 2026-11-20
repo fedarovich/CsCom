@@ -15,9 +15,12 @@ public partial interface IConnectionPointContainer
     [PreserveSig]
     int EnumConnectionPoints(out nint ppEnum);
 
-    /// <summary>Finds the connection point of the specified event interface.</summary>
+    /// <summary>
+    /// Finds the connection point of the specified event interface. It is returned in a managed object of its own, which
+    /// <see cref="ComObject.FinalRelease"/> releases at once.
+    /// </summary>
     [PreserveSig]
-    int FindConnectionPoint(in Guid riid, out IConnectionPoint? ppCP);
+    int FindConnectionPoint(in Guid riid, [MarshalUsing(typeof(UniqueComObjectMarshaller<IConnectionPoint>))] out IConnectionPoint? ppCP);
 }
 
 /// <summary>

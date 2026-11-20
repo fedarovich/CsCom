@@ -78,6 +78,12 @@ public sealed class ConfigurableTransformerTests
         """<RenameMember Member="^Move$" Parameter="^z$" NewName="X" />""",
         "RenameMember: no parameter matches Member='^Move$', Parameter='^z$'")]
     [DataRow("""<SetMarshalling Type="^Nothing$" Dates="wrapper" />""", "SetMarshalling: nothing matches Type='^Nothing$'")]
+    [DataRow("""<SetMarshalling TypeName="DShapeEvents" Interfaces="unique" />""", "SetMarshalling: nothing matches TypeName='DShapeEvents'")]
+    [DataRow("""<SetMarshalling TypeName="Record" Interfaces="unique" />""", "SetMarshalling: nothing matches TypeName='Record'")]
+    [DataRow("""<SetMarshalling TypeName="Record" SafeArrays="sysarray" />""", "SetMarshalling: nothing matches TypeName='Record'")]
+    [DataRow("""<SetMarshalling TypeName="IShapeEventsDual" MemberName="Moved" Interfaces="unique" />""", "SetMarshalling: nothing matches TypeName='IShapeEventsDual', MemberName='Moved'")]
+    [DataRow("""<SetMarshalling TypeName="DShapeEvents" Bstrs="wrapper" />""", "SetMarshalling: nothing matches TypeName='DShapeEvents'")]
+    [DataRow("""<SetMarshalling TypeName="DShapeEvents" Interfaces="unique" Bstrs="wrapper" />""", "SetMarshalling: nothing matches TypeName='DShapeEvents'")]
     [DataRow("""<RemoveEnumPrefix Type="^IShape$" />""", "RemoveEnumPrefix: no enum matches Type='^IShape$'")]
     [DataRow("""<RenameType TypeName="IShap" NewName="X" />""", "RenameType: no type matches TypeName='IShap'")]
     [DataRow("""<ExcludeType Type="^IShape$" Kind="enum|struct" />""", "ExcludeType: no type matches Type='^IShape$', Kind='enum|struct'")]
@@ -94,16 +100,117 @@ public sealed class ConfigurableTransformerTests
     }
 
     [TestMethod]
+    public void SetMarshallingDoesNotMatchAnInterfacePointerThatIsPassedInAndOut()
+    {
+        // The parameter is always a shared object, so an element that only changes its marshaller has no effect.
+        const string Selector = """TypeName="IShapeEventsDual" MemberName="Renamed" ParameterName="Name" """;
+        var byReference = new ObjectEventTransformer { ByReference = true };
+
+        var (library, logger) = Apply($"""<SetMarshalling {Selector} Interfaces="unique" />""", byReference);
+        CollectionAssert.AreEqual(
+            new[] { "SetMarshalling: nothing matches TypeName='IShapeEventsDual', MemberName='Renamed', ParameterName='Name'" },
+            logger.Warnings.ToArray());
+        Assert.IsNull(Parameter(library).Marshalling);
+
+        // Another change applies to the parameter, and a pointer that is passed by value has its marshaller changed.
+        (library, logger) = Apply($"""<SetMarshalling {Selector} Interfaces="unique" Bstrs="wrapper" />""", byReference);
+        Assert.IsEmpty(logger.Warnings);
+        Assert.IsNotNull(Parameter(library).Marshalling);
+
+        (library, logger) = Apply($"""<SetMarshalling {Selector} Interfaces="unique" />""", new ObjectEventTransformer());
+        Assert.IsEmpty(logger.Warnings);
+        Assert.AreEqual(new MarshallingOverrides { Interfaces = InterfaceMarshalling.Unique }, Parameter(library).Marshalling);
+
+        static ParameterDefinition Parameter(TypeLibrary library) =>
+            Get<InterfaceDefinition>(library, "IShapeEventsDual").Methods.Single(static m => m.Name == "Renamed").Parameters[0];
+    }
+
+    [TestMethod]
+    public void SetMarshallingMatchesAReturnValueWhateverItsDirection()
+    {
+        // The [retval] parameter is the return value of the generated method, also when a type library declares it as
+        // passed in and out, which a parameter would be shared for.
+        var (library, logger) = Apply(
+            """<SetMarshalling TypeName="IShape" MemberName="Clone" Interfaces="unique" />""",
+            new RetvalDirectionTransformer());
+
+        Assert.IsEmpty(logger.Warnings);
+        var retval = Get<InterfaceDefinition>(library, "IShape").Methods.Single(static m => m.Name == "Clone").RetvalParameter!;
+        Assert.AreEqual(ParameterFlags.In | ParameterFlags.Out | ParameterFlags.Retval, retval.Flags);
+        Assert.AreEqual(new MarshallingOverrides { Interfaces = InterfaceMarshalling.Unique }, retval.Marshalling);
+    }
+
+    private sealed class RetvalDirectionTransformer : IModelTransformer
+    {
+        public void Transform(TypeLibrary library, TransformationContext context) =>
+            Get<InterfaceDefinition>(library, "IShape").Methods.Single(static m => m.Name == "Clone").RetvalParameter!.Flags =
+                ParameterFlags.In | ParameterFlags.Out | ParameterFlags.Retval;
+    }
+
+    [TestMethod]
+    [DataRow(true)]
+    [DataRow(false)]
+    public void SetMarshallingTreatsTheRetvalParameterOfAModuleFunctionAsAParameter(bool inAndOut)
+    {
+        // A module function keeps its [retval] parameter as a parameter, which is always shared when it is passed in and out.
+        var (library, logger) = Apply(
+            """<SetMarshalling TypeName="Kernel" MemberName="Clone" Interfaces="unique" />""",
+            new ModuleRetvalTransformer { InAndOut = inAndOut });
+
+        var retval = Get<ModuleDefinition>(library, "Kernel").Functions.Single(static f => f.Name == "Clone").RetvalParameter!;
+        if (inAndOut)
+        {
+            CollectionAssert.AreEqual(
+                new[] { "SetMarshalling: nothing matches TypeName='Kernel', MemberName='Clone'" },
+                logger.Warnings.ToArray());
+            Assert.IsNull(retval.Marshalling);
+        }
+        else
+        {
+            Assert.IsEmpty(logger.Warnings);
+            Assert.AreEqual(new MarshallingOverrides { Interfaces = InterfaceMarshalling.Unique }, retval.Marshalling);
+        }
+    }
+
+    // Moves IShape.Clone, which returns an interface pointer as its [retval], into the module of the test type library.
+    private sealed class ModuleRetvalTransformer : IModelTransformer
+    {
+        public bool InAndOut { get; init; }
+
+        public void Transform(TypeLibrary library, TransformationContext context)
+        {
+            var methods = Get<InterfaceDefinition>(library, "IShape").Methods;
+            var clone = methods.Single(static m => m.Name == "Clone");
+            methods.Remove(clone);
+            clone.RetvalParameter!.Flags = (InAndOut ? ParameterFlags.In : ParameterFlags.None) | ParameterFlags.Out | ParameterFlags.Retval;
+            Get<ModuleDefinition>(library, "Kernel").Functions.Add(clone);
+        }
+    }
+
+    [TestMethod]
     public void SetMarshallingChangesMethods()
     {
         var (library, _) = Apply("""<SetMarshalling Type="^IArrays$" Member="^Matrix$" SafeArrays="wrapper" />""");
 
         var arrays = Get<InterfaceDefinition>(library, "IArrays");
         var matrix = arrays.Methods.Single(static m => m.Name == "Matrix");
-        var expected = new MarshallingOverrides { SafeArrays = SafeArrayMarshalling.Wrapper };
+        var expected = new MarshallingOverrides { Options = new() { SafeArrays = SafeArrayMarshalling.Wrapper } };
         Assert.IsTrue(matrix.Parameters.All(p => p.Marshalling == expected));
         Assert.AreEqual(expected, matrix.ReturnMarshalling);
         Assert.IsTrue(arrays.Methods.Where(static m => m.Name != "Matrix").All(static m => m.ReturnMarshalling is null && m.Parameters.All(static p => p.Marshalling is null)));
+    }
+
+    [TestMethod]
+    public void SetMarshallingChangesTheMarshallerOfInterfaces()
+    {
+        var (library, _) = Apply("""<SetMarshalling TypeName="IShape" MemberName="Parent" Interfaces="unique" />""");
+
+        var shape = Get<InterfaceDefinition>(library, "IShape");
+        var expected = new MarshallingOverrides { Interfaces = InterfaceMarshalling.Unique };
+        foreach (var accessor in shape.Methods.Where(static m => m.Name == "Parent"))
+        {
+            Assert.IsTrue(accessor.Parameters.All(p => p.Marshalling == expected));
+        }
     }
 
     [TestMethod]
@@ -112,7 +219,7 @@ public sealed class ConfigurableTransformerTests
         var (library, _) = Apply("""<SetMarshalling Type="^IStrings$" Member="^Echo$" Parameter="^Value$" Bstrs="none" />""");
 
         var echo = Get<InterfaceDefinition>(library, "IStrings").Methods.Single(static m => m.Name == "Echo");
-        Assert.AreEqual(new MarshallingOverrides { Bstrs = BstrMarshalling.None }, echo.Parameters[0].Marshalling);
+        Assert.AreEqual(new MarshallingOverrides { Options = new() { Bstrs = BstrMarshalling.None } }, echo.Parameters[0].Marshalling);
         Assert.IsNull(echo.RetvalParameter!.Marshalling);
         Assert.IsNull(echo.ReturnMarshalling);
     }
@@ -127,16 +234,47 @@ public sealed class ConfigurableTransformerTests
             """);
 
         var fields = Get<RecordDefinition>(library, "Record").Fields;
-        Assert.AreEqual(new MarshallingOverrides { Dates = ValueMarshalling.None, Booleans = ValueMarshalling.None }, fields.Single(static f => f.Name == "Date").Marshalling);
+        Assert.AreEqual(new MarshallingOverrides { Options = new() { Dates = ValueMarshalling.None, Booleans = ValueMarshalling.None } }, fields.Single(static f => f.Name == "Date").Marshalling);
         Assert.IsTrue(fields.Where(static f => f.Name != "Date").All(static f => f.Marshalling is null));
         var counter = Get<InterfaceDefinition>(library, "DShapeEvents").Properties.Single(static p => p.Name == "Counter");
-        Assert.AreEqual(new MarshallingOverrides { SafeArrays = SafeArrayMarshalling.SysArray }, counter.Marshalling);
+        Assert.AreEqual(new MarshallingOverrides { Options = new() { SafeArrays = SafeArrayMarshalling.SysArray } }, counter.Marshalling);
+    }
+
+    [TestMethod]
+    public void TheChangesOfEveryOptionAreAppliedAndCombined()
+    {
+        // Every option of MarshallingOptions has its change in MarshallingOptionOverrides, which the projects, the references
+        // and the members share: Apply and Combine must carry each of them, also an option that is added later.
+        var defaults = new MarshallingOptions();
+        foreach (var option in typeof(MarshallingOptions).GetProperties())
+        {
+            var change = typeof(MarshallingOptionOverrides).GetProperty(option.Name);
+            Assert.IsNotNull(change, $"MarshallingOptionOverrides has no change of {option.Name}.");
+
+            // The default is the first value of each enum.
+            var values = Enum.GetValues(option.PropertyType);
+            object value = values.GetValue(1)!;
+            object other = values.GetValue(2)!;
+            var first = new MarshallingOptionOverrides();
+            change.SetValue(first, value);
+            var second = new MarshallingOptionOverrides();
+            change.SetValue(second, other);
+
+            Assert.AreEqual(value, option.GetValue(first.Apply(defaults)), $"Apply ignores {option.Name}.");
+            Assert.AreEqual(value, change.GetValue(MarshallingOptionOverrides.Combine(first, new())), $"Combine loses {option.Name}.");
+            Assert.AreEqual(other, change.GetValue(MarshallingOptionOverrides.Combine(first, second)), $"Combine keeps the first {option.Name}.");
+            Assert.AreEqual(other, change.GetValue(MarshallingOverrides.Combine(new() { Options = first }, new() { Options = second }).Options));
+        }
+
+        var unique = new MarshallingOverrides { Interfaces = InterfaceMarshalling.Unique };
+        Assert.AreEqual(InterfaceMarshalling.Unique, MarshallingOverrides.Combine(unique, new()).Interfaces);
+        Assert.AreEqual(InterfaceMarshalling.Shared, MarshallingOverrides.Combine(unique, new() { Interfaces = InterfaceMarshalling.Shared }).Interfaces);
     }
 
     [TestMethod]
     [DataRow(
         """<SetMarshalling Type="^IArrays$" />""",
-        "cscom.xml(1,28): At least one of the attributes Dates, Currencies, Booleans, Bstrs or SafeArrays is required by <SetMarshalling>.")]
+        "cscom.xml(1,28): At least one of the attributes Dates, Currencies, Booleans, Bstrs, SafeArrays or Interfaces is required by <SetMarshalling>.")]
     [DataRow(
         """<SetMarshalling SafeArrays="vector" />""",
         "cscom.xml(1,43): 'vector' is not a valid value of the attribute 'SafeArrays': one of Array, SysArray, Wrapper, None is expected.")]
@@ -589,14 +727,14 @@ public sealed class ConfigurableTransformerTests
     }
 
     // Applies the transformers to the test type library, after the aliases are resolved as the pipeline does.
-    private static (TypeLibrary Library, ListLogger Logger) Apply(string transformers)
+    private static (TypeLibrary Library, ListLogger Logger) Apply(string transformers, params IModelTransformer[] before)
     {
         var configuration = Parse(transformers);
         var logger = new ListLogger();
         var context = new TransformationContext { Options = new CodeGenerationOptions { Namespace = "Test" }, Logger = logger };
         var library = new TypeLibraryReader().Read(TestEnvironment.TestTypeLibrary);
         new AliasResolver().Transform(library, context);
-        foreach (var transformer in configuration.ModelTransformers)
+        foreach (var transformer in before.Concat(configuration.ModelTransformers))
         {
             transformer.Transform(library, context);
         }

@@ -140,7 +140,7 @@ public sealed class _ShapeEvents_DescribeEventArgs
 /// <summary>
 /// Connects to the _ShapeEvents events of a COM object and pushes them to observables. Dispose the sink to disconnect it.
 /// </summary>
-public sealed partial class _ShapeEventsSink : _ShapeEventsHandler, global::System.IDisposable
+public sealed partial class _ShapeEventsSink : _ShapeEventsHandler, global::System.IDisposable, global::System.IAsyncDisposable
 {
     /// <summary>
     /// The interface identifier (IID) of the _ShapeEvents event interface.
@@ -187,16 +187,19 @@ public sealed partial class _ShapeEventsSink : _ShapeEventsHandler, global::Syst
     public global::System.IObservable<_ShapeEvents_DescribeEventArgs> Describe => __Describe;
 
     /// <summary>
-    /// Disconnects the sink from the events and completes the observables.
+    /// Disconnects the sink from the events, and completes the observables once no handler runs any more: at once when none runs, otherwise on the thread of the running handler, when it returns.
     /// </summary>
     public void Dispose()
     {
-        __connection.Dispose();
-        __Moved.OnCompleted();
-        __Closing.OnCompleted();
-        __Renamed.OnCompleted();
-        __Describe.OnCompleted();
+        __connection.DisposeWithCompletion(__Complete);
     }
+
+    /// <summary>
+    /// Disconnects the sink from the events, waits until no handler runs any more and completes the observables, in the synchronization context of the caller. Call it on the thread that connected the sink, and await it rather than block on it there. Throws a COMException when the sink could not be disconnected and stays connected, after completing the observables: dispose it again, e.g. on that thread. Every observer is completed, also when another throws: a single exception is thrown as it is, several in an AggregateException, the COMException first.
+    /// </summary>
+    public global::System.Threading.Tasks.ValueTask DisposeAsync() => global::CsCom.Runtime.EventSubject.CompleteAfterAsync(__connection.DisposeAsync(), __Moved, __Closing, __Renamed, __Describe);
+
+    private void __Complete() => global::CsCom.Runtime.EventSubject.Complete(__Moved, __Closing, __Renamed, __Describe);
 
     /// <summary>
     /// Connects a handler to the _ShapeEvents events of a COM object.

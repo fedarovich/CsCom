@@ -2,9 +2,9 @@
 
   <!--
     Late binding with C# dynamic for the COM objects of CsCom.Runtime. Like those of CsCom.Runtime, the sources of this project
-    are also embedded into CsCom.Core and emitted into generated projects that use the "public" or "internal" support code mode
-    with dynamic: no implicit usings, no assembly-level attributes, file-scoped "CsCom.Runtime" namespace only, and only the
-    public API of CsCom.Runtime.
+    are also embedded into CsCom.Core, with their names of .NET qualified when it is built, and emitted into generated projects
+    that use the "public" or "internal" support code mode with dynamic: no implicit usings, no assembly-level attributes,
+    file-scoped "CsCom.Runtime" namespace only, and only the public API of CsCom.Runtime.
   -->
 
   <PropertyGroup>

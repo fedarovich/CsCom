@@ -24,7 +24,7 @@ public static class DispIds
 /// <summary>
 /// The kind of an <see cref="IDispatch.Invoke"/> call.
 /// </summary>
-[System.Flags]
+[global::System.Flags]
 public enum DispatchFlags : ushort
 {
     /// <summary>The member is invoked as a method (<c>DISPATCH_METHOD</c>).</summary>

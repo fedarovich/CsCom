@@ -76,7 +76,7 @@ public delegate string? IShapeEventsDual_DescribeEventHandler(object? Value, out
 /// <summary>
 /// Connects to the IShapeEventsDual events of a COM object and raises them as .NET events. Dispose the sink to disconnect it.
 /// </summary>
-public sealed partial class IShapeEventsDualSink : IShapeEventsDualHandler, global::System.IDisposable
+public sealed partial class IShapeEventsDualSink : IShapeEventsDualHandler, global::System.IDisposable, global::System.IAsyncDisposable
 {
     /// <summary>
     /// The interface identifier (IID) of the IShapeEventsDual event interface.
@@ -123,6 +123,11 @@ public sealed partial class IShapeEventsDualSink : IShapeEventsDualHandler, glob
     }
 
     /// <summary>
+    /// Disconnects the sink from the events, and completes when no handler runs any more. Call it on the thread that connected the sink. Throws a COMException when the sink could not be disconnected and stays connected: dispose it again, e.g. on that thread.
+    /// </summary>
+    public global::System.Threading.Tasks.ValueTask DisposeAsync() => __connection.DisposeAsync();
+
+    /// <summary>
     /// Connects a handler to the IShapeEventsDual events of a COM object.
     /// </summary>
     /// <param name="source">The COM object that raises the events.</param>
@@ -131,7 +136,7 @@ public sealed partial class IShapeEventsDualSink : IShapeEventsDualHandler, glob
     public static global::CsCom.Runtime.EventConnection Connect(object source, IShapeEventsDualHandler handler)
     {
         global::System.ArgumentNullException.ThrowIfNull(handler);
-        return global::CsCom.Runtime.EventConnection.Advise(source, Iid, new ComSink(handler));
+        return global::CsCom.Runtime.EventConnection.Advise(source, Iid, gate => new ComSink(handler, gate));
     }
 
     void IShapeEventsDualHandler.Moved(int X, int Y) => this.Moved?.Invoke(X, Y);
@@ -202,28 +207,92 @@ public sealed partial class IShapeEventsDualSink : IShapeEventsDualHandler, glob
     }
 
     /// <summary>
-    /// Implements the IShapeEventsDual event interface and passes the events to the handler.
+    /// Implements the IShapeEventsDual event interface and passes the events to the handler until the gate of its connection is closed.
     /// </summary>
     [global::System.Runtime.InteropServices.Marshalling.GeneratedComClass]
     private sealed unsafe partial class ComSink : IShapeEventsDual
     {
         private readonly IShapeEventsDualHandler __handler;
 
+        private readonly global::CsCom.Runtime.EventGate __gate;
+
         private readonly DispatchHandler __dispatch;
 
-        public ComSink(IShapeEventsDualHandler handler)
+        public ComSink(IShapeEventsDualHandler handler, global::CsCom.Runtime.EventGate gate)
         {
             __handler = handler;
+            __gate = gate;
             __dispatch = new DispatchHandler(handler);
         }
 
-        public void Moved(int X, int Y) => __handler.Moved(X, Y);
+        public void Moved(int X, int Y)
+        {
+            if (!__gate.TryEnter())
+            {
+                return;
+            }
 
-        public void Closing(ref bool Cancel) => __handler.Closing(ref Cancel);
+            try
+            {
+                __handler.Moved(X, Y);
+            }
+            finally
+            {
+                __gate.Exit();
+            }
+        }
 
-        public void Renamed(string? Name) => __handler.Renamed(Name);
+        public void Closing(ref bool Cancel)
+        {
+            if (!__gate.TryEnter())
+            {
+                return;
+            }
 
-        public string? Describe(object? Value, out int length) => __handler.Describe(Value, out length);
+            try
+            {
+                __handler.Closing(ref Cancel);
+            }
+            finally
+            {
+                __gate.Exit();
+            }
+        }
+
+        public void Renamed(string? Name)
+        {
+            if (!__gate.TryEnter())
+            {
+                return;
+            }
+
+            try
+            {
+                __handler.Renamed(Name);
+            }
+            finally
+            {
+                __gate.Exit();
+            }
+        }
+
+        public string? Describe(object? Value, out int length)
+        {
+            if (!__gate.TryEnter())
+            {
+                length = default;
+                return default;
+            }
+
+            try
+            {
+                return __handler.Describe(Value, out length);
+            }
+            finally
+            {
+                __gate.Exit();
+            }
+        }
 
         int global::CsCom.Runtime.IDispatch.GetTypeInfoCount(out uint pctinfo)
         {
@@ -247,6 +316,6 @@ public sealed partial class IShapeEventsDualSink : IShapeEventsDualHandler, glob
             return unchecked((int)0x80020006);
         }
 
-        int global::CsCom.Runtime.IDispatch.Invoke(int dispIdMember, in global::System.Guid riid, uint lcid, ushort wFlags, global::CsCom.Runtime.DispParams* pDispParams, global::System.Runtime.InteropServices.Marshalling.ComVariant* pVarResult, global::CsCom.Runtime.ExcepInfo* pExcepInfo, uint* puArgErr) => global::CsCom.Runtime.DispatchEventSink.InvokeHandler(__dispatch, dispIdMember, pDispParams, pVarResult, pExcepInfo);
+        int global::CsCom.Runtime.IDispatch.Invoke(int dispIdMember, in global::System.Guid riid, uint lcid, ushort wFlags, global::CsCom.Runtime.DispParams* pDispParams, global::System.Runtime.InteropServices.Marshalling.ComVariant* pVarResult, global::CsCom.Runtime.ExcepInfo* pExcepInfo, uint* puArgErr) => global::CsCom.Runtime.DispatchEventSink.InvokeHandler(__gate, __dispatch, dispIdMember, pDispParams, pVarResult, pExcepInfo);
     }
 }

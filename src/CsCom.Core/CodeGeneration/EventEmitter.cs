@@ -26,11 +26,14 @@ internal sealed partial class EventEmitter
     // The field of the sink class that holds the connection, next to the fields of the observables (Event.FieldName).
     private const string ConnectionField = "__connection";
 
+    // The method of an observable sink class that completes the observables.
+    private const string CompleteMethod = "__Complete";
+
     // The members of the sink classes and of object, which the events must not hide or clash with, e.g. an event named
     // __connection with the connection field.
     private static readonly HashSet<string> ReservedNames = new(StringComparer.Ordinal)
     {
-        "Iid", "Connect", "Dispose", "DispatchHandler", "ComSink", ConnectionField, "Equals", "GetHashCode", "GetType", "ToString", "MemberwiseClone", "ReferenceEquals", "Finalize",
+        "Iid", "Connect", "Dispose", "DisposeAsync", "DispatchHandler", "ComSink", ConnectionField, CompleteMethod, "Equals", "GetHashCode", "GetType", "ToString", "MemberwiseClone", "ReferenceEquals", "Finalize",
     };
 
     private readonly EmitContext _context;
@@ -158,8 +161,10 @@ internal sealed partial class EventEmitter
 
             // Dual interfaces are also invoked through IDispatch::Invoke, which cannot pass pointers. It passes SAFEARRAYs and
             // BSTRs in VARIANTs, which are converted to .NET arrays and strings rather than to the wrappers or the raw pointers,
-            // so these events are only received through the vtable.
-            bool needsVtable = method.Parameters.Any(p => (TypeMapper.TryGetByRefElement(p.Type, out var element) ? element : p.Type, p.Marshalling?.Apply(marshalling) ?? marshalling) switch
+            // so these events are only received through the vtable. The object in a VARIANT is converted to a unique object
+            // for a parameter that is marshalled as one through the vtable, see ReadArgument, so the event is received
+            // through both.
+            bool needsVtable = method.Parameters.Any(p => (TypeMapper.TryGetByRefElement(p.Type, out var element) ? element : p.Type, p.Marshalling?.Options.Apply(marshalling) ?? marshalling) switch
             {
                 (SafeArrayTypeReference, var options) => options.SafeArrays is SafeArrayMarshalling.Wrapper or SafeArrayMarshalling.None,
                 (PrimitiveTypeReference { VarType: VarEnum.VT_BSTR }, var options) => options.Bstrs is BstrMarshalling.Wrapper or BstrMarshalling.None,
@@ -177,8 +182,8 @@ internal sealed partial class EventEmitter
     }
 
     // Makes the names of the handler methods unique and keeps the events from hiding the members of the sink class. The fields of
-    // the observables are named after the events, but must not clash with the connection field or the events, e.g. for an event
-    // named connection.
+    // the observables are named after the events, but must not clash with the connection field, the completion method or the
+    // events, e.g. for an event named connection.
     private static List<Event> AssignNames(string sinkName, List<Event> events)
     {
         var handlerNames = new HashSet<string>(StringComparer.Ordinal);
@@ -196,19 +201,20 @@ internal sealed partial class EventEmitter
             result.Add(@event with { HandlerName = handlerName, Name = Unique(eventName, eventNames) });
         }
 
-        var fieldNames = new HashSet<string>(result.Select(static e => e.Name), StringComparer.Ordinal) { ConnectionField };
+        var fieldNames = new HashSet<string>(result.Select(static e => e.Name), StringComparer.Ordinal) { ConnectionField, CompleteMethod };
         return [.. result.Select(e => e with { FieldName = Unique("__" + e.Name, fieldNames) })];
+    }
 
-        static string Unique(string name, HashSet<string> names)
+    // The name, or the name with a number, that the names do not have yet, which it is added to.
+    private static string Unique(string name, HashSet<string> names)
+    {
+        string unique = name;
+        for (int i = 2; !names.Add(unique); i++)
         {
-            string unique = name;
-            for (int i = 2; !names.Add(unique); i++)
-            {
-                unique = $"{name}_{i.ToString(CultureInfo.InvariantCulture)}";
-            }
-
-            return unique;
+            unique = $"{name}_{i.ToString(CultureInfo.InvariantCulture)}";
         }
+
+        return unique;
     }
 
     private InterfaceDeclarationSyntax EmitHandlerInterface(Source source)
@@ -216,10 +222,10 @@ internal sealed partial class EventEmitter
         var annotations = _context.Annotations;
         var members = source.Events.Select(e =>
         {
-            var outs = e.Parameters.Where(static p => p.Modifier == SyntaxKind.OutKeyword).ToList();
-            string body = outs.Count == 0
+            string defaults = e.OutDefaults;
+            string body = defaults.Length == 0
                 ? e.IsVoid ? "{ }" : "=> default;"
-                : $"{{ {string.Concat(outs.Select(static p => $"{p.Name} = default; "))}{(e.IsVoid ? string.Empty : "return default;")} }}";
+                : $"{{ {defaults}{(e.IsVoid ? string.Empty : "return default;")} }}";
             var member = Syntax.Member($"{e.ReturnType} {Syntax.Escape(e.HandlerName)}({Parameters(e)}) {body}").WithDocumentation(e.Method.Documentation);
             return annotations.Annotate(AnnotateParameters(member, e.Parameters), e.Method, SyntaxRole.EventHandler);
         });
@@ -306,6 +312,11 @@ internal sealed partial class EventEmitter
                 members.AddRange(source.Events.Select(e => Syntax.Member($"private readonly {support}.EventSubject<{source.EventArgsName(e)}> {e.FieldName} = new();")));
             }
 
+            // The connection is assigned once Advise has returned, and the source can raise events during Advise, e.g. its
+            // state: they reach no handler and no observer, because none can be subscribed before the constructor returns
+            // the sink. The class is sealed and its constructor is generated, and a field initializer of a part of the
+            // user's own cannot use this, so no code of the user can reach Dispose or DisposeAsync before the field is
+            // assigned. A constructor that took handlers or observers would have to assign it before they can get events.
             members.Add(Syntax.Member($"public {source.SinkName}(object source) {{ {ConnectionField} = Connect(source, this); }}").WithDocumentation(
                 $"Connects the sink to the {name} events of a COM object.",
                 ("param name=\"source\"", "The COM object that raises the events.")));
@@ -319,15 +330,41 @@ internal sealed partial class EventEmitter
                 members.Add(_context.Annotations.Annotate(member, @event.Method, SyntaxRole.Event));
             }
 
-            string completions = style == EventStyle.Observable ? string.Concat(source.Events.Select(static e => $"{e.FieldName}.OnCompleted(); ")) : string.Empty;
-            members.Add(Syntax.Member($"public void Dispose() {{ {ConnectionField}.Dispose(); {completions}}}").WithDocumentation(style == EventStyle.Observable
-                ? "Disconnects the sink from the events and completes the observables."
-                : "Disconnects the sink from the events."));
+            // Dispose does not wait for a running handler, which can be on another thread, or the caller itself: the observables
+            // are completed after it, so that no event is pushed after the completion, and at once when no handler runs. The
+            // last running handler completes them on its thread when it returns, like the events that it pushes: no
+            // synchronization context has to run the completion, which a thread that stops pumping messages would lose, and the
+            // exception of an observer fails that event call, like one of OnNext, rather than a thread of the thread pool.
+            members.Add(Syntax.Member(style == EventStyle.Observable
+                    ? $"public void Dispose() {{ {ConnectionField}.DisposeWithCompletion({CompleteMethod}); }}"
+                    : $"public void Dispose() {{ {ConnectionField}.Dispose(); }}")
+                .WithDocumentation(style == EventStyle.Observable
+                    ? "Disconnects the sink from the events, and completes the observables once no handler runs any more: at once when none runs, otherwise on the thread of the running handler, when it returns."
+                    : "Disconnects the sink from the events."));
+
+            // The observables are completed once no handler runs any more, so that no event is pushed after the completion, in
+            // the synchronization context of the caller, e.g. the thread of a user interface, at once when no handler runs. A
+            // disconnection that leaves the sink connected fails the task only once no handler runs either, and the closed
+            // gate passes no more events, so the observables are completed then too; the support code throws its
+            // COMException before the exceptions of the observers, so that no observer can hide it.
+            string subjects = string.Join(", ", source.Events.Select(static e => e.FieldName));
+            members.Add(Syntax.Member(style == EventStyle.Observable
+                    ? $"public global::System.Threading.Tasks.ValueTask DisposeAsync() => {support}.EventSubject.CompleteAfterAsync({ConnectionField}.DisposeAsync(){(subjects.Length == 0 ? string.Empty : ", " + subjects)});"
+                    : $"public global::System.Threading.Tasks.ValueTask DisposeAsync() => {ConnectionField}.DisposeAsync();")
+                .WithDocumentation(style == EventStyle.Observable
+                    ? "Disconnects the sink from the events, waits until no handler runs any more and completes the observables, in the synchronization context of the caller. Call it on the thread that connected the sink, and await it rather than block on it there. Throws a COMException when the sink could not be disconnected and stays connected, after completing the observables: dispose it again, e.g. on that thread. Every observer is completed, also when another throws: a single exception is thrown as it is, several in an AggregateException, the COMException first."
+                    : "Disconnects the sink from the events, and completes when no handler runs any more. Call it on the thread that connected the sink. Throws a COMException when the sink could not be disconnected and stays connected: dispose it again, e.g. on that thread."));
+
+            if (style == EventStyle.Observable)
+            {
+                // Every observable is completed, also when an observer of another one throws.
+                members.Add(Syntax.Member($"private void {CompleteMethod}() => {support}.EventSubject.Complete({subjects});"));
+            }
         }
 
         string connect = source.IsDispatch
             ? $"{support}.EventConnection.AdviseDispatch(source, Iid, new DispatchHandler(handler))"
-            : $"{support}.EventConnection.Advise(source, Iid, new ComSink(handler))";
+            : $"{support}.EventConnection.Advise(source, Iid, gate => new ComSink(handler, gate))";
         members.Add(Syntax.Member($"public static {support}.EventConnection Connect(object source, {source.HandlerName} handler) {{ global::System.ArgumentNullException.ThrowIfNull(handler); return {connect}; }}")
             .WithDocumentation(
                 $"Connects a handler to the {name} events of a COM object.",
@@ -368,23 +405,30 @@ internal sealed partial class EventEmitter
         }
         else
         {
-            var baseTypes = new[] { source.HandlerName, "global::System.IDisposable" }.Select(static t => (BaseTypeSyntax)SimpleBaseType(Syntax.Type(t)));
+            var baseTypes = new[] { source.HandlerName, "global::System.IDisposable", "global::System.IAsyncDisposable" }.Select(static t => (BaseTypeSyntax)SimpleBaseType(Syntax.Type(t)));
+            // Only the members of the events that have pointers are unsafe, so that the rest of the class is compiled as safe
+            // code. The modifier of a partial declaration applies to its part only: a part of the user's own is never unsafe
+            // without its own, whatever this part declares.
             declaration = declaration
-                .WithModifiers(Modifiers(source.IsUnsafe, SyntaxKind.SealedKeyword, SyntaxKind.PartialKeyword))
+                .WithModifiers(Syntax.Modifiers(_context.Accessibility, SyntaxKind.SealedKeyword, SyntaxKind.PartialKeyword))
                 .WithBaseList(BaseList(SeparatedList(baseTypes)));
         }
 
         return _context.Annotations.Annotate(declaration.WithMembers(List(members)).WithDocumentation(summary), source.Definition, SyntaxRole.EventSink);
     }
 
+    // The signature of the explicit implementation of a handler method in the sink class, unsafe when the event has pointers.
+    private static string HandlerSignature(Source source, Event @event) =>
+        $"{(@event.HasPointers ? "unsafe " : string.Empty)}{@event.ReturnType} {source.HandlerName}.{Syntax.Escape(@event.HandlerName)}({Parameters(@event)})";
+
     // The explicit implementation of a handler method that raises the .NET event.
     private static MemberDeclarationSyntax RaiseEvent(Source source, Event @event)
     {
-        string signature = $"{@event.ReturnType} {source.HandlerName}.{Syntax.Escape(@event.HandlerName)}({Parameters(@event)})";
+        string signature = HandlerSignature(source, @event);
         string field = $"this.{Syntax.Escape(@event.Name)}";
         string arguments = Arguments(@event.Parameters);
-        var outs = @event.Parameters.Where(static p => p.Modifier == SyntaxKind.OutKeyword).ToList();
-        if (outs.Count == 0)
+        string defaults = @event.OutDefaults;
+        if (defaults.Length == 0)
         {
             return Syntax.Member(@event.IsVoid
                 ? $"{signature} => {field}?.Invoke({arguments});"
@@ -392,14 +436,13 @@ internal sealed partial class EventEmitter
         }
 
         string call = @event.IsVoid ? $"__handler({arguments}); return;" : $"return __handler({arguments});";
-        string defaults = string.Concat(outs.Select(static p => $"{p.Name} = default; "));
         return Syntax.Member($"{signature} {{ if ({field} is {{ }} __handler) {{ {call} }} {defaults}{(@event.IsVoid ? string.Empty : "return default;")} }}");
     }
 
     // The explicit implementation of a handler method that pushes the event arguments to the observable.
     private static MemberDeclarationSyntax PushEvent(Source source, Event @event)
     {
-        string signature = $"{@event.ReturnType} {source.HandlerName}.{Syntax.Escape(@event.HandlerName)}({Parameters(@event)})";
+        string signature = HandlerSignature(source, @event);
         string initializers = string.Join(", ", @event.Parameters
             .Where(static p => p.Modifier != SyntaxKind.OutKeyword)
             .Select(p => $"{PropertyName(@event, p)} = {p.Name}"));
@@ -481,29 +524,56 @@ internal sealed partial class EventEmitter
             .WithDocumentation("Passes the events raised through IDispatch::Invoke to the handler.");
     }
 
-    // Implements the vtable (and dual) event interface for the connection point.
+    // Implements the vtable (and dual) event interface for the connection point. A closed sink does not release the unique
+    // arguments of the events that it ignores: a managed source in the same process can call it directly, with objects of
+    // its own, which the sink cannot tell from those that the marshallers created.
     private ClassDeclarationSyntax EmitComSink(Source source)
     {
         string support = _context.Support;
+        // The gate of the connection is closed when the connection is disconnected: from then on the sink accepts the events
+        // without passing them on, also when the source has not been told yet, e.g. because it is busy or the call came from
+        // the wrong apartment. A handler is called only between TryEnter and Exit, so that the connection knows when no call
+        // runs any more.
+        // The sink implements the methods of the event interface with their names and parameters: a field named like a
+        // method would clash with it, and one named like a parameter would be hidden in its method, so the fields take
+        // other names then.
+        var names = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var @event in source.Events)
+        {
+            names.Add(SignatureBuilder.GetMethodName(@event.Method));
+            names.UnionWith(@event.Parameters.Select(static p => p.Name));
+        }
+
+        names.UnionWith(source.VtableGaps.Select(static slot => InterfaceEmitter.GetPlaceholderName(slot)));
+        string handlerField = Unique("__handler", names);
+        string gateField = Unique("__gate", names);
+        string dispatchField = Unique("__dispatch", names);
+
         var members = new List<MemberDeclarationSyntax>
         {
-            Syntax.Member($"private readonly {source.HandlerName} __handler;"),
+            Syntax.Member($"private readonly {source.HandlerName} {handlerField};"),
+            Syntax.Member($"private readonly {support}.EventGate {gateField};"),
         };
 
         if (source.IsDual)
         {
-            members.Add(Syntax.Member("private readonly DispatchHandler __dispatch;"));
-            members.Add(Syntax.Member($"public ComSink({source.HandlerName} handler) {{ __handler = handler; __dispatch = new DispatchHandler(handler); }}"));
+            members.Add(Syntax.Member($"private readonly DispatchHandler {dispatchField};"));
+            members.Add(Syntax.Member(
+                $"public ComSink({source.HandlerName} handler, {support}.EventGate gate) {{ {handlerField} = handler; {gateField} = gate; {dispatchField} = new DispatchHandler(handler); }}"));
         }
         else
         {
-            members.Add(Syntax.Member($"public ComSink({source.HandlerName} handler) {{ __handler = handler; }}"));
+            members.Add(Syntax.Member($"public ComSink({source.HandlerName} handler, {support}.EventGate gate) {{ {handlerField} = handler; {gateField} = gate; }}"));
         }
 
         foreach (var @event in source.Events)
         {
+            string call = $"{handlerField}.{Syntax.Escape(@event.HandlerName)}({Arguments(@event.Parameters)});";
+            string defaults = @event.OutDefaults;
+            string closed = @event.IsVoid ? $"{defaults}return;" : $"{defaults}return default;";
             members.Add(Syntax.Member(
-                $"public {@event.ReturnType} {Syntax.Escape(SignatureBuilder.GetMethodName(@event.Method))}({Parameters(@event)}) => __handler.{Syntax.Escape(@event.HandlerName)}({Arguments(@event.Parameters)});"));
+                $"public {@event.ReturnType} {Syntax.Escape(SignatureBuilder.GetMethodName(@event.Method))}({Parameters(@event)}) " +
+                $"{{ if (!{gateField}.TryEnter()) {{ {closed} }} try {{ {(@event.IsVoid ? string.Empty : "return ")}{call} }} finally {{ {gateField}.Exit(); }} }}"));
         }
 
         members.AddRange(source.VtableGaps.Select(static slot => Syntax.Member($"public int {InterfaceEmitter.GetPlaceholderName(slot)}() => {NotImplemented};")));
@@ -516,8 +586,8 @@ internal sealed partial class EventEmitter
             members.Add(Syntax.Member(
                 $"int {dispatch}.GetIDsOfNames(in global::System.Guid riid, char** rgszNames, uint cNames, uint lcid, int* rgDispId) {{ for (uint i = 0; i < cNames; i++) {{ rgDispId[i] = -1; }} return {UnknownName}; }}"));
             members.Add(Syntax.Member(
-                $"int {dispatch}.Invoke(int dispIdMember, in global::System.Guid riid, uint lcid, ushort wFlags, {support}.DispParams* pDispParams, {Syntax.MarshallingNamespace}.ComVariant* pVarResult, {support}.ExcepInfo* pExcepInfo, uint* puArgErr) => " +
-                $"{support}.DispatchEventSink.InvokeHandler(__dispatch, dispIdMember, pDispParams, pVarResult, pExcepInfo);"));
+                $"int {dispatch}.Invoke(int dispIdMember, in global::System.Guid riid, uint lcid, ushort wFlags, {support}.DispParams* pDispParams, {Syntax.MarshallingNamespace}.ComVariant* pVarResult, {support}.ExcepInfo* pExcepInfo, uint* puArgErr) " +
+                $"=> {support}.DispatchEventSink.InvokeHandler({gateField}, {dispatchField}, dispIdMember, pDispParams, pVarResult, pExcepInfo);"));
         }
 
         if (source.IsEnumerator)
@@ -543,18 +613,25 @@ internal sealed partial class EventEmitter
             .WithAttributeLists(SingletonList(Syntax.AttributeList(Syntax.Attribute($"{Syntax.MarshallingNamespace}.GeneratedComClass"))))
             .WithBaseList(BaseList(SingletonSeparatedList<BaseTypeSyntax>(SimpleBaseType(Syntax.Type(source.InterfaceName)))))
             .WithMembers(List(members))
-            .WithDocumentation($"Implements the {source.Definition.OriginalName} event interface and passes the events to the handler.");
+            .WithDocumentation($"Implements the {source.Definition.OriginalName} event interface and passes the events to the handler until the gate of its connection is closed.");
     }
 
+    // Reads an argument of IDispatch::Invoke as the type of the parameter of the vtable. An interface pointer that the vtable
+    // passes as a unique object is a unique object here too, so that the handler owns it whichever way the event is raised.
     private static string ReadArgument(SignatureParameter parameter, int index)
     {
         string position = index.ToString(CultureInfo.InvariantCulture);
-        if (IsDispatchWrapper(parameter.ValueType))
+        string typeName = parameter.TypeName;
+        if (TypeMapper.IsDispatchWrapper(parameter.ValueType))
         {
-            return $"arguments.GetWrapper<{parameter.TypeName.TrimEnd('?')}>({position})";
+            return $"arguments.{(parameter.IsUnique ? "GetUniqueWrapper" : "GetWrapper")}<{typeName.TrimEnd('?')}>({position})";
         }
 
-        string typeName = parameter.TypeName;
+        if (parameter.IsUnique)
+        {
+            return $"arguments.GetUnique<{typeName.TrimEnd('?')}>({position})";
+        }
+
         return typeName switch
         {
             _ when typeName.EndsWith("[]?", StringComparison.Ordinal) => $"arguments.GetArray<{typeName[..^3]}>({position})",
@@ -563,15 +640,6 @@ internal sealed partial class EventEmitter
             _ => $"arguments.Get<{typeName}>({position})",
         };
     }
-
-    private static bool IsDispatchWrapper(TypeReference type) => type switch
-    {
-        UserDefinedTypeReference { Definition: InterfaceDefinition { InterfaceKind: InterfaceKind.Dispatch } } => true,
-        UserDefinedTypeReference { Definition: AliasDefinition alias } => IsDispatchWrapper(alias.Target),
-        UserDefinedTypeReference { Definition: CoClassDefinition coClass } => coClass.DefaultInterface?.Interface is { } defaultInterface && IsDispatchWrapper(defaultInterface),
-        PointerTypeReference pointer => TypeMapper.IsInterfaceLike(pointer.ElementType) && IsDispatchWrapper(pointer.ElementType),
-        _ => false,
-    };
 
     private static string Parameters(Event @event) =>
         string.Join(", ", @event.Parameters.Select(static p => $"{Modifier(p)}{p.TypeName} {p.Name}"));
@@ -618,6 +686,12 @@ internal sealed partial class EventEmitter
         public string TypeName { get; init; } = string.Empty;
 
         public bool IsVoid => ReturnType == "void";
+
+        /// <summary>
+        /// The statements that assign <c>default</c> to the <c>out</c> parameters, for the paths that do not call a handler;
+        /// empty when there are none.
+        /// </summary>
+        public string OutDefaults => string.Concat(Parameters.Where(static p => p.Modifier == SyntaxKind.OutKeyword).Select(static p => $"{p.Name} = default; "));
 
         public bool HasPointers => ReturnType.EndsWith('*') || Parameters.Any(static p => p.TypeName.EndsWith('*'));
     }
