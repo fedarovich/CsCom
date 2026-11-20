@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using CsCom.CodeGeneration;
 using CsCom.Output;
 
@@ -518,7 +519,7 @@ public sealed class ProjectGeneratorTests
         });
 
         Assert.AreEqual(Path.Combine(directory, "Set.Interop.csproj"), project);
-        StringAssert.Contains(File.ReadAllText(project), "<RootNamespace>Interop.CsComTest</RootNamespace>");
+        StringAssert.Contains(File.ReadAllText(project), "<RootNamespace>Interop.Set.Interop</RootNamespace>");
         CollectionAssert.AreEquivalent(new[] { "Interop.CsComTest", "Drawing.Interop", "Ole.Interop" }, Directory.GetDirectories(generated).Select(Path.GetFileName).ToArray());
         Assert.IsTrue(File.Exists(Path.Combine(generated, "Interop.CsComTest", "IFigure.cs")));
         StringAssert.Contains(File.ReadAllText(Path.Combine(generated, "Drawing.Interop", "ICanvas.cs")), "global::Ole.Interop.Font? get_Font()");
@@ -550,17 +551,325 @@ public sealed class ProjectGeneratorTests
             Sources = [TestEnvironment.TestTypeLibrary, TestEnvironment.DrawingTypeLibrary],
             OutputDirectory = directory,
         }));
-        var @namespace = Assert.ThrowsExactly<CsComException>(() => _generator.CreateProject(new CreateProjectRequest
+        var configuration = Assert.ThrowsExactly<CsComException>(() => _generator.CreateProject(new CreateProjectRequest
         {
             Sources = [TestEnvironment.TestTypeLibrary, TestEnvironment.DrawingTypeLibrary],
             OutputDirectory = directory,
             Name = "Set.Interop",
-            Namespace = "Set.Interop",
+            ConfigurationPath = "cscom.xml",
         }));
 
         Assert.AreEqual("The name of the project or assembly must be specified when there are several sources.", name.Message);
-        StringAssert.StartsWith(@namespace.Message, "The namespace 'Set.Interop' cannot be used with several sources");
+        StringAssert.StartsWith(configuration.Message, "The configuration file 'cscom.xml' cannot be used with several sources");
         Assert.IsFalse(File.Exists(Path.Combine(directory, CsComManifest.FileName)));
+    }
+
+    [TestMethod]
+    public void GeneratesTheSupportCodeOfSeveralSourcesUnderTheirRootNamespace()
+    {
+        string directory = TestEnvironment.CreateDirectory("several-support");
+        string generated = Path.Combine(directory, "Generated");
+
+        string project = _generator.CreateProject(new CreateProjectRequest
+        {
+            Sources = [TestEnvironment.TestTypeLibrary, TestEnvironment.DrawingTypeLibrary],
+            OutputDirectory = directory,
+            Name = "Set",
+            SupportCode = SupportCodeMode.Internal,
+        });
+
+        StringAssert.Contains(File.ReadAllText(project), "<RootNamespace>Interop.Set</RootNamespace>");
+        StringAssert.Contains(File.ReadAllText(Path.Combine(generated, "Interop.Set.ComSupport", "IDispatch.cs")), "namespace Interop.Set.ComSupport;");
+        StringAssert.Contains(File.ReadAllText(Path.Combine(generated, "Interop.CsComDrawing", "ICanvas.cs")), ": global::Interop.Set.ComSupport.IDispatch");
+        Assert.IsFalse(Directory.Exists(Path.Combine(generated, "Interop.CsComTest.ComSupport")));
+        Assert.AreEqual("Interop.Set", CsComManifest.Read(directory).RootNamespace);
+
+        // The recorded root namespace is kept, unless another one is specified, which the project file gets too.
+        string text = File.ReadAllText(project);
+        _generator.UpdateProject(new UpdateProjectRequest { ProjectDirectory = directory });
+        Assert.IsTrue(File.Exists(Path.Combine(generated, "Interop.Set.ComSupport", "IDispatch.cs")));
+        Assert.AreEqual(text, File.ReadAllText(project));
+
+        _generator.UpdateProject(new UpdateProjectRequest { ProjectDirectory = directory, Namespace = "Set.Other" });
+        StringAssert.Contains(File.ReadAllText(Path.Combine(generated, "Set.Other.ComSupport", "IDispatch.cs")), "namespace Set.Other.ComSupport;");
+        Assert.IsFalse(Directory.Exists(Path.Combine(generated, "Interop.Set.ComSupport")));
+        Assert.AreEqual(text.Replace("<RootNamespace>Interop.Set</RootNamespace>", "<RootNamespace>Set.Other</RootNamespace>", StringComparison.Ordinal), File.ReadAllText(project));
+        Assert.AreEqual("Set.Other", CsComManifest.Read(directory).RootNamespace);
+    }
+
+    [TestMethod]
+    [DataRow("Set.Interop", "Interop.Set.Interop")]
+    [DataRow("Set-Interop", "Interop.Set_Interop")]
+    [DataRow("1Set.class", "Interop._1Set.class_")]
+    [DataRow("Interop.Set", "Interop.Set")]
+    [DataRow("Interop", "Interop")]
+    [DataRow("InteropSet", "Interop.InteropSet")]
+    public void DerivesTheRootNamespaceOfSeveralSourcesFromTheName(string name, string rootNamespace)
+    {
+        string directory = TestEnvironment.CreateDirectory("root-namespace");
+
+        string project = _generator.CreateProject(new CreateProjectRequest
+        {
+            Sources = [TestEnvironment.TestTypeLibrary, TestEnvironment.DrawingTypeLibrary],
+            OutputDirectory = directory,
+            Name = name,
+        });
+
+        Assert.AreEqual(rootNamespace, CsComManifest.Read(directory).RootNamespace);
+        StringAssert.Contains(File.ReadAllText(project), $"<RootNamespace>{rootNamespace}</RootNamespace>");
+    }
+
+    [TestMethod]
+    public void SetsTheRootNamespaceOfSeveralSourcesWithThePackage()
+    {
+        string directory = TestEnvironment.CreateDirectory("package-root-namespace");
+
+        string project = _generator.CreateProject(new CreateProjectRequest
+        {
+            Sources = [TestEnvironment.TestTypeLibrary, TestEnvironment.DrawingTypeLibrary],
+            OutputDirectory = directory,
+            Name = "Set.Interop",
+            Namespace = "Set.Root",
+        });
+
+        StringAssert.Contains(File.ReadAllText(project), "<RootNamespace>Set.Root</RootNamespace>");
+        Assert.AreEqual("Set.Root", CsComManifest.Read(directory).RootNamespace);
+        CollectionAssert.AreEquivalent(
+            new[] { "Interop.CsComTest", "Interop.CsComDrawing", "Interop.stdole" },
+            Directory.GetDirectories(Path.Combine(directory, "Generated")).Select(Path.GetFileName).ToArray());
+    }
+
+    [TestMethod]
+    public void GeneratesTheSupportCodeOfASingleSourceUnderItsNamespace()
+    {
+        string directory = TestEnvironment.CreateDirectory("single-support");
+        string generated = Path.Combine(directory, "Generated");
+
+        string project = _generator.CreateProject(new CreateProjectRequest
+        {
+            Sources = [TestEnvironment.TestTypeLibrary],
+            OutputDirectory = directory,
+            Name = "My.Project",
+            Namespace = "My.Interop",
+            SupportCode = SupportCodeMode.Public,
+        });
+
+        StringAssert.Contains(File.ReadAllText(project), "<RootNamespace>My.Interop</RootNamespace>");
+        Assert.IsTrue(File.Exists(Path.Combine(generated, "My.Interop.ComSupport", "IDispatch.cs")));
+        Assert.IsNull(CsComManifest.Read(directory).RootNamespace);
+        Assert.IsFalse(File.ReadAllText(Path.Combine(directory, CsComManifest.FileName)).Contains("rootNamespace", StringComparison.Ordinal));
+
+        // A new namespace of the single source is its root namespace too.
+        _generator.UpdateProject(new UpdateProjectRequest { ProjectDirectory = directory, Namespace = "My.Other" });
+        StringAssert.Contains(File.ReadAllText(project), "<RootNamespace>My.Other</RootNamespace>");
+        Assert.IsTrue(File.Exists(Path.Combine(generated, "My.Other.ComSupport", "IDispatch.cs")));
+        Assert.IsNull(CsComManifest.Read(directory).RootNamespace);
+    }
+
+    [TestMethod]
+    public void KeepsTheSupportNamespaceOfProjectsOfEarlierVersions()
+    {
+        // Earlier versions generated the support code of several sources into the namespace of the first one, and did not
+        // record it.
+        string directory = TestEnvironment.CreateDirectory("earlier-support");
+        File.WriteAllText(Path.Combine(directory, CsComManifest.FileName), $$"""
+            {
+              "toolVersion": "3.0.0",
+              "sources": [ "{{TestEnvironment.TestTypeLibrary.Replace(@"\", @"\\", StringComparison.Ordinal)}}", "{{TestEnvironment.DrawingTypeLibrary.Replace(@"\", @"\\", StringComparison.Ordinal)}}" ],
+              "name": "Set.Interop",
+              "targetFrameworks": [ "net10.0-windows" ],
+              "languageVersion": 14,
+              "supportCode": "internal"
+            }
+            """);
+
+        string project = Path.Combine(directory, "Set.Interop.csproj");
+        File.WriteAllText(project, "<Project Sdk=\"Microsoft.NET.Sdk\">\r\n  <PropertyGroup>\r\n    <RootNamespace>Interop.CsComTest</RootNamespace>\r\n  </PropertyGroup>\r\n</Project>\r\n");
+        string generated = Path.Combine(directory, "Generated");
+
+        // The first update records the namespace of the first source, which a later change of the order of the sources keeps.
+        _generator.UpdateProject(new UpdateProjectRequest { ProjectDirectory = directory });
+        StringAssert.Contains(File.ReadAllText(Path.Combine(generated, "Interop.CsComTest.ComSupport", "IDispatch.cs")), "namespace Interop.CsComTest.ComSupport;");
+        Assert.AreEqual("Interop.CsComTest", CsComManifest.Read(directory).RootNamespace);
+
+        _generator.UpdateProject(new UpdateProjectRequest { ProjectDirectory = directory, Sources = [TestEnvironment.DrawingTypeLibrary, TestEnvironment.TestTypeLibrary] });
+        Assert.IsTrue(File.Exists(Path.Combine(generated, "Interop.CsComTest.ComSupport", "IDispatch.cs")));
+        Assert.IsFalse(Directory.Exists(Path.Combine(generated, "Interop.CsComDrawing.ComSupport")));
+        StringAssert.Contains(File.ReadAllText(project), "<RootNamespace>Interop.CsComTest</RootNamespace>");
+
+        // A root namespace moves it, and the project file gets it.
+        _generator.UpdateProject(new UpdateProjectRequest { ProjectDirectory = directory, Namespace = "Set.Root" });
+        Assert.IsTrue(File.Exists(Path.Combine(generated, "Set.Root.ComSupport", "IDispatch.cs")));
+        Assert.IsFalse(Directory.Exists(Path.Combine(generated, "Interop.CsComTest.ComSupport")));
+        Assert.AreEqual("Set.Root", CsComManifest.Read(directory).RootNamespace);
+        StringAssert.Contains(File.ReadAllText(project), "<RootNamespace>Set.Root</RootNamespace>");
+    }
+
+    [TestMethod]
+    public void KeepsTheRootNamespaceWhenTheNumberOfSourcesChanges()
+    {
+        string directory = TestEnvironment.CreateDirectory("root-namespace-sources");
+        string generated = Path.Combine(directory, "Generated");
+        string project = _generator.CreateProject(new CreateProjectRequest
+        {
+            Sources = [TestEnvironment.TestTypeLibrary, TestEnvironment.DrawingTypeLibrary],
+            OutputDirectory = directory,
+            Name = "Set",
+            SupportCode = SupportCodeMode.Internal,
+        });
+        string text = File.ReadAllText(project);
+
+        // Other sources keep it.
+        _generator.UpdateProject(new UpdateProjectRequest { ProjectDirectory = directory, Sources = [TestEnvironment.StdOle, TestEnvironment.DrawingTypeLibrary] });
+        Assert.IsTrue(File.Exists(Path.Combine(generated, "Interop.Set.ComSupport", "IDispatch.cs")));
+        Assert.IsFalse(Directory.Exists(Path.Combine(generated, "Interop.stdole.ComSupport")));
+        Assert.AreEqual("Interop.Set", CsComManifest.Read(directory).RootNamespace);
+
+        // A single source keeps the root namespace of several sources, so that the support code does not move.
+        _generator.UpdateProject(new UpdateProjectRequest { ProjectDirectory = directory, Sources = [TestEnvironment.TestTypeLibrary] });
+        Assert.IsTrue(File.Exists(Path.Combine(generated, "Interop.Set.ComSupport", "IDispatch.cs")));
+        Assert.IsTrue(File.Exists(Path.Combine(generated, "Interop.CsComTest", "IShape.cs")));
+        Assert.AreEqual("Interop.Set", CsComManifest.Read(directory).RootNamespace);
+        Assert.AreEqual(text, File.ReadAllText(project));
+
+        // The namespace of its library leaves it too.
+        _generator.UpdateProject(new UpdateProjectRequest { ProjectDirectory = directory, Namespaces = new Dictionary<string, string> { ["CsComTest"] = "My.Lib" } });
+        Assert.IsTrue(File.Exists(Path.Combine(generated, "My.Lib", "IShape.cs")));
+        Assert.IsTrue(File.Exists(Path.Combine(generated, "Interop.Set.ComSupport", "IDispatch.cs")));
+        Assert.AreEqual("Interop.Set", CsComManifest.Read(directory).RootNamespace);
+        Assert.AreEqual(text, File.ReadAllText(project));
+
+        // Its namespace makes it its root namespace again.
+        _generator.UpdateProject(new UpdateProjectRequest { ProjectDirectory = directory, Namespace = "My.Interop" });
+        Assert.IsTrue(File.Exists(Path.Combine(generated, "My.Interop", "IShape.cs")));
+        Assert.IsTrue(File.Exists(Path.Combine(generated, "My.Interop.ComSupport", "IDispatch.cs")));
+        Assert.IsFalse(Directory.Exists(Path.Combine(generated, "Interop.Set.ComSupport")));
+        Assert.IsNull(CsComManifest.Read(directory).RootNamespace);
+        StringAssert.Contains(File.ReadAllText(project), "<RootNamespace>My.Interop</RootNamespace>");
+
+        // Several sources without a recorded root namespace keep the namespace of the first source, and record it.
+        _generator.UpdateProject(new UpdateProjectRequest { ProjectDirectory = directory, Sources = [TestEnvironment.TestTypeLibrary, TestEnvironment.DrawingTypeLibrary] });
+        Assert.IsTrue(File.Exists(Path.Combine(generated, "My.Interop.ComSupport", "IDispatch.cs")));
+        Assert.AreEqual("My.Interop", CsComManifest.Read(directory).RootNamespace);
+        StringAssert.Contains(File.ReadAllText(project), "<RootNamespace>My.Interop</RootNamespace>");
+    }
+
+    [TestMethod]
+    public void DoesNotAddTheRootNamespaceToAProjectFileWithout()
+    {
+        string directory = TestEnvironment.CreateDirectory("root-namespace-removed");
+        string project = _generator.CreateProject(new CreateProjectRequest
+        {
+            Sources = [TestEnvironment.TestTypeLibrary, TestEnvironment.DrawingTypeLibrary],
+            OutputDirectory = directory,
+            Name = "Set",
+            SupportCode = SupportCodeMode.Internal,
+        });
+
+        // The owner removed RootNamespace to use the name of the project, as the update leaves a removed LangVersion alone.
+        string text = File.ReadAllText(project);
+        string removed = Regex.Replace(text, @"^\s*<RootNamespace>Interop\.Set</RootNamespace>\r?\n", string.Empty, RegexOptions.Multiline);
+        Assert.AreNotEqual(text, removed);
+        File.WriteAllText(project, removed);
+
+        _generator.UpdateProject(new UpdateProjectRequest { ProjectDirectory = directory, Namespace = "Set.Root" });
+
+        Assert.AreEqual(removed, File.ReadAllText(project));
+        Assert.IsTrue(File.Exists(Path.Combine(directory, "Generated", "Set.Root.ComSupport", "IDispatch.cs")));
+        Assert.AreEqual("Set.Root", CsComManifest.Read(directory).RootNamespace);
+    }
+
+    [TestMethod]
+    public void RecordsTheRootNamespaceOfEarlierVersionsWithThePackage()
+    {
+        string directory = TestEnvironment.CreateDirectory("earlier-package");
+        File.WriteAllText(Path.Combine(directory, CsComManifest.FileName), $$"""
+            {
+              "toolVersion": "3.0.0",
+              "sources": [ "{{TestEnvironment.TestTypeLibrary.Replace(@"\", @"\\", StringComparison.Ordinal)}}", "{{TestEnvironment.DrawingTypeLibrary.Replace(@"\", @"\\", StringComparison.Ordinal)}}" ],
+              "name": "Set.Interop",
+              "targetFrameworks": [ "net10.0-windows" ],
+              "languageVersion": 14,
+              "supportCode": "package"
+            }
+            """);
+
+        _generator.UpdateProject(new UpdateProjectRequest { ProjectDirectory = directory });
+
+        Assert.AreEqual("Interop.CsComTest", CsComManifest.Read(directory).RootNamespace);
+        Assert.IsFalse(Directory.EnumerateDirectories(Path.Combine(directory, "Generated"), "*.ComSupport").Any());
+    }
+
+    [TestMethod]
+    public void RejectsARootNamespaceThatIsAGeneratedType()
+    {
+        string directory = TestEnvironment.CreateDirectory("root-namespace-type");
+
+        // The support code would declare Interop.CsComTest.IShape, an interface of CsComTest.
+        var exception = Assert.ThrowsExactly<CsComException>(() => _generator.CreateProject(new CreateProjectRequest
+        {
+            Sources = [TestEnvironment.TestTypeLibrary, TestEnvironment.DrawingTypeLibrary],
+            OutputDirectory = directory,
+            Name = "CsComTest.IShape",
+            SupportCode = SupportCodeMode.Internal,
+        }));
+        Assert.AreEqual("The namespace 'Interop.CsComTest.IShape.ComSupport' cannot be generated: 'Interop.CsComTest.IShape' is a type of 'CsComTest'.", exception.Message);
+        Assert.IsFalse(File.Exists(Path.Combine(directory, CsComManifest.FileName)));
+
+        // With the package, the root namespace is only that of the project file.
+        string project = _generator.CreateProject(new CreateProjectRequest
+        {
+            Sources = [TestEnvironment.TestTypeLibrary, TestEnvironment.DrawingTypeLibrary],
+            OutputDirectory = directory,
+            Name = "CsComTest.IShape",
+        });
+        StringAssert.Contains(File.ReadAllText(project), "<RootNamespace>Interop.CsComTest.IShape</RootNamespace>");
+    }
+
+    [TestMethod]
+    public void RejectsAnInvalidRootNamespaceBeforeWriting()
+    {
+        string directory = TestEnvironment.CreateDirectory("invalid-root-namespace");
+
+        var create = Assert.ThrowsExactly<CsComException>(() => _generator.CreateProject(new CreateProjectRequest
+        {
+            Sources = [TestEnvironment.TestTypeLibrary, TestEnvironment.DrawingTypeLibrary],
+            OutputDirectory = directory,
+            Name = "Set",
+            Namespace = "Set.class",
+        }));
+        Assert.AreEqual("'Set.class' is not a valid namespace.", create.Message);
+        Assert.IsFalse(File.Exists(Path.Combine(directory, CsComManifest.FileName)));
+
+        // A recorded root namespace that was edited is checked too, before the generated files are replaced.
+        _generator.CreateProject(new CreateProjectRequest
+        {
+            Sources = [TestEnvironment.TestTypeLibrary, TestEnvironment.DrawingTypeLibrary],
+            OutputDirectory = directory,
+            Name = "Set",
+        });
+        string manifest = Path.Combine(directory, CsComManifest.FileName);
+        File.WriteAllText(manifest, File.ReadAllText(manifest).Replace("\"rootNamespace\": \"Interop.Set\"", "\"rootNamespace\": \"Set..Root\"", StringComparison.Ordinal));
+        var update = Assert.ThrowsExactly<CsComException>(() => _generator.UpdateProject(new UpdateProjectRequest { ProjectDirectory = directory }));
+        Assert.AreEqual("'Set..Root' is not a valid namespace.", update.Message);
+        Assert.IsTrue(File.Exists(Path.Combine(directory, "Generated", "Interop.CsComTest", "IShape.cs")));
+    }
+
+    [TestMethod]
+    public void GeneratesAssembliesOfSeveralSourcesUnderTheirRootNamespace()
+    {
+        // assembly build and assembly pack write the project of this result into a temporary directory.
+        var generated = _generator.Generate(new BuildAssemblyRequest
+        {
+            Sources = [TestEnvironment.TestTypeLibrary, TestEnvironment.DrawingTypeLibrary],
+            Name = "Set.Interop",
+            Namespace = "Set.Root",
+            SupportCode = SupportCodeMode.Internal,
+        });
+
+        Assert.AreEqual("Set.Root", generated.RootNamespace);
+        Assert.AreEqual("Set.Root", generated.Manifest.RootNamespace);
+        Assert.IsTrue(generated.Documents.Any(static d => d.RelativePath == "Set.Root.ComSupport/IDispatch.cs"));
     }
 
     [TestMethod]

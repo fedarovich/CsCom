@@ -200,4 +200,17 @@ public sealed class TransformerTests
     {
         Assert.AreEqual(expected, NameSanitizer.ToIdentifier(name));
     }
+
+    [TestMethod]
+    [DataRow("Valid", "Valid")]
+    [DataRow("class", "class_")]
+    [DataRow("event", "event_")]
+    [DataRow("Class", "Class")]
+    [DataRow("1abc", "_1abc")]
+    [DataRow("a.b", "a_b")]
+    [DataRow("", "_")]
+    public void ToNamespacePartProducesValidNamespaceParts(string name, string expected)
+    {
+        Assert.AreEqual(expected, NameSanitizer.ToNamespacePart(name));
+    }
 }

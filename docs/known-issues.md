@@ -378,3 +378,133 @@ know whether its enumerator is unique, after `BuildComMethod` has mapped it for 
 **Why it is not fixed:** it costs one more mapping per collection interface when the code is generated. Reading the
 marshalling of the return value directly would repeat the decision of the mapper, and reusing the mapping of
 `BuildComMethod` would pass it through the emitter for no measurable gain.
+
+### `InteropPipeline.GenerateCode` does not reject a namespace that is a generated type
+
+`LibrarySetGenerator.Generate`, which the commands and CsCom.Build use, rejects a namespace of the generated code that is
+also the full name of a generated type (`ValidateDeclarations`), e.g. the support code in
+`Interop.Scripting.Dictionary.ComSupport` next to the coclass `Interop.Scripting.Dictionary`. `GenerateCode`, which
+generates a single library with the types that it imports in nested namespaces, does not: e.g. a library with a type
+named like a library that it imports, whose types get a nested namespace of the same name, does not compile (CS0101).
+
+**Why it is not fixed:** the tool and CsCom.Build generate every library through `LibrarySetGenerator`; `GenerateCode`
+is the API of a single library, which the tests use.
+
+**A fix** would run the same check on the documents of `GenerateCode`.
+
+## Projects
+
+### The project file keeps its `RootNamespace` when the root namespace changes otherwise (intended)
+
+`project update` sets the `RootNamespace` of the project file only for `--namespace` without a library name
+(`ProjectGenerator.UpdateProject`, `ProjectFile.Update`). The root namespace, under which the support code is generated,
+can change otherwise: `--namespace LIBRARY=NAMESPACE` changes the namespace of a single source, which is its root
+namespace unless the project kept the root namespace of several sources, and a single source that gets more sources
+records the namespace of its new first source (see below). The support code then moves, and the project file keeps the
+root namespace that it had. A project file without `RootNamespace` does not get one, also not with `--namespace`, as
+a project file without `LangVersion` does not get one with `--csharp-version` (`ProjectFile.SetProperty`).
+
+**Why it is intended:** the owner of the project can have changed `RootNamespace`, as `LangVersion`, which the update
+only sets with `--csharp-version`, or removed it to use the default, the name of the project. The generated code names
+the support code with `global::`, so `RootNamespace` only gives the namespace of new files and the names of embedded
+resources. Setting it whenever the root namespace changes would need the root namespace that it replaces, which the
+manifest does not record for a single source, and would replace the value of the owner.
+
+**Documented** in the README, `project update` (`RootNamespace` only with `--namespace` without a library name, and
+not added to a project file without it).
+
+### A project without a recorded root namespace takes the namespace of its new first source
+
+`cscom.json` records no root namespace in two kinds of projects:
+- a project of a single source, whose root namespace is its namespace, unless the project kept the root namespace of
+  several sources, which it keeps then too;
+- a project of several sources of an earlier version, whose support code is in the namespace of its first source.
+
+When `project update` generates several sources for such a project, it keeps the namespace of the first of them as the
+root namespace and records it (`ProjectGenerator.Generate`). The first source is that of this update, so the support code
+moves to the namespace of another library, and the code that uses it no longer compiles, when the update:
+- gives a single source more sources, and the original source is not listed first;
+- replaces or reorders the sources of a project of an earlier version, so that another source is first;
+- changes the namespace of the first library, e.g. `--ns FIRST=Other.Namespace`;
+- gives a single source of a project of an earlier version more sources, which drops its namespace (see below).
+
+From then on, the recorded root namespace is kept.
+
+**Why it is not fixed:** the update cannot tell which of the new sources is the original one, or which namespace the
+support code is in. The manifest records the source as it was given, a file, a LIBID or a ProgID, each of which another
+of them can name, and the namespace of its library only when it was specified. Reading the recorded first source would
+tell its library, but it may be gone, which is often why it is replaced. The namespace of the first source is what
+earlier versions used, so an update that keeps the first source and its namespace keeps the support code. List the
+original source first and keep its namespace on that update, or set the root namespace with `--namespace`.
+
+**A fix** would keep the namespace that the generated support code already declares, in `IDispatch.cs` of its folder or
+in the namespace block of the single file, and fall back to the first source when there is none. Recording the root
+namespace of a single source too, at each generation, and replacing it when the namespace of the source changes, would
+cover the projects of a single source, but not those of earlier versions.
+
+**Documented** in the README, `project update`.
+
+### A project of a single source of an earlier version loses the namespace and the configuration file of its source when sources are added
+
+The `cscom.json` of a project of a single source of an earlier version records the namespace and the configuration file
+of its source in `namespace` and `configuration`, which `project update` applies only while there is one source
+(`ProjectGenerator.UpdateProject`). An update without `Source` arguments records them by the name of the library, and
+later updates keep them, also with more sources. A first update that gives the project more sources drops them, also when
+the original source is listed first: the library is generated into `Interop.<Library>` without its configuration file,
+its support code moves with it, and the update records that namespace as the root namespace, so the code that uses them
+no longer compiles.
+
+**Why it is not fixed:** the values are not recorded by library, and the library of the source is only known once it is
+read. The sources as they are given, a file, a LIBID or a ProgID, cannot be matched with the recorded one reliably, and
+the conversion happens once. Update the project once without `Source` arguments, then add the sources.
+
+**A fix** would read the recorded source first and record its namespace and configuration file under the name of its
+library, unless the update sets them, or reject the update and name the remedy.
+
+**Documented** in the README, `project update`.
+
+### An earlier version of the tool drops the root namespace of a project
+
+`cscom.json` is read with System.Text.Json, which skips the properties that it does not know (`CsComManifest.Read`). The
+versions up to 4.0.0-rc.1 do not know `rootNamespace`. When one of them updates a project of a later version that records
+one, of several sources or of a single source that kept the root namespace of several, it generates the support code
+into the namespace of the first source, or of the single one, e.g. `Interop.Excel.ComSupport` instead of
+`Interop.Office.ComSupport`, and writes `cscom.json` without the root namespace. The next update with a later version
+then records the namespace of the first of several sources, as for a project of an earlier version (see above), and
+leaves the support code of a single source in its namespace.
+
+**Why it is not fixed:** the released versions cannot be changed. A check of the version that wrote `cscom.json` would
+only protect from the versions after the one that adds it, and the version of local builds, 0.1.0, would have to be
+told apart. Pin the version of the tool in a tool manifest (`dotnet new tool-manifest`, `dotnet tool install CsCom`), so
+that everyone updates the project with the same version, or restore the root namespace with `--namespace`.
+
+**A fix** in a later version would warn about, or refuse, a `cscom.json` that a later version wrote.
+
+**Documented** in the README, `project update`.
+
+### With a single source, `--namespace` also replaces a root namespace kept from several sources (intended)
+
+A project that went from several sources to one keeps their root namespace, under which its support code stays
+(`ProjectGenerator.UpdateProject`). `--namespace` without a library name is the namespace of its source then, which
+becomes its root namespace again: the recorded one is removed, and the types of the library and the support code move
+into it. `project update --namespace <the kept root namespace>`, meant to confirm it, moves the types of the library.
+A single source cannot get a root namespace of its own that differs from its namespace.
+
+**Why it is intended:** the kept root namespace needs no confirmation, since every update keeps it. With a single
+source, `--namespace` is the namespace of the source, as in every project of a single source; a second meaning for the
+projects that once had several sources would make the same command do different things after the history of the
+project. `rootNamespace` in `cscom.json` can be edited to set another root namespace, which the update validates.
+
+**Documented** in the README, `project update`.
+
+### A namespace without a library name is taken as it is (intended)
+
+The parts of a `LIBRARY=VALUE` of `--namespace` and `--config` are trimmed, but a value without a library name is not
+(`CommandLine.GetLibraryValues`): `--namespace " Office"` is the namespace ` Office`, which is reported as not valid,
+also as the root namespace of several sources. `reference add` trims it, since CsCom.Build trims the metadata of its items.
+
+**Why it is intended:** the split at `=` leaves the spaces around it, which a value without a library name only has when
+it is quoted with them. The same parsing serves `--config`, where trimming `"  "` would make it the empty value that
+removes all the configuration files of a project on update. The error names the value in quotes, which shows the spaces.
+
+**Documented** at `GetLibraryValues`.

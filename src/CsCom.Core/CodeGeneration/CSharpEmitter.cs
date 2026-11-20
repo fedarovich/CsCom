@@ -77,7 +77,7 @@ public sealed class CSharpEmitter
                 continue;
             }
 
-            string folder = scope is not null || type.ImportedFrom is null ? string.Empty : NameSanitizer.ToIdentifier(type.ImportedFrom.Name) + "/";
+            string folder = scope is not null || type.ImportedFrom is null ? string.Empty : NameSanitizer.ToNamespacePart(type.ImportedFrom.Name) + "/";
             units.Add(new Unit(UniquePath(folder + type.Name, paths), @namespace, members, default, null));
         }
 

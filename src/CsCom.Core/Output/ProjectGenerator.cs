@@ -1,6 +1,7 @@
 using System.Globalization;
 using CsCom.CodeGeneration;
 using CsCom.LibrarySets;
+using CsCom.Transformations;
 using CsCom.TypeLibraries;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.Extensions.Logging;
@@ -73,7 +74,14 @@ public sealed partial class ProjectGenerator
             throw new CsComException($"'{Path.Combine(directory, CsComManifest.FileName)}' does not record the sources of the project.");
         }
 
-        ValidateSingleSourceOptions(sources.Count, request.Namespace, string.IsNullOrEmpty(request.ConfigurationPath) ? null : request.ConfigurationPath);
+        ValidateSingleSourceConfiguration(sources.Count, string.IsNullOrEmpty(request.ConfigurationPath) ? null : request.ConfigurationPath);
+
+        // A namespace without a library name is the root namespace of several sources, or the namespace of a single source,
+        // which is then its root namespace again. Otherwise the recorded root namespace is kept, also when the order or the
+        // number of the sources changes, so that the support code does not move and the code that uses it still compiles;
+        // Generate records the root namespace of the projects of several sources that have none (see there).
+        string? rootNamespace = request.Namespace is null ? manifest.RootNamespace : sources.Count > 1 ? request.Namespace : null;
+
         int languageVersion = ValidateLanguageVersion(request.LanguageVersion ?? manifest.LanguageVersion, manifest.TargetFrameworks);
         IReadOnlyList<string>? referencePaths = request.ReferencePaths switch
         {
@@ -108,6 +116,7 @@ public sealed partial class ProjectGenerator
             ToolVersion = ToolInfo.Version,
             LanguageVersion = languageVersion,
             SingleFile = request.SingleFile ?? manifest.SingleFile,
+            RootNamespace = rootNamespace,
             Marshalling = request.Marshalling.Apply(manifest.Marshalling),
             EventStyle = request.EventStyle ?? manifest.EventStyle,
             StructProperties = request.StructProperties ?? manifest.StructProperties,
@@ -124,7 +133,12 @@ public sealed partial class ProjectGenerator
         {
             LogProjectFileNotFound(directory);
         }
-        else if (ProjectFile.Update(projectPath, request.LanguageVersion is null ? null : languageVersion, ToolInfo.Version, settings.IsDynamic))
+        else if (ProjectFile.Update(
+            projectPath,
+            request.LanguageVersion is null ? null : languageVersion,
+            ToolInfo.Version,
+            settings.IsDynamic,
+            request.Namespace is null ? null : generated.RootNamespace))
         {
             LogProjectFileUpdated(projectPath);
         }
@@ -236,11 +250,15 @@ public sealed partial class ProjectGenerator
             throw new CsComException("The name of the project or assembly must be specified when there are several sources.");
         }
 
-        ValidateSingleSourceOptions(request.Sources.Count, request.Namespace, string.IsNullOrEmpty(request.ConfigurationPath) ? null : request.ConfigurationPath);
+        ValidateSingleSourceConfiguration(request.Sources.Count, string.IsNullOrEmpty(request.ConfigurationPath) ? null : request.ConfigurationPath);
         if (request.Name is not null)
         {
             ValidateName(request.Name);
         }
+
+        // The root namespace of several sources, under which their support code is generated, belongs to all of them, so it
+        // is named after the project rather than the first source; a single source is the root namespace itself.
+        string? rootNamespace = request.Sources.Count > 1 ? request.Namespace ?? ToRootNamespace(request.Name!) : null;
 
         var targetFrameworks = request.TargetFrameworks.Count > 0
             ? request.TargetFrameworks.Distinct(StringComparer.OrdinalIgnoreCase).ToList()
@@ -269,6 +287,7 @@ public sealed partial class ProjectGenerator
             LanguageVersion = languageVersion,
             SingleFile = request.SingleFile,
             SupportCode = request.SupportCode,
+            RootNamespace = rootNamespace,
             Marshalling = request.Marshalling,
             EventStyle = request.EventStyle,
             StructProperties = request.StructProperties,
@@ -288,10 +307,18 @@ public sealed partial class ProjectGenerator
         Dictionary<string, string> configurations,
         string? name)
     {
+        // The root namespace of a request, or the recorded one, which can have been edited, is checked before the libraries
+        // are read and anything is written.
+        if (settings.RootNamespace is { } rootNamespace)
+        {
+            ValidateNamespace(rootNamespace);
+        }
+
         var options = new LibrarySetOptions
         {
             LanguageVersion = settings.LanguageVersion,
             SupportCode = settings.SupportCode,
+            SupportNamespace = settings.RootNamespace is null ? null : settings.RootNamespace + ".ComSupport",
             Marshalling = settings.Marshalling,
             EventStyle = settings.EventStyle,
             StructProperties = settings.StructProperties,
@@ -316,9 +343,14 @@ public sealed partial class ProjectGenerator
             configurations[first.Name] = configuration;
         }
 
+        // Several sources without a root namespace, those of a project of an earlier version or of a single source that got
+        // more, keep the namespace of their first source, as earlier versions did, which is recorded from now on: a later
+        // change of the order of the sources does not move the support code then. The support code was generated into
+        // that namespace, the default of LibrarySetOptions.SupportNamespace.
         var manifest = settings with
         {
             Name = name,
+            RootNamespace = settings.RootNamespace ?? (references.Count > 1 ? first.Namespace : null),
             Sources = [.. references.Select(static r => TypeLibrarySource.Normalize(r.Source))],
             TypeLibrary = null,
             Namespace = null,
@@ -327,7 +359,7 @@ public sealed partial class ProjectGenerator
             Configurations = ToLibraryNames(configurations, result.Libraries),
         };
         var documents = settings.SingleFile ? [result.Documents.Single() with { RelativePath = name + ".cs" }] : result.Documents;
-        return new GeneratedProject(manifest, documents, first.Namespace, result);
+        return new GeneratedProject(manifest, documents, manifest.RootNamespace ?? first.Namespace, result);
     }
 
     private static List<LibrarySetReference> CreateReferences(IReadOnlyList<string> sources, IReadOnlyList<string> referencePaths, string? @namespace, string? configuration) =>
@@ -370,19 +402,27 @@ public sealed partial class ProjectGenerator
             static pair => pair.Value,
             StringComparer.OrdinalIgnoreCase);
 
-    private static void ValidateSingleSourceOptions(int sourceCount, string? @namespace, string? configuration)
+    // A configuration file without a library name applies to a single source; a namespace without a library name is valid
+    // with several sources too, as their root namespace.
+    private static void ValidateSingleSourceConfiguration(int sourceCount, string? configuration)
     {
-        if (sourceCount > 1 && @namespace is not null)
-        {
-            throw new CsComException(
-                $"The namespace '{@namespace}' cannot be used with several sources: specify the namespaces of the libraries by their names, e.g. Excel=Office.Excel.");
-        }
-
         if (sourceCount > 1 && configuration is not null)
         {
             throw new CsComException(
                 $"The configuration file '{configuration}' cannot be used with several sources: specify the configuration files of the libraries by their names, e.g. Excel=excel.cscom.xml.");
         }
+    }
+
+    // Interop.<Name>, like the Interop.<Library> of a single source, with the parts of the name made valid like those of the
+    // namespaces of the libraries, e.g. Interop.Office_Interop for Office-Interop. A name whose first part is Interop, e.g.
+    // Interop.Office or Interop, gets no second prefix. The prefix is compared in its case, as namespaces are:
+    // interop.Office is another namespace, which gets the prefix, rather than a root namespace that differs from Interop
+    // only in case.
+    private static string ToRootNamespace(string name)
+    {
+        string[] parts = [.. name.Split('.').Select(NameSanitizer.ToNamespacePart)];
+        string @namespace = string.Join('.', parts);
+        return parts[0] == "Interop" ? @namespace : "Interop." + @namespace;
     }
 
     private static void ValidateName(string name)
@@ -491,6 +531,7 @@ public sealed partial class ProjectGenerator
 }
 
 /// <summary>
-/// The code of a new or updated project: the settings, the generated files and the root namespace, the namespace of the first source.
+/// The code of a new or updated project: the settings, the generated files and the root namespace, which is
+/// <see cref="CsComManifest.RootNamespace"/>, or the namespace of the single source when none is recorded.
 /// </summary>
 internal sealed record GeneratedProject(CsComManifest Manifest, IReadOnlyList<GeneratedDocument> Documents, string RootNamespace, LibrarySetResult Result);

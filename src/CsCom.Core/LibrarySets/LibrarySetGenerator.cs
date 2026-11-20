@@ -68,6 +68,7 @@ public sealed partial class LibrarySetGenerator
 
         var eventSources = EventEmitter.GetEventSources(set.Libraries.SelectMany(static l => l.Entry.Library.Types));
         var documents = new List<GeneratedDocument>();
+        var declarations = new List<(GeneratedDocument Document, string Library)>();
         for (int i = 0; i < set.Libraries.Count; i++)
         {
             var (entry, codeOptions) = set.Libraries[i];
@@ -78,10 +79,13 @@ public sealed partial class LibrarySetGenerator
                 string path = options.SingleFile ? document.RelativePath
                     : document.RelativePath.StartsWith(SupportCodeFolder, StringComparison.Ordinal) ? $"{set.SupportNamespace}/{document.RelativePath[SupportCodeFolder.Length..]}"
                     : $"{entry.Namespace}/{document.RelativePath}";
-                documents.Add(document with { RelativePath = path });
+                var generated = document with { RelativePath = path };
+                documents.Add(generated);
+                declarations.Add((generated, entry.Library.Name));
             }
         }
 
+        ValidateDeclarations(declarations, options.SupportCode == SupportCodeMode.Package ? null : set.SupportNamespace);
         if (options.SingleFile)
         {
             documents = [MergeSingleFile(documents, options, set.Libraries.Select(static l => l.Entry.Library))];
@@ -240,6 +244,65 @@ public sealed partial class LibrarySetGenerator
         }
 
         return dictionary;
+    }
+
+    // A namespace of the generated code that is also the full name of a generated type does not compile (CS0101), e.g. the
+    // support code in Interop.Scripting.Dictionary.ComSupport next to the coclass Interop.Scripting.Dictionary, or the
+    // namespace of a library named like a type of another library. The emitted code is checked, after the syntax
+    // transformers, because the emitters add types that the models do not have, e.g. the extension classes, the sinks and
+    // the arguments of their events, and the transformers can rename and remove types. Only the types without type parameters
+    // count: as for the compiler, a generic type and a namespace of the same name coexist. The documents are in the order of
+    // the libraries, so the first conflict is reported whatever the order of the collections.
+    internal static void ValidateDeclarations(IReadOnlyList<(GeneratedDocument Document, string Library)> declarations, string? supportNamespace)
+    {
+        var types = new Dictionary<string, string>(StringComparer.Ordinal);
+        var namespaces = new List<string>();
+        var declared = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var (document, library) in declarations)
+        {
+            Collect(document.Root.Members, null, library);
+        }
+
+        foreach (string @namespace in namespaces)
+        {
+            // The namespace itself and the namespaces that contain it, e.g. A.B.C, A.B and A.
+            for (int end = @namespace.Length; end > 0; end = @namespace.LastIndexOf('.', end - 1))
+            {
+                string prefix = @namespace[..end];
+                if (types.TryGetValue(prefix, out string? owner))
+                {
+                    throw new CsComException($"The namespace '{@namespace}' cannot be generated: '{prefix}' is a type of {owner}.");
+                }
+            }
+        }
+
+        void Collect(SyntaxList<MemberDeclarationSyntax> members, string? parent, string library)
+        {
+            foreach (var member in members)
+            {
+                if (member is BaseNamespaceDeclarationSyntax nested)
+                {
+                    string name = parent is null ? nested.Name.ToString() : $"{parent}.{nested.Name}";
+                    if (declared.Add(name))
+                    {
+                        namespaces.Add(name);
+                    }
+
+                    Collect(nested.Members, name, library);
+                }
+                else if (member switch
+                {
+                    EnumDeclarationSyntax @enum => @enum.Identifier,
+                    TypeDeclarationSyntax { TypeParameterList: null } type => type.Identifier,
+                    DelegateDeclarationSyntax { TypeParameterList: null } @delegate => @delegate.Identifier,
+                    _ => default(SyntaxToken?),
+                } is { } identifier)
+                {
+                    string name = parent is null ? identifier.ValueText : $"{parent}.{identifier.ValueText}";
+                    types.TryAdd(name, parent is not null && parent == supportNamespace ? "the support code" : $"'{library}'");
+                }
+            }
+        }
     }
 
     // Merges the single files of the libraries into one, with a namespace block per namespace.

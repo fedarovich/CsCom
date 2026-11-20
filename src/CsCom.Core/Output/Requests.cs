@@ -24,7 +24,11 @@ public abstract class OutputRequest
     /// </summary>
     public string? Name { get; init; }
 
-    /// <summary>The namespace of a single source; <c>Interop.&lt;Library&gt;</c> by default. See <see cref="Namespaces"/> for several sources.</summary>
+    /// <summary>
+    /// The namespace of a single source, <c>Interop.&lt;Library&gt;</c> by default, or the root namespace of several sources,
+    /// <c>Interop.&lt;Name&gt;</c> by default. The support code emitted into the project is generated into
+    /// <c>&lt;Namespace&gt;.ComSupport</c>. See <see cref="Namespaces"/> for the namespaces of several sources.
+    /// </summary>
     public string? Namespace { get; init; }
 
     /// <summary>
@@ -153,7 +157,11 @@ public sealed class UpdateProjectRequest
     /// <summary>The directory of the project; the current directory by default.</summary>
     public string? ProjectDirectory { get; init; }
 
-    /// <summary>The new namespace of a single source.</summary>
+    /// <summary>
+    /// The new namespace of a single source, which is then its root namespace, also when the project kept another one from
+    /// several sources, or the new root namespace of several sources. It is also set as the <c>RootNamespace</c> of the
+    /// project file, when it has one. The recorded root namespace is kept when <see langword="null"/>.
+    /// </summary>
     public string? Namespace { get; init; }
 
     /// <summary>

@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text;
 using CsCom.Model;
+using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.Extensions.Logging;
 
 namespace CsCom.Transformations;
@@ -166,6 +167,19 @@ public sealed partial class NameSanitizer : IModelTransformer
         }
 
         return builder.ToString();
+    }
+
+    /// <summary>
+    /// Converts a name to a valid part of a namespace, e.g. the name of a library in <c>Interop.&lt;Library&gt;</c>: a valid C#
+    /// identifier, see <see cref="ToIdentifier"/>, with a trailing underscore for a C# keyword, e.g. <c>event_</c>.
+    /// </summary>
+    /// <remarks>
+    /// A keyword is not escaped with <c>@</c> as in the emitted code, because a namespace also names the folder of its files.
+    /// </remarks>
+    public static string ToNamespacePart(string name)
+    {
+        string identifier = ToIdentifier(name);
+        return SyntaxFacts.GetKeywordKind(identifier) == SyntaxKind.None ? identifier : identifier + "_";
     }
 
     private static bool IsIdentifierStart(char c) => c == '_' || char.IsLetter(c);

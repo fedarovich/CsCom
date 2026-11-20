@@ -20,7 +20,7 @@ internal static partial class ProjectFile
     /// Creates the text of a project file.
     /// </summary>
     /// <param name="manifest">The settings of the project.</param>
-    /// <param name="rootNamespace">The root namespace: the namespace of the first source.</param>
+    /// <param name="rootNamespace">The root namespace: the namespace of a single source, or the root namespace of several sources.</param>
     /// <param name="runtimePackageVersion">The version of the CsCom.Runtime package, or <see langword="null"/> when the version is managed centrally.</param>
     /// <param name="extraProperties">Additional MSBuild properties.</param>
     public static string Create(CsComManifest manifest, string rootNamespace, string? runtimePackageVersion, IReadOnlyDictionary<string, string>? extraProperties = null)
@@ -94,7 +94,7 @@ internal static partial class ProjectFile
     }
 
     /// <summary>
-    /// Updates the C# version and the versions of the CsCom.Runtime packages in an existing project file, and adds or removes
+    /// Updates the C# version, the root namespace and the versions of the CsCom.Runtime packages in an existing project file, and adds or removes
     /// the reference to CsCom.Runtime.Dynamic. Projects without a reference to CsCom.Runtime, whose support code is emitted
     /// into them, get no package references.
     /// </summary>
@@ -105,22 +105,23 @@ internal static partial class ProjectFile
     /// </param>
     /// <param name="runtimePackageVersion">The version of the CsCom.Runtime packages.</param>
     /// <param name="dynamic">Whether the project references CsCom.Runtime.Dynamic.</param>
+    /// <param name="rootNamespace">
+    /// The root namespace to set, or <see langword="null"/> to keep the <c>RootNamespace</c> of the project: like the C#
+    /// version, it is only set when the update asks for a namespace, and only when the project file has it.
+    /// </param>
     /// <returns>Whether the file was changed.</returns>
-    public static bool Update(string path, int? languageVersion, string runtimePackageVersion, bool dynamic)
+    public static bool Update(string path, int? languageVersion, string runtimePackageVersion, bool dynamic, string? rootNamespace)
     {
         var document = Load(path);
         bool changed = false;
         if (languageVersion is { } requested)
         {
-            string version = requested.ToString(System.Globalization.CultureInfo.InvariantCulture);
-            foreach (var element in document.Descendants().Where(static e => e.Name.LocalName == "LangVersion"))
-            {
-                if (element.Value != version)
-                {
-                    element.Value = version;
-                    changed = true;
-                }
-            }
+            changed |= SetProperty(document, "LangVersion", requested.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        }
+
+        if (rootNamespace is not null)
+        {
+            changed |= SetProperty(document, "RootNamespace", rootNamespace);
         }
 
         var runtimeReferences = GetPackageReferences(document, RuntimePackageId);
@@ -444,6 +445,22 @@ internal static partial class ProjectFile
 
         builder.AppendLine("</configuration>");
         return builder.ToString();
+    }
+
+    // Sets the value of the existing elements of a property; a property that the owner of the project removed is not added.
+    private static bool SetProperty(XDocument document, string name, string value)
+    {
+        bool changed = false;
+        foreach (var element in document.Descendants().Where(e => e.Name.LocalName == name))
+        {
+            if (element.Value != value)
+            {
+                element.Value = value;
+                changed = true;
+            }
+        }
+
+        return changed;
     }
 
     private static List<XElement> GetPackageReferences(XDocument document, string id) =>

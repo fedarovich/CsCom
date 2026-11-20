@@ -49,7 +49,7 @@ internal sealed class EmitContext
             return @namespace;
         }
 
-        return definition.ImportedFrom is null ? Options.Namespace : $"{Options.Namespace}.{NameSanitizer.ToIdentifier(definition.ImportedFrom.Name)}";
+        return definition.ImportedFrom is null ? Options.Namespace : $"{Options.Namespace}.{NameSanitizer.ToNamespacePart(definition.ImportedFrom.Name)}";
     }
 
     /// <summary>

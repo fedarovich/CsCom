@@ -60,6 +60,15 @@ public sealed record CsComManifest
     [JsonConverter(typeof(CamelCaseEnumConverter<SupportCodeMode>))]
     public SupportCodeMode SupportCode { get; init; }
 
+    /// <summary>
+    /// The root namespace of the project, into whose <c>ComSupport</c> namespace the support code is emitted: that of several
+    /// sources, which is kept when the project goes down to a single source. Omitted when the root namespace is the namespace
+    /// of the single source, and in the projects of several sources of earlier versions, which record the namespace of their
+    /// first source when they are updated.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? RootNamespace { get; init; }
+
     /// <summary>How <c>DATE</c>, <c>CURRENCY</c> and <c>VARIANT_BOOL</c> values are represented; the defaults when missing.</summary>
     public MarshallingOptions Marshalling { get => _marshalling; init => _marshalling = value ?? new(); }
 

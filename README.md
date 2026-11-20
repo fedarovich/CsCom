@@ -65,15 +65,25 @@ cscom project create Excel.Application Scripting.Dictionary -n Office.Interop --
 ```
 
 - **Namespaces:** each library is generated into `Interop.<Library>`, after the name of its type library (e.g. `Interop.Scripting`
-  for `scrrun.dll`), into a folder of the same name in `Generated`, e.g. `Generated/Interop.Scripting/IDictionary.cs`. The file
+  for `scrrun.dll`), with the characters that a namespace cannot have replaced by underscores and an underscore after a C# keyword
+  (e.g. `Interop.event_`), into a folder of the same name in `Generated`, e.g. `Generated/Interop.Scripting/IDictionary.cs`. The file
   of a type named like a device, which Windows cannot create, gets a trailing underscore, e.g. `Aux_.cs`.
 - **Used libraries:** the types that the sources use from other type libraries are generated into the namespace of their library,
   e.g. `Interop.stdole`, or `Interop.Office` and `Interop.VBIDE` for Excel: only the used types, once for all the sources that use
   them. When the other library is a source too, all its types are generated and the other sources use them.
 - **Options by library:** `--namespace` and `--config` take the name of the library: `--ns Excel=Office.Excel` or
-  `-c stdole=stdole.cscom.xml`, also for the libraries that are only used. Without a library name, they apply to a single source.
-  Two libraries with the same namespace are an error.
+  `-c stdole=stdole.cscom.xml`, also for the libraries that are only used. Without a library name, they apply to a single source,
+  except that `--namespace` is the root namespace of several sources. Two libraries with the same namespace are an error.
 - **Name:** `--name` is required with several sources; with a single source, it is `Interop.<Library>` by default.
+- **Root namespace:** `--ns` without a library name sets the root namespace of several sources: the `RootNamespace` of the
+  project, and the namespace under which the support code of `--support-code public` or `internal` is generated, once, into
+  `<RootNamespace>.ComSupport`. The libraries keep their own namespaces. It is `Interop.<Name>` by default, e.g. `Interop.Office`
+  for `-n Office`, with the characters of the name that a namespace cannot have replaced by underscores and an underscore after a
+  C# keyword (e.g. `Interop.Set.class_` for `-n Set.class`); a name that is `Interop` or starts with `Interop.`, in this case, gets
+  no second prefix. The root namespace of a single source is its namespace. A namespace of the
+  generated code cannot be the name of a generated type: with `--support-code public` or `internal`, `-n Scripting.Dictionary`
+  is an error, because the support code would be in `Interop.Scripting.Dictionary.ComSupport` next to the coclass
+  `Interop.Scripting.Dictionary`; choose another root namespace with `--ns`.
 - **Single file:** `--single-file` generates one file with a namespace block per library.
 
 A single source is generated the same way. The projects of earlier versions, which generated the types used from other libraries
@@ -82,8 +92,8 @@ into nested namespaces (`<Namespace>.<Library>`), are converted by `project upda
 | Option | Description |
 | --- | --- |
 | `-o`, `--output <PATH>` | The output directory: `./<Name>` for `project create`, the current directory for `assembly build` and `assembly pack`, and the project directory for `project update`. |
-| `-n`, `--name <NAME>` | The project and assembly name. `Interop.<Library>` by default with a single source; required with several sources. |
-| `--ns`, `--namespace <[LIBRARY=]NAMESPACE>` | The namespace of a library, e.g. `Excel=Office.Excel`, whether it is a source or is only used; can be specified multiple times. Without a library name, the namespace of a single source. `Interop.<Library>` by default. |
+| `-n`, `--name <NAME>` | The project and assembly name. `Interop.<Library>` by default with a single source; required with several sources, whose root namespace is `Interop.<Name>` by default, see above. |
+| `--ns`, `--namespace <[LIBRARY=]NAMESPACE>` | The namespace of a library, e.g. `Excel=Office.Excel`, whether it is a source or is only used; can be specified multiple times. `Interop.<Library>` by default. Without a library name, the namespace of a single source, or the root namespace of several sources (`Interop.<Name>` by default), under which the support code is generated. |
 | `-f`, `--framework <TFM>` | The target framework; can be specified multiple times. `net10.0-windows` by default. |
 | `-r`, `--runtime <RID>` | The runtime identifier; can be specified multiple times. `AnyCPU` (no runtime identifier) by default. Not supported by `assembly pack`, whose packages are RID-neutral. |
 | `-l`, `--cs`, `--csharp-version <VERSION>` | The C# version. C# 14 for .NET 10 and C# 15 for .NET 11 by default; only later versions can be specified. |
@@ -110,10 +120,21 @@ files into the `Generated` folder, in a folder per namespace. `project update` r
 the sources and the options recorded in `cscom.json`; `Source` arguments replace the recorded sources. It accepts `--namespace` and
 `--config`, which change the recorded values of the libraries they name (`LIBRARY=` removes one, and `--config ""` removes all the
 configuration files), `--csharp-version`, `--single-file [true|false]`, the marshalling options, `--event-style`, `--struct-properties`,
-`--overloads-for-default-values [true|false]`, `--named-indexers`, `--dynamic [true|false]` and `--reference-path` (an empty value removes the paths) to change them. Code outside of
+`--overloads-for-default-values [true|false]`, `--named-indexers`, `--dynamic [true|false]` and `--reference-path` (an empty value removes the paths) to change them.
+`cscom.json` records the root namespace of several sources, which the update keeps, so that the support code does not move: also when
+the order or the number of the sources changes, down to a single source, until `--namespace` without a library name sets another one.
+With a single source, that is its namespace, which is its root namespace again. The projects of several sources of earlier versions,
+and the projects of a single source that get more sources, keep the namespace of their first source as their root namespace, which the
+update records: on that update, list the original first source first, also when the sources are replaced or reordered, and keep its
+namespace, or set the root namespace with `--namespace`, so that the support code stays where it is. Update a project of a single source
+of an earlier version once without `Source` arguments before you add sources: its namespace and configuration file apply only to a
+single source until the update records them by library name. Update a project with the version
+of the tool that created it or a later one, e.g. pinned in a tool manifest: earlier versions do not know the recorded root namespace,
+see [Known issues](docs/known-issues.md#projects). Code outside of
 the `Generated` folder, e.g. partial classes, is not touched. `cscom.json` records the type libraries and interop assemblies of the
 project directory by their relative paths, so the project can be updated from another clone. In the project file, the update sets the versions of the CsCom.Runtime
-packages, and `LangVersion` only with `--csharp-version`; the rest of the file keeps its text and its encoding.
+packages, `LangVersion` only with `--csharp-version`, and `RootNamespace` only with `--namespace` without a library name; neither is
+added to a project file without it, and the rest of the file keeps its text and its encoding.
 
 `assembly build` generates the project in a temporary directory, builds it with `dotnet build` once per runtime identifier and copies
 the assemblies, PDBs and XML documentation (and `CsCom.Runtime.dll`) to the output directory. With a single target framework and at
@@ -221,7 +242,9 @@ assembly. The type libraries and interop assemblies are listed as `CsComReferenc
   registered LIBID or a ProgID. In Visual Studio, a type library or an interop assembly of the project can be given the build
   action `CsComReference`. MSBuild item names are case-insensitive, so `CSComReference` works as well.
 - **Namespaces:** each reference is generated into `Interop.<Library>`, after the name of the type library (e.g. `Interop.Scripting`
-  for `scrrun.dll`), unless its `Namespace` metadata sets another one.
+  for `scrrun.dll`, and `Interop.event_` for a library named like a C# keyword), unless its `Namespace` metadata sets another one.
+  A namespace cannot be the name of a generated type, e.g. a `CsComSupportNamespace` of `Interop.Scripting.Dictionary.ComSupport`
+  next to the coclass `Interop.Scripting.Dictionary`.
 - **Referenced libraries:** the types that the references use from other type libraries are generated into the namespace of their
   library, e.g. `Interop.stdole`, or `Interop.Office` and `Interop.VBIDE` for Excel. Only the used types are generated, once for
   all the references that use them. When the other library is a reference too, all its types are generated and the other
@@ -1164,7 +1187,9 @@ wait for its handler calls.
 
 The generated code depends on a few support types: `IDispatch`, `IEnumVARIANT`, `ComActivator`, `ComMarshalling`, the `VARIANT`, `SAFEARRAY`, `BSTR`, `DATE` and `CURRENCY` marshallers, the
 base class of the late-bound wrappers and the event sinks; with `--dynamic`, also the `dynamic` support. With `--support-code package`, the generated project references the **CsCom.Runtime**
-NuGet package, and **CsCom.Runtime.Dynamic** with `--dynamic`. With `public` or `internal`, the support code is emitted into the project, in the `<Namespace>.ComSupport` namespace.
+NuGet package, and **CsCom.Runtime.Dynamic** with `--dynamic`. With `public` or `internal`, the support code is emitted into the project, in the `<RootNamespace>.ComSupport`
+namespace: under the namespace of a single source, or the root namespace of several sources, see [Several sources](#several-sources). With
+CsCom.Build, it is emitted into `CsComSupportNamespace`, `$(RootNamespace).ComSupport` by default.
 In the `internal` mode all generated types are internal, because a public interface cannot derive from an internal `IDispatch`.
 
 The generated projects disable runtime marshalling, which source-generated COM interop requires to marshal `VARIANT`s and `DECIMAL`s.

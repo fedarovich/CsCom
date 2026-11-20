@@ -72,12 +72,24 @@ internal static class CommandLine
 
     private static readonly Option<string?> NameOption = new("--name", "-n")
     {
-        Description = "The project and assembly name. Interop.<Library> by default with a single source; required with several sources.",
+        Description = "The project and assembly name. Interop.<Library> by default with a single source; required with several sources, whose root namespace is Interop.<Name> by default, without a second Interop. for a name that is Interop or starts with Interop.",
         HelpName = "NAME",
     };
 
+    private const string LibraryNamespaceDescription =
+        "The namespace of a library, e.g. Excel=Office.Excel, whether it is a source or is used by them; can be repeated. Interop.<Library> by default.";
+
     private const string NamespaceDescription =
-        "The namespace of a library, e.g. Excel=Office.Excel, whether it is a source or is used by them; can be repeated. A namespace without a library name is the namespace of a single source. Interop.<Library> by default.";
+        LibraryNamespaceDescription +
+        " A namespace without a library name is the namespace of a single source, or the root namespace of several sources (Interop.<Name> by default); " +
+        "the support code emitted into the project is generated into <Namespace>.ComSupport.";
+
+    // list has no project, so a namespace without a library name is only that of a single source.
+    private static readonly Option<string[]> ListNamespaceOption = new("--namespace", "--ns")
+    {
+        Description = LibraryNamespaceDescription + " A namespace without a library name is the namespace of a single source.",
+        HelpName = "[LIBRARY=]NAMESPACE",
+    };
 
     private static readonly Option<string[]> NamespaceOption = new("--namespace", "--ns")
     {
@@ -87,7 +99,8 @@ internal static class CommandLine
 
     private static readonly Option<string[]> UpdateNamespaceOption = new("--namespace", "--ns")
     {
-        Description = NamespaceDescription + " The namespaces recorded in cscom.json by default; LIBRARY= removes the namespace of a library.",
+        Description = NamespaceDescription + " The namespaces recorded in cscom.json by default; LIBRARY= removes the namespace of a library. " +
+            "A namespace without a library name also sets the RootNamespace of the project file, when it has one; the recorded root namespace is kept otherwise, also when the sources change.",
         HelpName = "[LIBRARY=]NAMESPACE",
     };
 
@@ -467,7 +480,7 @@ internal static class CommandLine
             SourceArgument,
             TypeFilterOption,
         };
-        list.Options.Add(NamespaceOption);
+        list.Options.Add(ListNamespaceOption);
         list.Options.Add(ConfigOption);
         list.Options.Add(ReferencePathOption);
         list.SetAction(static result => Run(result, (pipeline, loggerFactory) => List(result, pipeline, loggerFactory), quietByDefault: true));
@@ -587,7 +600,7 @@ internal static class CommandLine
         }
 
         string[] sources = result.GetRequiredValue(SourceArgument);
-        var (@namespace, namespaces) = GetLibraryValues(result, NamespaceOption, "namespace");
+        var (@namespace, namespaces) = GetLibraryValues(result, ListNamespaceOption, "namespace");
         var (configuration, configurations) = GetLibraryValues(result, ConfigOption, "configuration file");
         if (sources.Length > 1 && (@namespace ?? configuration) is { } single)
         {
@@ -666,7 +679,10 @@ internal static class CommandLine
     }
 
     // The values of --namespace and --config: LIBRARY=VALUE pairs, and at most one value without a library name, which is that
-    // of a single source. A value whose part before = contains \, / or : is a path, e.g. C:\a=b\cscom.xml.
+    // of a single source, or the root namespace of several sources. A value whose part before = contains \, / or : is a path,
+    // e.g. C:\a=b\cscom.xml. The parts of a pair are trimmed, since the split at = leaves the spaces around it, but a value
+    // without a library name is taken as it is: trimming the configuration file "  " would make it the empty value that
+    // removes all the configuration files of a project, and a namespace with spaces is reported with them in quotes.
     private static (string? Single, Dictionary<string, string> ByLibrary) GetLibraryValues(ParseResult result, Option<string[]> option, string name)
     {
         string? single = null;

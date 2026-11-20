@@ -224,7 +224,7 @@ internal sealed partial class LibrarySetMerger
     }
 
     private string GetNamespace(string library) =>
-        _namespaces.TryGetValue(library, out string? @namespace) ? @namespace : "Interop." + NameSanitizer.ToIdentifier(library);
+        _namespaces.TryGetValue(library, out string? @namespace) ? @namespace : "Interop." + NameSanitizer.ToNamespacePart(library);
 
     private void Add(string key, LibrarySetEntry entry)
     {

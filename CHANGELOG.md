@@ -3,6 +3,35 @@
 The notable changes of CsCom, CsCom.Build, CsCom.Runtime and CsCom.Runtime.Dynamic, which are released together with the
 same version. The versions up to 2.0.0 are not described here.
 
+## Unreleased
+
+### Changed
+
+- **Root namespace of several sources:** `project create`, `assembly build` and `assembly pack` give a project of several
+  sources the root namespace `Interop.<Name>`, e.g. `Interop.Office` for `-n Office` (and `Interop.Office` for
+  `-n Interop.Office` too), and generate the support code of `--support-code public` or `internal` into
+  `<RootNamespace>.ComSupport`; both were the namespace of the first source, e.g. `Interop.Excel` and
+  `Interop.Excel.ComSupport`. A single source is unchanged: its namespace is the root namespace.
+- **The support code of several sources no longer moves:** `cscom.json` records the root namespace, which `project update`
+  keeps when the order or the number of the sources changes, also down to a single source. The support code followed the
+  first source, also when the sources were only listed in another order. The projects of several sources of earlier
+  versions, and the projects of a single source that get more sources, keep the namespace of their first source, which
+  the update records.
+
+### Added
+
+- **`--namespace` without a library name with several sources** sets their root namespace, which was an error. `project
+  update --namespace` without a library name also sets the `RootNamespace` of the project file, when it has one, with a
+  single source too, whose namespace it is; `LIBRARY=NAMESPACE` leaves the project file alone.
+
+### Fixed
+
+- **A library named like a C# keyword**, e.g. `event`, gets the namespace `Interop.event_`: its namespace was
+  `Interop.event`, which does not compile.
+- **A namespace that is the name of a generated type** is reported as an error, e.g. the support code in
+  `Interop.Scripting.Dictionary.ComSupport` next to the coclass `Interop.Scripting.Dictionary`, or the namespace of a
+  library named like a type of another library: the generated code did not compile (CS0101).
+
 ## 4.0.0-rc.1 - 2026-11-20
 
 ### Changed

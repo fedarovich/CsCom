@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using CsCom.Build;
 using CsCom.CodeGeneration;
 using CsCom.LibrarySets;
@@ -206,9 +207,8 @@ public sealed class CommandLineTests
         File.WriteAllText(configuration, """<CsCom><ModelTransformers><RenameType TypeName="ICanvas" NewName="ISurface" /></ModelTransformers></CsCom>""");
         string generated = Path.Combine(directory, "Generated");
 
-        // The name is required, and the namespaces and configuration files are given by library name.
+        // The name is required, and the configuration files are given by library name.
         Assert.AreEqual(1, Run("project", "create", TestEnvironment.TestTypeLibrary, TestEnvironment.DrawingTypeLibrary, "-o", directory, "-v", "quiet"));
-        Assert.AreEqual(1, Run("project", "create", TestEnvironment.TestTypeLibrary, TestEnvironment.DrawingTypeLibrary, "-o", directory, "-n", "Set.Interop", "--ns", "Set.Interop", "-v", "quiet"));
         Assert.AreEqual(1, Run("project", "create", TestEnvironment.TestTypeLibrary, TestEnvironment.DrawingTypeLibrary, "-o", directory, "-n", "Set.Interop", "-c", configuration, "-v", "quiet"));
         Assert.IsFalse(Directory.Exists(directory));
 
@@ -234,6 +234,37 @@ public sealed class CommandLineTests
         Assert.IsTrue(File.Exists(Path.Combine(generated, "Interop.stdole", "Font.cs")));
         Assert.IsFalse(Directory.Exists(Path.Combine(generated, "Ole.Interop")));
         Assert.AreEqual(2, CsComManifest.Read(directory).Sources.Count);
+    }
+
+    [TestMethod]
+    public void NamespaceIsTheRootNamespaceOfSeveralSources()
+    {
+        string directory = TestEnvironment.CreateDirectory("cli-root-namespace");
+        string generated = Path.Combine(directory, "Generated");
+        string project = Path.Combine(directory, "Set.Interop.csproj");
+
+        Assert.AreEqual(0, Run(
+            "project", "create", TestEnvironment.TestTypeLibrary, TestEnvironment.DrawingTypeLibrary,
+            "-o", directory, "-n", "Set.Interop", "-s", "internal", "--ns", "Set.Root", "-v", "quiet"));
+        Assert.IsTrue(File.Exists(Path.Combine(generated, "Set.Root.ComSupport", "IDispatch.cs")));
+        Assert.IsTrue(File.Exists(Path.Combine(generated, "Interop.CsComTest", "IShape.cs")), "The root namespace is not the namespace of a library.");
+        StringAssert.Contains(File.ReadAllText(project), "<RootNamespace>Set.Root</RootNamespace>");
+        Assert.AreEqual("Set.Root", CsComManifest.Read(directory).RootNamespace);
+
+        Assert.AreEqual(0, Run("project", "update", "-o", directory, "--ns", "Set.Other", "-v", "quiet"));
+        Assert.IsTrue(File.Exists(Path.Combine(generated, "Set.Other.ComSupport", "IDispatch.cs")));
+        Assert.IsFalse(Directory.Exists(Path.Combine(generated, "Set.Root.ComSupport")));
+        StringAssert.Contains(File.ReadAllText(project), "<RootNamespace>Set.Other</RootNamespace>");
+        Assert.AreEqual("Set.Other", CsComManifest.Read(directory).RootNamespace);
+
+        // list has no project, so its help names no root namespace, and a namespace without a library name needs a single source.
+        StringAssert.Contains(Help("project", "create"), "root namespace of several sources");
+        StringAssert.Contains(Help("project", "update"), "root namespace of several sources");
+        Assert.IsFalse(Help("list").Contains("root namespace", StringComparison.Ordinal));
+        Assert.AreEqual(1, Run("list", TestEnvironment.TestTypeLibrary, TestEnvironment.DrawingTypeLibrary, "--ns", "Set.Root", "-v", "quiet"));
+
+        // The help wraps its lines.
+        static string Help(params string[] command) => Regex.Replace(RunWithOutput([.. command, "--help"]).Output, @"\s+", " ");
     }
 
     [TestMethod]
