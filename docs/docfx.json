@@ -1,0 +1,53 @@
+{
+  "$schema": "https://raw.githubusercontent.com/dotnet/docfx/main/schemas/docfx.schema.json",
+  "metadata": [
+    {
+      "src": [
+        {
+          "src": "../src",
+          "files": [
+            "CsCom.Runtime/CsCom.Runtime.csproj",
+            "CsCom.Runtime.Dynamic/CsCom.Runtime.Dynamic.csproj"
+          ]
+        }
+      ],
+      "properties": {
+        "TargetFramework": "net10.0"
+      },
+      "dest": "api",
+      "enumSortOrder": "declaringOrder"
+    }
+  ],
+  "build": {
+    "content": [
+      {
+        "files": [ "**/*.{md,yml}" ],
+        "exclude": [ "_site/**", "apidoc/**" ]
+      },
+      {
+        "src": "..",
+        "files": [ "CHANGELOG.md" ]
+      }
+    ],
+    "overwrite": [
+      {
+        "files": [ "apidoc/**.md" ]
+      }
+    ],
+    "output": "_site",
+    "template": [ "default", "modern" ],
+    "globalMetadata": {
+      "_appName": "CsCom",
+      "_appTitle": "CsCom",
+      "_appFooter": "CsCom is licensed under the MIT license.",
+      "_enableSearch": true,
+      "_gitContribute": {
+        "repo": "https://github.com/fedarovich/CsCom",
+        "branch": "dev"
+      }
+    },
+    "sitemap": {
+      "baseUrl": "https://cscom.fedarovich.com/"
+    }
+  }
+}

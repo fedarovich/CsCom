@@ -78,7 +78,7 @@ instance creates elsewhere, e.g. in your own calls of `ComMarshalling.ComWrapper
 pointers would then be called through COM instead of converting back to the object. The pointers of COM objects and
 shared conversions cost nothing, since `ComWrappers` unwraps them itself.
 
-**Documented** in the README, "Interface pointers", and at `TryUnwrap`.
+**Documented** in [Interface pointers](articles/interface-pointers.md), and at `TryUnwrap`.
 
 ### A shared conversion of a managed object that lacks the interface creates an object for every conversion
 
@@ -95,7 +95,7 @@ itself, where `ComConvert.To` converts it for a late-bound wrapper, `EventArgume
 another instance would keep the object for the identity of the pointer, which `ComWrappers` looks up before it unwraps,
 so it would be returned instead of the managed object also for the interfaces that the object implements.
 
-**Documented** in the README, "Interface pointers" ("a new one for each conversion, also of a shared parameter"), and in
+**Documented** in [Interface pointers](articles/interface-pointers.md) ("a new one for each conversion, also of a shared parameter"), and in
 `ComMarshalling.ToManaged`.
 
 ### A pointer and a `VARIANT` convert an object of yours that lacks the interface differently (intended)
@@ -114,7 +114,7 @@ source cannot pass an object that does not implement the interface in its type. 
 type, and its conversion to an interface is where the rule of `IDispatchProvider` applies. Another declaration of the
 interface, which the COM interface of the object answers, gets a COM object of its own on both ways.
 
-**Documented** at `IDispatchProvider` and in the README, "Interface pointers", which name the conversions where such an
+**Documented** at `IDispatchProvider` and in [Interface pointers](articles/interface-pointers.md), which name the conversions where such an
 object stands for its `Dispatch`.
 
 ### A `dynamic` object converts to an interface only through the managed type of its object
@@ -202,7 +202,7 @@ strategy of a custom instance exposes is passed as the COM object of its `Dispat
 **Why it is intended:** the same values are passed with every instance, and the instance can still be set after an
 object has been converted. Make the class a `[GeneratedComClass]` to pass the object itself.
 
-**Documented** at `ComMarshalling.IsExposedToCom` and in the README, "Interface pointers".
+**Documented** at `ComMarshalling.IsExposedToCom` and in [Interface pointers](articles/interface-pointers.md).
 
 ### A late-bound wrapper is unwrapped once (intended)
 
@@ -250,13 +250,13 @@ unique COM objects of its own, which the sink cannot tell from those that the ma
 **A fix** would need the marshallers of the arguments to know that the sink is closed, so that they do not create the
 objects at all.
 
-**Documented** in the README, "Interface pointers", and at `EventEmitter.EmitComSink`.
+**Documented** in [Interface pointers](articles/interface-pointers.md), and at `EventEmitter.EmitComSink`.
 
 ### The handlers of an event share its unique arguments
 
 An argument of an event that `SetMarshalling` makes a unique object is one object per call of the event, which every
 handler of the event of a generated sink gets, and every observer of an observable. A handler that releases it, as the
-README says the receiver of a unique object may, releases it for the handlers after it, which then get an
+documentation says the receiver of a unique object may, releases it for the handlers after it, which then get an
 `ObjectDisposedException` from its calls.
 
 **Why it is not fixed:** the marshaller of the event interface creates the object when the COM object calls the sink,
@@ -266,7 +266,7 @@ before the sink passes the call on: the sink passes the arguments of one call, l
 **A fix** would convert the pointer for each delegate of the invocation list of the event and each observer: the sink
 would take the pointers of the interface without the marshaller, and convert and release them itself.
 
-**Documented** in the README, "Interface pointers".
+**Documented** in [Interface pointers](articles/interface-pointers.md).
 
 ### `EventConnection.Advise(source, iid, sink)` creates a gate that the sink never enters
 
@@ -279,7 +279,7 @@ disconnected the same way. A gate that all such connections shared would run the
 those of another, on its thread, since a gate runs its completions one at a time, and without a gate every path of the
 disconnection would need a test for it.
 
-**Documented** in the README, "Events", in the documentation of `DisposeWithCompletion`, and at `Advise`.
+**Documented** in [Events](articles/events.md), in the documentation of `DisposeWithCompletion`, and at `Advise`.
 
 ### `EventConnection.Disconnect` creates a task for every call of `Unadvise` (intended)
 
@@ -349,7 +349,7 @@ whose handler must stay: `AFailedConnectionRemovesOnlyItsOwnHandler` fails with 
 before the removal would need the order of the changes, and give the other outcome of the same race, which is no more
 correct.
 
-**Documented** in the README, "Late binding with `dynamic`", in the remarks of `DynamicEventSink` and at its `Add`.
+**Documented** in [Late binding with `dynamic`](articles/dynamic.md), in the remarks of `DynamicEventSink` and at its `Add`.
 
 ## Code generation
 
@@ -410,7 +410,7 @@ the support code with `global::`, so `RootNamespace` only gives the namespace of
 resources. Setting it whenever the root namespace changes would need the root namespace that it replaces, which the
 manifest does not record for a single source, and would replace the value of the owner.
 
-**Documented** in the README, `project update` (`RootNamespace` only with `--namespace` without a library name, and
+**Documented** in [Commands](articles/commands.md#project-create-and-project-update), `project update` (`RootNamespace` only with `--namespace` without a library name, and
 not added to a project file without it).
 
 ### A project without a recorded root namespace takes the namespace of its new first source
@@ -442,7 +442,7 @@ in the namespace block of the single file, and fall back to the first source whe
 namespace of a single source too, at each generation, and replacing it when the namespace of the source changes, would
 cover the projects of a single source, but not those of earlier versions.
 
-**Documented** in the README, `project update`.
+**Documented** in [Commands](articles/commands.md#project-create-and-project-update), `project update`.
 
 ### A project of a single source of an earlier version loses the namespace and the configuration file of its source when sources are added
 
@@ -461,7 +461,7 @@ the conversion happens once. Update the project once without `Source` arguments,
 **A fix** would read the recorded source first and record its namespace and configuration file under the name of its
 library, unless the update sets them, or reject the update and name the remedy.
 
-**Documented** in the README, `project update`.
+**Documented** in [Commands](articles/commands.md#project-create-and-project-update), `project update`.
 
 ### An earlier version of the tool drops the root namespace of a project
 
@@ -480,7 +480,7 @@ that everyone updates the project with the same version, or restore the root nam
 
 **A fix** in a later version would warn about, or refuse, a `cscom.json` that a later version wrote.
 
-**Documented** in the README, `project update`.
+**Documented** in [Commands](articles/commands.md#project-create-and-project-update), `project update`.
 
 ### With a single source, `--namespace` also replaces a root namespace kept from several sources (intended)
 
@@ -495,7 +495,7 @@ source, `--namespace` is the namespace of the source, as in every project of a s
 projects that once had several sources would make the same command do different things after the history of the
 project. `rootNamespace` in `cscom.json` can be edited to set another root namespace, which the update validates.
 
-**Documented** in the README, `project update`.
+**Documented** in [Commands](articles/commands.md#project-create-and-project-update), `project update`.
 
 ### A namespace without a library name is taken as it is (intended)
 

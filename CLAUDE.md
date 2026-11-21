@@ -9,9 +9,10 @@ source-generated COM interop (`[GeneratedComInterface]`, ComWrappers), so it wor
 four NuGet packages that are always released together with the same version: `CsCom` (the `cscom` .NET tool), `CsCom.Build`
 (MSBuild integration), `CsCom.Runtime` and `CsCom.Runtime.Dynamic` (support code of the generated code).
 
-`README.md` is the user documentation and is thorough: read the relevant section before changing a behavior it describes.
-`docs/requirements.md` holds the original requirements; the README is the current description. `docs/known-issues.md`
-lists the known issues that are not fixed, with the reasons: check it before reporting or fixing one.
+The user documentation is the docfx site of `docs/`, published at https://cscom.fedarovich.com/: the articles in
+`docs/articles/` are thorough, so read the relevant one before changing a behavior it describes. `README.md` is only an
+overview that links to the site. `docs/known-issues.md` lists the known issues that are not fixed, with the reasons: check
+it before reporting or fixing one.
 
 ## Commands
 
@@ -44,6 +45,11 @@ dotnet test src/CsCom.Tests/CsCom.Tests.csproj -f net11.0-windows --filter "Full
   CsCom.Runtime of the version of the tool, so from source they need `--package-source artifacts\packages` after a
   `dotnet pack`.
 - Benchmarks: `dotnet run -c Release -f net11.0-windows --project src/CsCom.Benchmarks -- --filter *StaticDispatch*`.
+- Documentation: `dotnet tool restore`, then `dotnet docfx docs/docfx.json --warningsAsErrors` builds the site into
+  `docs/_site` (add `--serve` to browse it); a broken link or `xref` fails it, as in the `Docs` workflow, which deploys
+  the site to GitHub Pages from `main`. The API pages are generated from the XML documentation of CsCom.Runtime and
+  CsCom.Runtime.Dynamic. docfx does not generate the members of C# 14 extension blocks, so `docs/apidoc/ComDynamic.md`
+  describes the `extension(ComActivator)` members of `ComDynamic`: keep it in sync with them.
 - The test type libraries are rebuilt with `src/CsCom.Tests/TestAssets/build-tlb.ps1` after a change of an `.idl` file
   (needs Visual Studio with the C++ tools and TlbImp of the Windows SDK). The `.tlb` files and `Interop.CsComTest.dll` are
   committed.
@@ -125,14 +131,15 @@ same target framework as the assembly that declares it (SYSLIB1230).
   `CodeGenerationOptions`/`MarshallingOptions` → `LibrarySetOptions`/`LibrarySetReference` → the options of `CommandLine.cs`
   → `CsComManifest` (`cscom.json`) and `Output/Requests.cs` → `BuildRequest`/`LibrarySetBuild` → the `CsComGenerate` task
   (a property, and `ReferenceMetadata` for item metadata) → `build/CsCom.Build.props` and `.targets` →
-  `CsComReferenceEditor` → the option tables of the README.
+  `CsComReferenceEditor` → the option tables of `docs/articles/commands.md` and `docs/articles/msbuild.md`.
 - **A configurable transformer** is registered in `TransformerRegistry.CreateDefault`, declared in
   `Configuration/cscom.xsd` (a test checks that the schema declares every registered transformer), given an example in
-  `Configuration/cscom.template.xml` and described in the README.
+  `Configuration/cscom.template.xml` and described in `docs/articles/configuration.md`.
 - **The C# version of the generated code** depends on the target framework: C# 14 for .NET 10, C# 15 for .NET 11. Features
   of C# 15 such as extension indexers are emitted only behind checks like `CodeGenerationOptions.SupportsExtensionIndexers`.
 - **A change of the generated code or of CsCom.Runtime** usually needs: the Verify snapshots, the integration tests (which
-  compile and run the generated code against real COM objects), the README section and a CHANGELOG entry.
+  compile and run the generated code against real COM objects), the documentation article (`docs/articles/`) and a
+  CHANGELOG entry.
 - **What a value stands for where it goes to COM** (the rule of `IDispatchProvider`, late-bound wrappers, objects
   exposed to COM, `UnknownWrapper` and `DispatchWrapper`) is applied in several places, which a change of the rule must
   all follow: `ComMarshalling.ToUnmanaged`, `QueryInterface` and `Release`, `ComConvert.ToWrapper` and `To`,
@@ -140,8 +147,8 @@ same target framework as the assembly that declares it (SYSLIB1230).
   `IsLateBoundWrapper`, `TryGetProvidedDispatch`, `TryConvertExposedObject` and `UnwrapUnknownWrapper` of
   `ComMarshalling`. CsCom.Runtime.Dynamic has copies in `ComDynamic` (`Unwrap`, and `TryGetDispatch`, which
   `DynamicDispatchObject.Wrap` uses for the results of calls) and `DynamicDispatchObject.IsComObject`, which
-  `TheDynamicSupportFollowsTheRulesOfTheRuntime` compares with the runtime. The README describes the rule in "Interface
-  pointers".
+  `TheDynamicSupportFollowsTheRulesOfTheRuntime` compares with the runtime. `docs/articles/interface-pointers.md`
+  describes the rule.
 
 ## Tests (`src/CsCom.Tests`)
 

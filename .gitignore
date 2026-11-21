@@ -424,3 +424,7 @@ FodyWeavers.xsd
 # Verify snapshot testing
 *.received.*
 
+# docfx: the site and the API metadata, which docs/docfx.json generates from the projects
+docs/_site/
+docs/api/*.yml
+docs/api/.manifest

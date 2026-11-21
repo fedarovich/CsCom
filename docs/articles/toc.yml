@@ -1,0 +1,54 @@
+- name: Getting started
+  href: getting-started.md
+- name: Migrating from TlbImp
+  href: migrating-from-tlbimp.md
+- name: Using the tool
+  items:
+  - name: Sources
+    href: sources.md
+  - name: Commands
+    href: commands.md
+  - name: Interop assemblies
+    href: interop-assemblies.md
+  - name: MSBuild integration
+    href: msbuild.md
+  - name: Configuration file
+    href: configuration.md
+- name: Generated code
+  items:
+  - name: Overview
+    href: generated-code.md
+  - name: By-reference arguments
+    href: by-reference-arguments.md
+  - name: Optional parameters
+    href: optional-parameters.md
+  - name: Named indexers
+    href: named-indexers.md
+  - name: Marshalling options
+    href: marshalling.md
+  - name: BSTRs
+    href: bstrs.md
+  - name: SAFEARRAYs
+    href: safearrays.md
+  - name: Structures
+    href: structures.md
+  - name: Interface pointers
+    href: interface-pointers.md
+  - name: Events
+    href: events.md
+  - name: Late binding with dynamic
+    href: dynamic.md
+  - name: Support code
+    href: support-code.md
+  - name: Limitations
+    href: limitations.md
+- name: Benchmarks
+  href: benchmarks.md
+- name: Known issues
+  href: ../known-issues.md
+- name: Contributing
+  items:
+  - name: Architecture
+    href: architecture.md
+  - name: Development
+    href: development.md
