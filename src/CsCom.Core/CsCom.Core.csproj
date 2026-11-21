@@ -64,6 +64,19 @@
   -->
   <PropertyGroup>
     <_CsComSupportCodeTask>$([MSBuild]::NormalizePath('$(MSBuildThisFileDirectory)', '..', 'CsCom.SupportCode', 'bin', '$(Configuration)', 'net10.0', 'CsCom.SupportCode.dll'))</_CsComSupportCodeTask>
+  </PropertyGroup>
+
+  <!--
+    With the artifacts output layout, which the builds of BenchmarkDotNet use (they pass ArtifactsPath), CsCom.SupportCode is
+    built to the artifacts folder instead, as the SDK lays it out for a project with a single target framework. The SDK
+    selects the layout in its props, so UseArtifactsOutput is known here; a relative ArtifactsPath is relative to the project.
+  -->
+  <PropertyGroup Condition="'$(UseArtifactsOutput)' == 'true'">
+    <_CsComSupportCodeArtifactsProject Condition="'$(IncludeProjectNameInArtifactsPaths)' == 'true'">CsCom.SupportCode</_CsComSupportCodeArtifactsProject>
+    <_CsComSupportCodeTask>$([MSBuild]::NormalizePath('$(MSBuildThisFileDirectory)', '..', 'CsCom.SupportCode', '$(ArtifactsPath)', 'bin', '$(_CsComSupportCodeArtifactsProject)', '$(Configuration.ToLowerInvariant())', 'CsCom.SupportCode.dll'))</_CsComSupportCodeTask>
+  </PropertyGroup>
+
+  <PropertyGroup>
     <!-- Before the names of the resources are created, after the references, which build CsCom.SupportCode and CsCom.Runtime. -->
     <PrepareResourcesDependsOn>EmbedSupportCode;$(PrepareResourcesDependsOn)</PrepareResourcesDependsOn>
   </PropertyGroup>
