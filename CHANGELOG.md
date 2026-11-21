@@ -3,6 +3,14 @@
 The notable changes of CsCom, CsCom.Build, CsCom.Runtime and CsCom.Runtime.Dynamic, which are released together with the
 same version. The versions up to 2.0.0 are not described here.
 
+## 4.0.0 - 2026-11-20
+
+### Added
+
+- **Documentation:** the documentation is a site, [cscom.fedarovich.com](https://cscom.fedarovich.com/), with the API
+  reference of CsCom.Runtime and CsCom.Runtime.Dynamic and new articles on getting started and on migrating from
+  TlbImp; the README links to it.
+
 ## 4.0.0-rc.2 - 2026-11-20
 
 ### Changed
