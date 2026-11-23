@@ -1502,14 +1502,14 @@ public sealed partial class DynamicEventTests
                 Volatile.Write(ref returned, true);
             }));
 
-            var running = Task.Run(() => Fire(source, ShapeEventsIid, 1, 1, 2));
+            var running = RunOnOwnThread(() => Fire(source, ShapeEventsIid, 1, 1, 2));
             Assert.IsTrue(entered.Wait(Timeout));
             connection.Dispose();
 
             var runs = new int[Count];
             int early = 0;
             using var start = new Barrier(Count + 1);
-            var adding = Enumerable.Range(0, Count).Select(i => Task.Run(() =>
+            var adding = Enumerable.Range(0, Count).Select(i => RunOnOwnThread(() =>
             {
                 Assert.IsTrue(start.SignalAndWait(Timeout));
                 connection.DisposeWithCompletion(() =>
@@ -1731,6 +1731,12 @@ public sealed partial class DynamicEventTests
     }
 
     private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(30);
+
+    // Runs an action that blocks until other ones run too on a thread of its own: the thread pool adds threads for blocked
+    // work items slowly, and more slowly still while the test classes that run in parallel keep it busy, so on a small CI
+    // runner the actions could wait for each other beyond the timeout.
+    private static Task RunOnOwnThread(Action action) =>
+        Task.Factory.StartNew(action, CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
 
     private sealed class IgnoringHandler : IDispatchEventHandler
     {
