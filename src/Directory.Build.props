@@ -14,17 +14,21 @@
     <Copyright>Copyright (c) 2026 fedarovich</Copyright>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageIcon>icon.png</PackageIcon>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
     <PackageProjectUrl>https://github.com/fedarovich/CsCom</PackageProjectUrl>
     <RepositoryUrl>https://github.com/fedarovich/CsCom</RepositoryUrl>
     <IsPackable>false</IsPackable>
   </PropertyGroup>
 
   <!--
-    The icon of the packages, which is also the logo of the documentation site. The condition sees the IsPackable of the project,
-    because items are evaluated after all the properties. CsCom.Build packs it through its nuspec.
+    The icon of the packages, which is also the logo of the documentation site, and the readme of each package, the README.md
+    next to its project, which nuget.org shows. The condition sees the IsPackable of the project, because items are evaluated
+    after all the properties. CsCom.Build packs both through its nuspec. The readme is included rather than updated, because a
+    project with several target frameworks is packed by its outer build, which has no default items.
   -->
   <ItemGroup Condition="'$(IsPackable)' == 'true'">
     <None Include="$(MSBuildThisFileDirectory)..\icon.png" Pack="true" PackagePath="" Visible="false" />
+    <None Include="$(MSBuildProjectDirectory)\README.md" Pack="true" PackagePath="" Visible="false" />
   </ItemGroup>
 
   <PropertyGroup>

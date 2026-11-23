@@ -8,6 +8,8 @@ same version. The versions up to 2.0.0 are not described here.
 ### Added
 
 - **Icon:** the packages and the documentation site have an icon.
+- **Readmes:** the packages have a readme, which nuget.org shows on their pages: what the package is for, how it is used,
+  and a link to the documentation.
 
 ## 4.0.0 - 2026-11-20
 
