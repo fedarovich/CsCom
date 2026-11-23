@@ -1,0 +1,6 @@
+/* The logo is the 128 px icon of the packages, which the modern template would show at its full size. */
+#logo {
+  width: 40px;
+  height: 40px;
+  margin-right: .5rem;
+}

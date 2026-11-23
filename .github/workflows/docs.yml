@@ -8,6 +8,7 @@ on:
     paths: &docs-paths
       - 'docs/**'
       - 'CHANGELOG.md'
+      - 'icon.png'
       - 'src/CsCom.Runtime/**'
       - 'src/CsCom.Runtime.Dynamic/**'
       - 'src/Directory.Build.props'
