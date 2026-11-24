@@ -152,6 +152,8 @@ public sealed partial class TypeLibraryWriter
         // The identifiers that MIDL gives the fields of structures and the members of enumerations.
         private const int FirstVariableId = 0x40000000;
 
+        private const int DefaultAlignment = 8;
+
         private static readonly Guid IID_IUnknown = new("00000000-0000-0000-C000-000000000046");
         private static readonly Guid IID_IDispatch = new("00020400-0000-0000-C000-000000000046");
         private static readonly Guid IID_IEnumVARIANT = new("00020404-0000-0000-C000-000000000046");
@@ -389,8 +391,9 @@ public sealed partial class TypeLibraryWriter
 
         private void FillRecord(ICreateTypeInfo typeInfo, RecordDefinition definition)
         {
-            int pointerSize = _options.Platform == TypeLibraryPlatform.Win32 ? 4 : 8;
-            typeInfo.SetAlignment((ushort)(definition.Alignment > 0 ? definition.Alignment : pointerSize));
+            // Without an alignment of its own, a structure has the default packing of 8 bytes of MIDL and of .NET, on both
+            // platforms: that of a pointer would put a double of a 32-bit structure at a multiple of 4.
+            typeInfo.SetAlignment((ushort)(definition.Alignment > 0 ? definition.Alignment : DefaultAlignment));
             for (int i = 0; i < definition.Fields.Count; i++)
             {
                 var field = definition.Fields[i];
@@ -520,8 +523,10 @@ public sealed partial class TypeLibraryWriter
                     _variants.Add((nint)(&extension->varDefaultValue));
                     parameters[i].paramdesc.pparamdescex = extension;
                 }
-                else if (parameter.Flags.HasFlag(ParameterFlags.Optional))
+                else if (parameter.Flags.HasFlag(ParameterFlags.Optional) && GetVariantType(parameter.Type) == VarEnum.VT_VARIANT)
                 {
+                    // The count of a function is that of its optional VARIANTs, which a caller leaves out; an optional
+                    // parameter of another type only has the flag.
                     optional++;
                 }
 
