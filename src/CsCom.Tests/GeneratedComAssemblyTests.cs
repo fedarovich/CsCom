@@ -897,21 +897,63 @@ public sealed class GeneratedComAssemblyTests : VerifyBase
         string directory = TestEnvironment.CreateDirectory("export");
         string registered = Path.Combine(directory, "Registered.tlb");
         File.Copy(TestEnvironment.TestTypeLibrary, registered);
-        var messages = new WarningCollector<TypeLibraryCatalog> { MinimumLevel = LogLevel.Information };
-        var reference = new TypeLibraryReference("CsComTest", new Guid("6B1F2D2A-4C1E-4B71-9D0B-7B7C2E0A1000"), 1, 2);
+        string interop = Compile(directory, "Interop.Shapes", """
+            using System.Reflection;
+            using System.Runtime.InteropServices;
+            using System.Runtime.InteropServices.Marshalling;
 
-        var catalog = new TypeLibraryCatalog([TestEnvironment.TestTypeLibrary], messages, _ => registered);
-        Assert.IsTrue(catalog.TryGetLibrary(reference, out var library));
-        Assert.IsTrue(catalog.TryGetLibrary(reference, out _));
+            [assembly: AssemblyMetadata("CsCom.TypeLibrary", "Interop.CsComTest|CsComTest|{6B1F2D2A-4C1E-4B71-9D0B-7B7C2E0A1000}|1.2")]
 
-        Assert.AreEqual(TestEnvironment.TestTypeLibrary, library.Path);
-        StringAssert.Contains(messages.Messages.Single(), "while 'Registered.tlb' is registered".Replace("Registered.tlb", registered, StringComparison.Ordinal));
+            namespace Interop.CsComTest
+            {
+                [GeneratedComInterface, Guid("6B1F2D2A-4C1E-4B71-9D0B-7B7C2E0A1011")]
+                public partial interface IShape { void M(); }
+            }
+            """);
+        const string header = """
+            using System.Runtime.InteropServices;
+            using System.Runtime.InteropServices.Marshalling;
+
+            [assembly: Guid("7C1F2D2A-4C1E-4B71-9D0B-7B7C2E0A7E00")]
+
+            """;
+        string user = Compile(directory, "User", header + """
+            [GeneratedComInterface, Guid("7C1F2D2A-4C1E-4B71-9D0B-7B7C2E0A7E01")]
+            public partial interface IUser { void Use(Interop.CsComTest.IShape shape); }
+            """, interop);
+        string other = Compile(directory, "Other", header + """
+            [GeneratedComInterface, Guid("7C1F2D2A-4C1E-4B71-9D0B-7B7C2E0A7E01")]
+            public partial interface IOther { void M(); }
+
+            namespace Interop.CsComTest
+            {
+                // The reader looks into the type library to tell that this is no type of it.
+                [GeneratedComInterface, Guid("7C1F2D2A-4C1E-4B71-9D0B-7B7C2E0A7E02")]
+                public partial interface IOwn { void M(); }
+            }
+            """.Replace("[assembly: Guid", "[assembly: System.Reflection.AssemblyMetadata(\"CsCom.TypeLibrary\", \"Interop.CsComTest|CsComTest|{6B1F2D2A-4C1E-4B71-9D0B-7B7C2E0A1000}|1.2\")]\n[assembly: Guid", StringComparison.Ordinal));
+
+        // The library refers to the types that were read from the file.
+        var messages = Write(user, registered);
+        StringAssert.Contains(messages.Single(static m => m.Contains("is registered", StringComparison.Ordinal)), $"while '{registered}' is registered");
+
+        // The library does not refer to them.
+        Assert.IsFalse(Write(other, registered).Any(static m => m.Contains("is registered", StringComparison.Ordinal)));
 
         // The registered library is the file itself.
-        messages.Messages.Clear();
-        catalog = new TypeLibraryCatalog([TestEnvironment.TestTypeLibrary], messages, _ => TestEnvironment.TestTypeLibrary);
-        Assert.IsTrue(catalog.TryGetLibrary(reference, out _));
-        Assert.IsEmpty(messages.Messages);
+        Assert.IsFalse(Write(user, TestEnvironment.TestTypeLibrary).Any(static m => m.Contains("is registered", StringComparison.Ordinal)));
+
+        List<string> Write(string assembly, string registeredPath)
+        {
+            var collector = new WarningCollector<TypeLibraryWriter> { MinimumLevel = LogLevel.Information };
+            var catalog = new TypeLibraryCatalog(
+                [TestEnvironment.TestTypeLibrary],
+                collector,
+                reference => reference.Name == "CsComTest" ? registeredPath : TypeLibrarySource.FindRegistered(reference.Guid, reference.MajorVersion, reference.MinorVersion));
+            var library = new GeneratedComAssemblyReader(referencePaths: [interop]).Read(assembly, catalog: catalog);
+            new TypeLibraryWriter(collector).Write(library, Path.ChangeExtension(assembly, ".tlb"), new TypeLibraryWriterOptions { Catalog = catalog });
+            return collector.Messages;
+        }
     }
 
     // Two versions of a type library are two libraries.
@@ -930,6 +972,12 @@ public sealed class GeneratedComAssemblyTests : VerifyBase
         Assert.IsTrue(catalog.TryGetLibrary(new TypeLibraryReference("Library", libraryId, 2, 0), out var two));
 
         Assert.AreEqual((first, second), (one.Path, two.Path));
+
+        // Two versions that are registered with one file are one library.
+        catalog = new TypeLibraryCatalog([], null, _ => first);
+        Assert.IsTrue(catalog.TryGetLibrary(new TypeLibraryReference("Library", libraryId, 1, 0), out one));
+        Assert.IsTrue(catalog.TryGetLibrary(new TypeLibraryReference("Library", libraryId, 1, 2), out two));
+        Assert.AreSame(one, two);
 
         // A file that was given is its library in every version.
         catalog = new TypeLibraryCatalog([TestEnvironment.TestTypeLibrary]);

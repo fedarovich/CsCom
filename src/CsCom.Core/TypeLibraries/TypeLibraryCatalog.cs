@@ -21,7 +21,6 @@ public sealed unsafe partial class TypeLibraryCatalog
     // A file is the library of its identifier in any version; the registry has the versions of a library apart.
     private readonly Dictionary<TypeLibraryReference, CatalogLibrary?> _libraries = new(ReferenceComparer.Instance);
     private readonly Dictionary<TypeLibraryReference, string> _loadErrors = new(ReferenceComparer.Instance);
-    private readonly HashSet<CatalogLibrary> _replacing = [];
     private List<CatalogLibrary>? _files;
 
     /// <summary>
@@ -75,17 +74,20 @@ public sealed unsafe partial class TypeLibraryCatalog
             if (FindFile(reference) is { } file)
             {
                 library = file;
-                if (registered is not null && _replacing.Add(file))
+                if (registered is not null)
                 {
-                    ReportRegisteredLibrary(reference, file, registered);
+                    file.RegisteredPath ??= GetRegisteredPath(file, registered);
                 }
             }
             else if (registered is not null)
             {
                 try
                 {
+                    // The versions of a library can be registered with one file, which is then one library.
                     string path = TypeLibrarySource.Resolve(registered);
-                    library = new CatalogLibrary(reference, path, Load(path), isRegistered: true);
+                    string filePath = TypeLibrarySource.GetFilePath(path);
+                    library = _libraries.Values.FirstOrDefault(l => l is not null && l.LibraryId == reference.Guid && string.Equals(l.Path, filePath, StringComparison.OrdinalIgnoreCase))
+                        ?? new CatalogLibrary(reference, path, Load(path), isRegistered: true);
                 }
                 catch (CsComException e)
                 {
@@ -123,20 +125,18 @@ public sealed unsafe partial class TypeLibraryCatalog
         return files.FirstOrDefault(f => ReferenceComparer.Instance.Equals(f.Reference, reference)) ?? files.FirstOrDefault(f => f.LibraryId == reference.Guid);
     }
 
-    // The programs that load the exported library find the registered library, not the file that was read in its place.
-    private void ReportRegisteredLibrary(TypeLibraryReference reference, CatalogLibrary file, string registered)
+    // The file of the registered library that a file of the catalog is read in place of, if it is another file.
+    private static string? GetRegisteredPath(CatalogLibrary file, string registered)
     {
         try
         {
             string path = TypeLibrarySource.GetFilePath(TypeLibrarySource.Resolve(registered));
-            if (!string.Equals(path, file.Path, StringComparison.OrdinalIgnoreCase))
-            {
-                LogFilePreferred(reference.Name, file.Path, path);
-            }
+            return string.Equals(path, file.Path, StringComparison.OrdinalIgnoreCase) ? null : path;
         }
         catch (CsComException)
         {
             // The registration is stale, so there is no other library to find.
+            return null;
         }
     }
 
@@ -169,11 +169,6 @@ public sealed unsafe partial class TypeLibraryCatalog
         Level = LogLevel.Warning,
         Message = "The registered type library '{Name}' {Major}.{Minor} cannot be loaded, so it cannot be told which types it has: {Error}")]
     private partial void LogUnloadableLibrary(string name, int major, int minor, string error);
-
-    [LoggerMessage(
-        Level = LogLevel.Information,
-        Message = "The type library '{Name}' is read from '{File}', while '{Registered}' is registered: the programs that load the exported library find its types in the registered one")]
-    private partial void LogFilePreferred(string name, string file, string registered);
 
     // The libraries of the files, in the order they were given.
     private List<CatalogLibrary> GetFiles()
@@ -239,6 +234,12 @@ internal sealed unsafe class CatalogLibrary(TypeLibraryReference reference, stri
 
     /// <summary>Whether the library is registered, so that programs find it wherever its file is.</summary>
     public bool IsRegistered { get; } = isRegistered;
+
+    /// <summary>
+    /// The file of the registered library with the identifier of the library, when the library is a file that was read in
+    /// its place: the programs that load a type library find the registered one.
+    /// </summary>
+    public string? RegisteredPath { get; set; }
 
     /// <summary>
     /// Finds a type by its identifier, or by its name: the types without an identifier, and the types whose identifiers

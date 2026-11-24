@@ -803,6 +803,11 @@ public sealed partial class TypeLibraryWriter
             Message = "The type library refers to the types of '{Library}', which is not registered: a program only loads these types where '{Library}' is registered or its file '{File}' is in the current directory or on the path")]
         private partial void LogUnregisteredImport(string library, string file);
 
+        [LoggerMessage(
+            Level = LogLevel.Information,
+            Message = "The type library refers to the types of '{Library}', which were read from '{File}', while '{Registered}' is registered: a program finds these types in the registered library")]
+        private partial void LogReplacedImport(string library, string file, string registered);
+
         [LoggerMessage(Level = LogLevel.Warning, Message = "Values of type {Type} cannot be written to a type library")]
         private partial void LogUnsupportedValue(string type);
     }

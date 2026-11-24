@@ -121,6 +121,10 @@ public sealed partial class TypeLibraryWriter
                 {
                     LogUnregisteredImport(reference.Name, System.IO.Path.GetFileName(imported.Path));
                 }
+                else if (imported.RegisteredPath is { } registered)
+                {
+                    LogReplacedImport(reference.Name, imported.Path, registered);
+                }
 
                 LogImportedLibrary(reference.Name, imported.Path);
             }

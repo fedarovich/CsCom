@@ -328,9 +328,12 @@ public sealed class BuildPackageTests
     [TestMethod]
     public void ExportsTheTypeLibraryDuringTheBuild()
     {
+        // A type library that the export reads without referring to it, which is an input of the export all the same.
+        string consulted = Path.Combine(TestEnvironment.CreateDirectory("export-input"), "Drawing.tlb");
+        File.Copy(TestEnvironment.DrawingTypeLibrary, consulted);
         string project = CreateConsumer(
             "build-package-export",
-            $"""<CsComReference Include="{TestEnvironment.TestTypeLibrary}" />""",
+            $"""<CsComReference Include="{TestEnvironment.TestTypeLibrary}" /><CsComTypeLibraryReference Include="{consulted}" />""",
             program: ServerProgram,
             properties: "<CsComExportTypeLibrary>true</CsComExportTypeLibrary><CsComTypeLibraryName>GreeterLib</CsComTypeLibraryName>");
         string directory = Path.GetDirectoryName(project)!;
@@ -366,6 +369,11 @@ public sealed class BuildPackageTests
         var written = File.GetLastWriteTimeUtc(exported);
         StringAssert.Contains(Build(project), "CsCom: the type library");
         Assert.AreEqual(written, File.GetLastWriteTimeUtc(exported));
+
+        // A type library that was read changes: the type library is exported again.
+        File.SetLastWriteTimeUtc(consulted, DateTime.UtcNow.AddSeconds(2));
+        Build(project);
+        Assert.IsGreaterThan(written, File.GetLastWriteTimeUtc(exported));
 
         // The type library is published with the assembly.
         string publish = Path.Combine(directory, "publish");
