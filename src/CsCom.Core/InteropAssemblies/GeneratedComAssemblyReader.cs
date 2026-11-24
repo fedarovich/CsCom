@@ -328,17 +328,24 @@ public sealed partial class GeneratedComAssemblyReader
                     return library;
                 }
 
-                Guid? id = type.IsInterface ? GetGuid(type.GetCustomAttributesData()) : null;
-                return catalogLibrary.Find(id, GetOriginalName(type)) is not null ? library : null;
+                if (catalogLibrary.Find(GetInterfaceId(type), GetOriginalName(type)) is not null)
+                {
+                    return library;
+                }
             }
 
-            // An assembly with a [Guid] that CsCom did not generate has a type library of its own if that library exists:
-            // many assemblies have a [Guid] that identifies nothing.
-            return type.Assembly != _assembly && markers.Libraries.Count == 0 && !IsSupportType(type)
-                && markers.Exported is { } exported && _catalog?.TryGetLibrary(exported, out _) == true
+            // The other types of a referenced assembly with a [Guid] are those of its own type library, the one that is
+            // exported from it, if that library exists and has the type: many assemblies have a [Guid] that identifies
+            // nothing.
+            return type.Assembly != _assembly && !IsSupportType(type)
+                && markers.Exported is { } exported && _catalog?.TryGetLibrary(exported, out var exportedLibrary) == true
+                && exportedLibrary.Find(GetInterfaceId(type), type.Name) is not null
                 ? exported
                 : null;
         }
+
+        // The identifier by which an interface is found in a type library; the other types are found by their names.
+        private static Guid? GetInterfaceId(Type type) => type.IsInterface ? GetGuid(type.GetCustomAttributesData()) : null;
 
         // The name of a type of generated code in its type library.
         private string GetOriginalName(Type type) =>
@@ -349,8 +356,9 @@ public sealed partial class GeneratedComAssemblyReader
             type.Assembly.GetName().Name is "CsCom.Runtime" or "CsCom.Runtime.Dynamic"
             || (type.Namespace is { } @namespace && GetMarkers(type.Assembly).SupportNamespaces.Contains(@namespace));
 
-        private static bool IsFrameworkType(Type type) =>
-            type.Assembly.GetName().Name is { } name
+        // A type of .NET, which is in no type library. The exported assembly can have such a name itself.
+        private bool IsFrameworkType(Type type) =>
+            type.Assembly != _assembly && type.Assembly.GetName().Name is { } name
             && (name is "mscorlib" or "netstandard" or "System" || name.StartsWith("System.", StringComparison.Ordinal) || name.StartsWith("Microsoft.", StringComparison.Ordinal));
 
         private TypeDefinition GetOrCreateDefinition(Type type)
@@ -699,7 +707,7 @@ public sealed partial class GeneratedComAssemblyReader
 
         [LoggerMessage(
             Level = LogLevel.Warning,
-            Message = "'{Type}' is a type of the assembly '{Assembly}', which has neither the metadata of code that CsCom generated from a type library nor a type library of its own that is found by its [Guid]: regenerate it with this version of CsCom, or export its type library and specify the file")]
+            Message = "'{Type}' of the assembly '{Assembly}' is neither a type of a type library that CsCom generated code from, nor found in a type library of the assembly: export the type library of the assembly and specify the file, or regenerate the code with this version of CsCom")]
         private partial void LogUnknownLibrary(string type, string assembly);
 
         // The metadata that tells which types of an assembly were generated from which type libraries.

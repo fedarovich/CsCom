@@ -123,7 +123,8 @@ public sealed partial class GeneratedComAssemblyReader
             {
                 return MapUserDefined(type, context) ?? throw new CsComException(
                     $"'{context}' uses the structure '{type.FullName}' of the assembly '{type.Assembly.GetName().Name}', which cannot be described in the type library: "
-                    + "the assembly has neither the metadata of code that CsCom generated from a type library nor a type library of its own that is found by its [Guid].");
+                    + "it is neither a type of a type library that CsCom generated code from, nor found in a type library of the assembly. "
+                    + "Export the type library of the assembly and specify the file.");
             }
 
             if (type.IsValueType)

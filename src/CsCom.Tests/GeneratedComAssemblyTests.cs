@@ -312,6 +312,73 @@ public sealed class GeneratedComAssemblyTests : VerifyBase
         CollectionAssert.AreEqual(new[] { exported }, new TypeLibraryWriter().Write(library, Path.Combine(directory, "Logger2.tlb"), new TypeLibraryWriterOptions { Catalog = catalog }).ToArray());
     }
 
+    // A referenced assembly can have both code generated from a type library and COM types of its own, which are in the
+    // type library that is exported from it.
+    [TestMethod]
+    public void RefersToTheOwnTypesOfAReferencedAssemblyWithGeneratedCode()
+    {
+        string directory = TestEnvironment.CreateDirectory("export");
+        string referenced = Compile(directory, "Shared", """
+            using System.Reflection;
+            using System.Runtime.InteropServices;
+            using System.Runtime.InteropServices.Marshalling;
+
+            [assembly: Guid("7C1F2D2A-4C1E-4B71-9D0B-7B7C2E0A7300")]
+            [assembly: AssemblyMetadata("CsCom.TypeLibrary", "Interop.CsComTest|CsComTest|{6B1F2D2A-4C1E-4B71-9D0B-7B7C2E0A1000}|1.2")]
+
+            namespace Shared
+            {
+                public enum Mode { Off, On }
+
+                [GeneratedComInterface, Guid("7C1F2D2A-4C1E-4B71-9D0B-7B7C2E0A7301")]
+                public partial interface IShared { void M(Mode mode); }
+            }
+            """);
+        string assembly = Compile(directory, "Consumer", """
+            using System.Runtime.InteropServices;
+            using System.Runtime.InteropServices.Marshalling;
+
+            [assembly: Guid("7C1F2D2A-4C1E-4B71-9D0B-7B7C2E0A7310")]
+
+            [GeneratedComInterface, Guid("7C1F2D2A-4C1E-4B71-9D0B-7B7C2E0A7311")]
+            public partial interface IConsumer { void Use(Shared.Mode mode, Shared.IShared shared); }
+            """, referenced);
+        string exported = Path.Combine(directory, "Shared.tlb");
+        new TypeLibraryWriter().Write(new GeneratedComAssemblyReader().Read(referenced), exported);
+        var warnings = new WarningCollector<GeneratedComAssemblyReader>();
+
+        var library = new GeneratedComAssemblyReader(warnings).Read(assembly, catalog: new TypeLibraryCatalog([exported]));
+
+        var method = library.Types.OfType<InterfaceDefinition>().Single(static t => t.ImportedFrom is null).Methods.Single();
+        Assert.AreEqual("Mode mode, IShared* shared", string.Join(", ", method.Parameters));
+        Assert.AreEqual("Shared", library.ImportedLibraries.Single().Name);
+        Assert.IsEmpty(warnings.Messages);
+    }
+
+    // An assembly whose name is like those of .NET exports its own enumerations and structures.
+    [TestMethod]
+    public void ExportsTheTypesOfAnAssemblyNamedLikeThoseOfDotNet()
+    {
+        string assembly = Compile(TestEnvironment.CreateDirectory("export"), "Microsoft.Sample", """
+            using System.Runtime.InteropServices;
+            using System.Runtime.InteropServices.Marshalling;
+
+            [assembly: Guid("7C1F2D2A-4C1E-4B71-9D0B-7B7C2E0A7400")]
+
+            public enum Level { Low, High }
+
+            public struct Size { public int Width; public int Height; }
+
+            [GeneratedComInterface, Guid("7C1F2D2A-4C1E-4B71-9D0B-7B7C2E0A7401")]
+            public partial interface ISample { void M(Level level, in Size size); }
+            """);
+
+        var library = new GeneratedComAssemblyReader().Read(assembly);
+
+        CollectionAssert.AreEquivalent(new[] { "ISample", "Level", "Size" }, library.Types.Select(static t => t.Name).ToArray());
+        Assert.AreEqual("Level level, Size* size", string.Join(", ", library.Types.OfType<InterfaceDefinition>().Single().Methods.Single().Parameters));
+    }
+
     // An assembly with the metadata of generated code whose types were renamed and whose support code is public, and an
     // assembly that references it.
     [TestMethod]
