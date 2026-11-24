@@ -49,7 +49,7 @@ public sealed class TypeLibraryExportRequest
 /// <param name="Library">The model of the type library.</param>
 /// <param name="InputFiles">
 /// The files that were read: the assembly, the referenced assemblies whose types the library uses, and the type libraries
-/// that it refers to, except that of OLE Automation.
+/// that were given or that it refers to, except that of OLE Automation.
 /// </param>
 public sealed record TypeLibraryExportResult(string Path, TypeLibrary Library, IReadOnlyList<string> InputFiles);
 
@@ -111,7 +111,7 @@ public sealed partial class TypeLibraryExporter
             throw new CsComException($"The type library cannot be written to the assembly '{assemblyPath}' itself.");
         }
 
-        var catalog = new TypeLibraryCatalog(typeLibraryPaths);
+        var catalog = new TypeLibraryCatalog(typeLibraryPaths, _loggerFactory.CreateLogger<TypeLibraryCatalog>());
         var reader = new GeneratedComAssemblyReader(_loggerFactory.CreateLogger<GeneratedComAssemblyReader>(), request.ReferencePaths);
         var library = reader.Read(assemblyPath, identity, catalog);
         int count = library.Types.Count(static t => t.ImportedFrom is null);
@@ -124,13 +124,16 @@ public sealed partial class TypeLibraryExporter
             LogNoTypes(Path.GetFileName(assemblyPath));
         }
 
-        var imported = new TypeLibraryWriter(_loggerFactory.CreateLogger<TypeLibraryWriter>())
+        new TypeLibraryWriter(_loggerFactory.CreateLogger<TypeLibraryWriter>())
             .Write(library, outputPath, new TypeLibraryWriterOptions { Platform = request.Platform, Catalog = catalog });
         LogExported(library.Name, library.MajorVersion, library.MinorVersion, count, outputPath);
+
+        // The type libraries that the reader looked into decide which types are those of the library, whether the
+        // library refers to them or not.
         return new TypeLibraryExportResult(
             outputPath,
             library,
-            [.. new[] { assemblyPath }.Concat(library.ImportedFiles).Concat(imported).Distinct(StringComparer.OrdinalIgnoreCase)]);
+            [.. new[] { assemblyPath }.Concat(library.ImportedFiles).Concat(catalog.Files).Distinct(StringComparer.OrdinalIgnoreCase)]);
     }
 
     private static string? ParseName(string? name)

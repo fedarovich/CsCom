@@ -101,8 +101,9 @@ public sealed partial class TypeLibraryWriter
 
             if (!_catalog.TryGetLibrary(reference, out imported))
             {
+                string reason = _catalog.GetLoadError(reference.Guid) is { } error ? $"is registered, but cannot be loaded ({error})" : "is not registered";
                 throw new TypeLibraryException(
-                    $"The type library '{reference.Name}' {reference.MajorVersion}.{reference.MinorVersion} ({reference.Guid:B}), which the types of '{_library.Name}' use, is not registered: specify its file.");
+                    $"The type library '{reference.Name}' {reference.MajorVersion}.{reference.MinorVersion} ({reference.Guid:B}), which the types of '{_library.Name}' use, {reason}: specify its file.");
             }
 
             if (!imported.IsRegistered)

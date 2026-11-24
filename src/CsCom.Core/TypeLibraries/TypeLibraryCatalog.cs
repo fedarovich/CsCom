@@ -1,6 +1,8 @@
 using System.Runtime.InteropServices;
 using CsCom.Model;
 using CsCom.TypeLibraries.Native;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace CsCom.TypeLibraries;
 
@@ -9,37 +11,98 @@ namespace CsCom.TypeLibraries;
 /// identifiers, and otherwise in the registry. The reader of an assembly asks it which types these libraries have, and
 /// the writer refers to them.
 /// </summary>
-public sealed unsafe class TypeLibraryCatalog
+public sealed unsafe partial class TypeLibraryCatalog
 {
+    private static readonly Guid StdOleLibraryId = new("00020430-0000-0000-C000-000000000046");
+
     private readonly IReadOnlyList<string> _paths;
+    private readonly ILogger _logger;
+    private readonly Func<TypeLibraryReference, string?> _findRegistered;
     private readonly Dictionary<Guid, CatalogLibrary?> _libraries = [];
+    private readonly Dictionary<Guid, string> _loadErrors = [];
     private Dictionary<Guid, string>? _files;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="TypeLibraryCatalog"/> class.
     /// </summary>
     /// <param name="typeLibraryPaths">The files of type libraries, which are preferred to the registered ones.</param>
-    public TypeLibraryCatalog(IReadOnlyList<string>? typeLibraryPaths = null)
+    /// <param name="logger">The logger.</param>
+    public TypeLibraryCatalog(IReadOnlyList<string>? typeLibraryPaths = null, ILogger<TypeLibraryCatalog>? logger = null)
+        : this(typeLibraryPaths, logger, static reference => TypeLibrarySource.FindRegistered(reference.Guid, reference.MajorVersion, reference.MinorVersion))
+    {
+    }
+
+    // The registry is replaced in tests.
+    internal TypeLibraryCatalog(IReadOnlyList<string>? typeLibraryPaths, ILogger? logger, Func<TypeLibraryReference, string?> findRegistered)
     {
         _paths = typeLibraryPaths ?? [];
+        _logger = logger ?? NullLogger<TypeLibraryCatalog>.Instance;
+        _findRegistered = findRegistered;
     }
 
     /// <summary>
-    /// Gets a type library, or <see langword="false"/> if it is neither among the files nor registered.
+    /// Gets the files that the catalog has read so far, on which what was read or written with it depends: the files that
+    /// it was given, once it looked a library up among them, and the files of the registered libraries that it loaded,
+    /// except that of OLE Automation.
     /// </summary>
-    /// <exception cref="TypeLibraryException">A file of the catalog, or the registered type library, cannot be loaded.</exception>
+    public IReadOnlyCollection<string> Files
+    {
+        get
+        {
+            var files = new List<string>();
+            if (_files is not null)
+            {
+                files.AddRange(_paths.Select(static p => TypeLibrarySource.GetFilePath(Path.GetFullPath(p))));
+            }
+
+            files.AddRange(_libraries.Values.Where(static l => l is not null && l.LibraryId != StdOleLibraryId).Select(static l => l!.Path));
+            return [.. files.Distinct(StringComparer.OrdinalIgnoreCase)];
+        }
+    }
+
+    /// <summary>
+    /// Gets a type library, or <see langword="false"/> if it is neither among the files nor registered, or if it is
+    /// registered and cannot be loaded, as a library that was uninstalled without removing its registration.
+    /// </summary>
+    /// <exception cref="TypeLibraryException">A file of the catalog cannot be loaded.</exception>
     internal bool TryGetLibrary(TypeLibraryReference reference, [System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out CatalogLibrary? library)
     {
         if (!_libraries.TryGetValue(reference.Guid, out library))
         {
-            string? registered = TypeLibrarySource.FindRegistered(reference.Guid, reference.MajorVersion, reference.MinorVersion);
-            string? path = GetFiles().GetValueOrDefault(reference.Guid) ?? (registered is null ? null : TypeLibrarySource.Resolve(registered));
-            library = path is null ? null : new CatalogLibrary(reference.Guid, path, Load(path), registered is not null);
+            string? registered = _findRegistered(reference);
+            if (GetFiles().GetValueOrDefault(reference.Guid) is { } file)
+            {
+                library = new CatalogLibrary(reference.Guid, file, Load(file), registered is not null);
+            }
+            else if (registered is not null)
+            {
+                try
+                {
+                    string path = TypeLibrarySource.Resolve(registered);
+                    library = new CatalogLibrary(reference.Guid, path, Load(path), isRegistered: true);
+                }
+                catch (CsComException e)
+                {
+                    _loadErrors[reference.Guid] = e.Message;
+                    LogUnloadableLibrary(reference.Name, reference.MajorVersion, reference.MinorVersion, e.Message);
+                }
+            }
+
             _libraries.Add(reference.Guid, library);
         }
 
         return library is not null;
     }
+
+    /// <summary>
+    /// Gets why a registered type library that <see cref="TryGetLibrary"/> did not return could not be loaded.
+    /// </summary>
+    internal string? GetLoadError(Guid libraryId) => _loadErrors.GetValueOrDefault(libraryId);
+
+    [LoggerMessage(
+        Level = LogLevel.Warning,
+        Message = "The registered type library '{Name}' {Major}.{Minor} cannot be loaded, so it cannot be told which types it has: {Error}")]
+    private partial void LogUnloadableLibrary(string name, int major, int minor, string error);
 
     // The files by the identifiers of their libraries.
     private Dictionary<Guid, string> GetFiles()

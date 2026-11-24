@@ -191,6 +191,85 @@ public sealed class GeneratedComAssemblyTests : VerifyBase
         Assert.IsFalse(File.Exists(path));
     }
 
+    // The registration of a type library can remain when the library was uninstalled.
+    [TestMethod]
+    public void ToleratesARegisteredTypeLibraryThatCannotBeLoaded()
+    {
+        string directory = TestEnvironment.CreateDirectory("export");
+        string assembly = Compile(directory, "Stale", """
+            using System.Reflection;
+            using System.Runtime.InteropServices;
+            using System.Runtime.InteropServices.Marshalling;
+
+            [assembly: Guid("7C1F2D2A-4C1E-4B71-9D0B-7B7C2E0A7100")]
+            [assembly: AssemblyMetadata("CsCom.TypeLibrary", "Interop.Gone|Gone|{7C1F2D2A-4C1E-4B71-9D0B-7B7C2E0A7101}|1.0")]
+
+            namespace Interop.Gone
+            {
+                [GeneratedComInterface, Guid("7C1F2D2A-4C1E-4B71-9D0B-7B7C2E0A7102")]
+                public partial interface IGone { void M(); }
+            }
+
+            namespace Stale
+            {
+                [GeneratedComInterface, Guid("7C1F2D2A-4C1E-4B71-9D0B-7B7C2E0A7103")]
+                public partial interface IUnrelated { void M(); }
+            }
+            """);
+        var warnings = new WarningCollector<TypeLibraryCatalog>();
+        string missing = Path.Combine(directory, "Gone.tlb");
+        TypeLibraryCatalog Catalog() => new([], warnings, reference => reference.Name == "Gone" ? missing : TypeLibrarySource.FindRegistered(reference.Guid, reference.MajorVersion, reference.MinorVersion));
+
+        // No type of the library is used, so the export does not need it.
+        var library = new GeneratedComAssemblyReader().Read(assembly, catalog: Catalog());
+        Assert.AreEqual("IUnrelated", library.Types.Single().Name);
+        StringAssert.Contains(warnings.Messages.Single(), "The registered type library 'Gone' 1.0 cannot be loaded");
+        new TypeLibraryWriter().Write(library, Path.Combine(directory, "Stale.tlb"));
+
+        // A type of it that is used needs it.
+        string user = Compile(directory, "User", """
+            using System.Runtime.InteropServices;
+            using System.Runtime.InteropServices.Marshalling;
+
+            [assembly: Guid("7C1F2D2A-4C1E-4B71-9D0B-7B7C2E0A7110")]
+
+            [GeneratedComInterface, Guid("7C1F2D2A-4C1E-4B71-9D0B-7B7C2E0A7111")]
+            public partial interface IUser { void M(Interop.Gone.IGone gone); }
+            """, assembly);
+        var catalog = Catalog();
+        library = new GeneratedComAssemblyReader().Read(user, catalog: catalog);
+        var exception = Assert.ThrowsExactly<TypeLibraryException>(
+            () => new TypeLibraryWriter().Write(library, Path.Combine(directory, "User.tlb"), new TypeLibraryWriterOptions { Catalog = catalog }));
+        StringAssert.Contains(exception.Message, "is registered, but cannot be loaded (");
+    }
+
+    // The type libraries that tell which types are those of the library are inputs of the export, used or not.
+    [TestMethod]
+    public void ReportsTheTypeLibrariesThatWereConsultedAsInputs()
+    {
+        string directory = TestEnvironment.CreateDirectory("export");
+        string assembly = Compile(directory, "Own", """
+            using System.Reflection;
+            using System.Runtime.InteropServices;
+            using System.Runtime.InteropServices.Marshalling;
+
+            [assembly: Guid("7C1F2D2A-4C1E-4B71-9D0B-7B7C2E0A7200")]
+            [assembly: AssemblyMetadata("CsCom.TypeLibrary", "Interop.CsComTest|CsComTest|{6B1F2D2A-4C1E-4B71-9D0B-7B7C2E0A1000}|1.2")]
+
+            namespace Interop.CsComTest
+            {
+                [GeneratedComInterface, Guid("7C1F2D2A-4C1E-4B71-9D0B-7B7C2E0A7201")]
+                public partial interface IOwn { void M(); }
+            }
+            """);
+
+        var result = new TypeLibraryExporter().Export(new TypeLibraryExportRequest { AssemblyPath = assembly, TypeLibraryPaths = [TestEnvironment.TestTypeLibrary] });
+
+        Assert.AreEqual("IOwn", result.Library.Types.Single().Name);
+        Assert.IsEmpty(result.Library.ImportedLibraries);
+        CollectionAssert.AreEquivalent(new[] { assembly, TestEnvironment.TestTypeLibrary }, result.InputFiles.ToArray());
+    }
+
     // Many assemblies have a [Guid] that identifies no type library: their types are not taken for types of one, unless
     // the type library with that identifier is found.
     [TestMethod]
