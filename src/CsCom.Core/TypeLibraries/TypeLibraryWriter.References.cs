@@ -111,7 +111,14 @@ public sealed partial class TypeLibraryWriter
                 return imported;
             }
 
-            if (!_libraryPaths.TryGetValue(reference.Guid, out string? path))
+            if (_libraryPaths.TryGetValue(reference.Guid, out string? path))
+            {
+                if (TypeLibrarySource.FindRegistered(reference.Guid, reference.MajorVersion, reference.MinorVersion) is null)
+                {
+                    LogUnregisteredImport(reference.Name, System.IO.Path.GetFileName(TypeLibrarySource.GetFilePath(path)));
+                }
+            }
+            else
             {
                 string source = TypeLibrarySource.FindRegistered(reference.Guid, reference.MajorVersion, reference.MinorVersion)
                     ?? throw new TypeLibraryException(

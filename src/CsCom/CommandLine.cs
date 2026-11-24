@@ -19,6 +19,9 @@ internal static class CommandLine
     /// <summary>The name of the hidden command that the MSBuild task of CsCom.Build runs.</summary>
     public const string BuildGenerateCommandName = "build-generate";
 
+    /// <summary>The name of the hidden command that exports the type library of a project for the MSBuild task of CsCom.Build.</summary>
+    public const string BuildExportCommandName = "build-export";
+
     private const string SourceDescription =
         "The source of the interop types: a type library (a .tlb file, or a .dll, .ocx or .exe file with an embedded type library), a registered LIBID ({GUID} or {GUID}:major.minor) or ProgID, or a .NET interop assembly, such as a primary interop assembly or the output of TlbImp.";
 
@@ -619,6 +622,14 @@ internal static class CommandLine
         buildGenerate.Hidden = true;
         buildGenerate.SetAction(static result => BuildGenerate(result));
 
+        var buildExport = new Command(BuildExportCommandName, "Exports the type library of the assembly of a project for the MSBuild task of CsCom.Build.")
+        {
+            RequestArgument,
+            HashArgument,
+        };
+        buildExport.Hidden = true;
+        buildExport.SetAction(static result => BuildExport(result));
+
         return new RootCommand("Generates COM interop code from type libraries and interop assemblies using source-generated COM interop.")
         {
             VerbosityOption,
@@ -634,12 +645,26 @@ internal static class CommandLine
             new Command("typelib", "Exports type libraries.") { exportTypeLibrary },
             list,
             buildGenerate,
+            buildExport,
         };
     }
 
     // Generates the code of a request of the MSBuild task. The messages are written to the output in the canonical format of
     // MSBuild, e.g. "cscom.xml(3,6): error CSCOM1000: ...", so that the task reports the warnings and errors.
-    private static int BuildGenerate(ParseResult result)
+    private static int BuildGenerate(ParseResult result) => RunBuildCommand(result, static (result, loggerFactory, warnings) =>
+    {
+        var request = BuildRequest.Load(result.GetRequiredValue(RequestArgument));
+        new LibrarySetBuild(new InteropPipeline(loggerFactory), loggerFactory).Run(request, result.GetRequiredValue(HashArgument), warnings);
+    });
+
+    // Exports the type library of a request of the MSBuild task, with the output of BuildGenerate.
+    private static int BuildExport(ParseResult result) => RunBuildCommand(result, static (result, loggerFactory, warnings) =>
+    {
+        var request = ExportRequest.Load(result.GetRequiredValue(RequestArgument));
+        new TypeLibraryExportBuild(loggerFactory).Run(request, result.GetRequiredValue(HashArgument), warnings);
+    });
+
+    private static int RunBuildCommand(ParseResult result, Action<ParseResult, ILoggerFactory, IReadOnlyCollection<string>> action)
     {
         var output = result.InvocationConfiguration.Output;
         var provider = new MSBuildOutput.LoggerProvider(output, LogLevel.Information);
@@ -648,9 +673,8 @@ internal static class CommandLine
             .AddProvider(provider));
         try
         {
-            // The warnings are recorded with the state: the task reports them again while the code is up to date.
-            var request = BuildRequest.Load(result.GetRequiredValue(RequestArgument));
-            new LibrarySetBuild(new InteropPipeline(loggerFactory), loggerFactory).Run(request, result.GetRequiredValue(HashArgument), provider.Warnings);
+            // The warnings are recorded with the state: the task reports them again while the result is up to date.
+            action(result, loggerFactory, provider.Warnings);
             return 0;
         }
         catch (Exception e)

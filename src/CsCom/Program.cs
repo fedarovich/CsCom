@@ -6,8 +6,8 @@ internal static class Program
 {
     private static int Main(string[] args)
     {
-        // The MSBuild task of CsCom.Build reads the output of its command as UTF-8.
-        if (args is [CommandLine.BuildGenerateCommandName, ..])
+        // The MSBuild tasks of CsCom.Build read the output of their commands as UTF-8.
+        if (args is [CommandLine.BuildGenerateCommandName or CommandLine.BuildExportCommandName, ..])
         {
             Console.OutputEncoding = Encoding.UTF8;
         }

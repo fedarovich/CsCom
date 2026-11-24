@@ -70,6 +70,26 @@ internal static partial class ModelDescriber
         string Help(string? documentation) => detailed && documentation is not null ? $", help {documentation}" : string.Empty;
     }
 
+    /// <summary>
+    /// Reads a type library that refers to the types of type libraries that are not registered. A type library names the
+    /// libraries that it refers to by their identifiers and file names, without their directories, so OLE Automation only
+    /// finds a library that is not registered when it is loaded, or when its file is in the current directory or on the
+    /// path.
+    /// </summary>
+    public static TypeLibrary ReadWithImports(string path, params string[] imports)
+    {
+        var loaded = new List<object?>();
+        foreach (string import in imports)
+        {
+            Assert.AreEqual(0, CsCom.TypeLibraries.Native.OleAut32.LoadTypeLibEx(import, CsCom.TypeLibraries.Native.REGKIND.REGKIND_NONE, out var typeLib));
+            loaded.Add(typeLib);
+        }
+
+        var library = new CsCom.TypeLibraries.TypeLibraryReader().Read(path);
+        GC.KeepAlive(loaded);
+        return library;
+    }
+
     /// <summary>Describes the library itself.</summary>
     public static string DescribeLibrary(TypeLibrary library) =>
         $"library {library.Name} {library.MajorVersion}.{library.MinorVersion} {library.Guid}, lcid {library.Lcid}, help {library.Documentation ?? "none"}, " +

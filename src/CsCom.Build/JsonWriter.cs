@@ -4,8 +4,8 @@ using System.Text;
 namespace CsCom.Build;
 
 /// <summary>
-/// Writes the JSON of the request of the generator: an object of string properties and arrays of such objects. The task
-/// does not use System.Text.Json, which the MSBuild of Visual Studio may load in another version.
+/// Writes the JSON of a request of the cscom tool: an object of string properties and arrays of strings or of such objects.
+/// The tasks do not use System.Text.Json, which the MSBuild of Visual Studio may load in another version.
 /// </summary>
 internal sealed class JsonWriter
 {
@@ -17,6 +17,13 @@ internal sealed class JsonWriter
         Separate();
         WriteString(name);
         _builder.Append(':');
+        WriteString(value);
+    }
+
+    /// <summary>Writes a string as an element of an array.</summary>
+    public void Value(string value)
+    {
+        Separate();
         WriteString(value);
     }
 

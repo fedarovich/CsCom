@@ -53,9 +53,25 @@
     <CsComGeneratedFilesFolder Condition="'$(CsComGeneratedFilesFolder)' == ''">CsCom</CsComGeneratedFilesFolder>
   </PropertyGroup>
 
+  <!--
+    CsCom.Build also exports the type library of the assembly, like TlbExp, when CsComExportTypeLibrary is true: the public
+    [GeneratedComInterface] interfaces and [GeneratedComClass] classes of the project, with the enumerations and structures
+    that they use. The identity of the library is that of the assembly ([assembly: Guid], [assembly: TypeLibVersion]) unless
+    CsComTypeLibraryName, CsComTypeLibraryGuid and CsComTypeLibraryVersion (major.minor) are set; CsComTypeLibraryPlatform
+    is win32 or win64, and CsComTypeLibraryPath the file. The type library refers to the types of the code generated from
+    type libraries in these libraries: those of the CsComReference items that are files, and registered ones. The type
+    library of generated code of a referenced assembly that is not registered is a CsComTypeLibraryReference item:
+
+      <CsComTypeLibraryReference Include="..\lib\Device.tlb" />
+  -->
+  <PropertyGroup>
+    <CsComExportTypeLibrary Condition="'$(CsComExportTypeLibrary)' == ''">false</CsComExportTypeLibrary>
+  </PropertyGroup>
+
   <ItemGroup>
     <!-- Type libraries and interop assemblies can be given the CsComReference build action in Visual Studio. -->
     <AvailableItemName Include="CsComReference" />
+    <AvailableItemName Include="CsComTypeLibraryReference" />
   </ItemGroup>
 
 </Project>

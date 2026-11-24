@@ -126,7 +126,7 @@ public sealed class GeneratedComAssemblyTests : VerifyBase
         var imported = new TypeLibraryWriter().Write(library, path, new TypeLibraryWriterOptions { TypeLibraryPaths = [TestEnvironment.TestTypeLibrary] });
 
         CollectionAssert.AreEqual(new[] { TestEnvironment.TestTypeLibrary }, imported.ToArray());
-        var written = new TypeLibraryReader().Read(path);
+        var written = ModelDescriber.ReadWithImports(path, TestEnvironment.TestTypeLibrary);
         CollectionAssert.AreEquivalent(new[] { "IRenderer", "Renderer" }, written.Types.Where(static t => t.ImportedFrom is null).Select(static t => t.Name).ToArray());
         return Verify(DescribeOwn(written) + Environment.NewLine + string.Join(Environment.NewLine, warnings.Messages));
     }
@@ -162,7 +162,7 @@ public sealed class GeneratedComAssemblyTests : VerifyBase
         new TypeLibraryWriter().Write(library, path, new TypeLibraryWriterOptions { TypeLibraryPaths = [TestEnvironment.TestTypeLibrary] });
 
         CollectionAssert.AreEqual(new[] { interop }, library.ImportedFiles.ToArray(), "The referenced assembly is an input of the export.");
-        var written = new TypeLibraryReader().Read(path);
+        var written = ModelDescriber.ReadWithImports(path, TestEnvironment.TestTypeLibrary);
         Assert.AreEqual("CsComTest", written.Types.Single(static t => t.Name == "Color").ImportedFrom?.Name, "The renamed type is found by its original name.");
 
         // The assembly of the generated code has no types of its own to export: its interfaces are those of the type library

@@ -254,6 +254,155 @@ public sealed class BuildPackageTests
         CollectionAssert.AreEqual(new[] { "Count=2", "False" }, Run(project).TakeLast(2).ToArray());
     }
 
+    // A project with the code of a type library and COM types of its own: a class that implements an interface of the type
+    // library, and interfaces that use its types and derive from each other.
+    private const string ServerProgram = """
+        using System.Runtime.InteropServices;
+        using System.Runtime.InteropServices.Marshalling;
+        using Interop.CsComTest;
+
+        [assembly: Guid("7C1F2D2A-4C1E-4B71-9D0B-7B7C2E0A6000")]
+        [assembly: TypeLibVersion(1, 3)]
+
+        Console.WriteLine(new Server.Greeter().Greet("World", Color.Green));
+
+        namespace Server
+        {
+            /// <summary>Greets.</summary>
+            [GeneratedComInterface(StringMarshalling = StringMarshalling.Custom, StringMarshallingCustomType = typeof(BStrStringMarshaller))]
+            [Guid("7C1F2D2A-4C1E-4B71-9D0B-7B7C2E0A6001")]
+            public partial interface IGreeter
+            {
+                /// <summary>Greets.</summary>
+                string Greet(string name, Color color);
+
+                /// <summary>Gets a shape.</summary>
+                [return: MarshalUsing(typeof(CsCom.Runtime.ComObjectMarshaller<IShape>))]
+                IShape? GetShape();
+
+                /// <summary>Gets the number of greetings.</summary>
+                int get_Count();
+            }
+
+            /// <summary>Greets more.</summary>
+            [GeneratedComInterface(StringMarshalling = StringMarshalling.Custom, StringMarshallingCustomType = typeof(BStrStringMarshaller))]
+            [Guid("7C1F2D2A-4C1E-4B71-9D0B-7B7C2E0A6002")]
+            public partial interface IPointGreeter : IGreeter
+            {
+                /// <summary>Greets a point.</summary>
+                void GreetPoint(in Point point);
+            }
+
+            /// <summary>The greeter.</summary>
+            [GeneratedComClass]
+            [Guid("7C1F2D2A-4C1E-4B71-9D0B-7B7C2E0A6010")]
+            public partial class Greeter : IPointGreeter, IShapeEventsVt
+            {
+                /// <inheritdoc/>
+                public string Greet(string name, Color color) => $"Hello, {color} {name}";
+
+                /// <inheritdoc/>
+                public IShape? GetShape() => null;
+
+                /// <inheritdoc/>
+                public int get_Count() => 1;
+
+                /// <inheritdoc/>
+                public void GreetPoint(in Point point) { }
+
+                /// <inheritdoc/>
+                public void Moved(int X, int Y) { }
+
+                /// <inheritdoc/>
+                public void Closing(ref bool Cancel) { }
+
+                /// <inheritdoc/>
+                public void Renamed(string? Name) { }
+
+                /// <inheritdoc/>
+                public string? Describe(object? Value, out int length) => throw new NotSupportedException();
+            }
+        }
+        """;
+
+    [TestMethod]
+    public void ExportsTheTypeLibraryDuringTheBuild()
+    {
+        string project = CreateConsumer(
+            "build-package-export",
+            $"""<CsComReference Include="{TestEnvironment.TestTypeLibrary}" />""",
+            program: ServerProgram,
+            properties: "<CsComExportTypeLibrary>true</CsComExportTypeLibrary><CsComTypeLibraryName>GreeterLib</CsComTypeLibraryName>");
+        string directory = Path.GetDirectoryName(project)!;
+
+        var output = Run(project);
+
+        Assert.AreEqual("Hello, Green World", output[^1]);
+        string exported = Path.Combine(directory, "obj", "Debug", TestEnvironment.TargetFramework, "Consumer.tlb");
+        string copied = Path.Combine(directory, "bin", "Debug", TestEnvironment.TargetFramework, "Consumer.tlb");
+        Assert.IsTrue(File.Exists(copied), "The type library is copied to the output directory.");
+
+        // The types of the project are in the library; those of the code generated from the type library, which is a
+        // CsComReference of the project, are referred to in it.
+        var library = ModelDescriber.ReadWithImports(copied, TestEnvironment.TestTypeLibrary);
+        Assert.AreEqual(("GreeterLib", new Guid("7C1F2D2A-4C1E-4B71-9D0B-7B7C2E0A6000"), 1, 3), (library.Name, library.Guid, (int)library.MajorVersion, (int)library.MinorVersion));
+        CollectionAssert.AreEqual(
+            new[] { "IGreeter", "IPointGreeter", "Greeter" },
+            library.Types.Where(static t => t.ImportedFrom is null).Select(static t => t.Name).ToArray());
+        CollectionAssert.IsSubsetOf(
+            new[] { "IShape", "Color", "Point", "IShapeEventsVt" },
+            library.Types.Where(static t => t.ImportedFrom?.Name == "CsComTest").Select(static t => t.Name).ToArray());
+
+        // The COM generator adds the members of IGreeter to IPointGreeter, which are not members of it in the library.
+        var derived = library.Types.OfType<Model.InterfaceDefinition>().Single(static t => t.Name == "IPointGreeter");
+        Assert.AreEqual(6, derived.BaseVtableSlots);
+        CollectionAssert.AreEqual(new[] { "GreetPoint" }, derived.Methods.Select(static m => m.Name).ToArray());
+        var greeter = library.Types.OfType<Model.InterfaceDefinition>().Single(static t => t.Name == "IGreeter");
+        CollectionAssert.AreEqual(new[] { "Greet", "GetShape", "Count" }, greeter.Methods.Select(static m => m.Name).ToArray());
+        var coClass = library.Types.OfType<Model.CoClassDefinition>().Single();
+        CollectionAssert.AreEqual(new[] { "IPointGreeter", "IShapeEventsVt" }, coClass.Interfaces.Select(static i => i.Interface.ToString()).ToArray());
+
+        // The second build does not export the type library again.
+        var written = File.GetLastWriteTimeUtc(exported);
+        StringAssert.Contains(Build(project), "CsCom: the type library");
+        Assert.AreEqual(written, File.GetLastWriteTimeUtc(exported));
+
+        // The type library is published with the assembly.
+        string publish = Path.Combine(directory, "publish");
+        var (exitCode, lines) = DotNetCli.Run(["publish", project, "-o", publish], directory, NullLogger.Instance);
+        Assert.AreEqual(0, exitCode, string.Join(Environment.NewLine, lines));
+        Assert.IsTrue(File.Exists(Path.Combine(publish, "Consumer.tlb")));
+    }
+
+    [TestMethod]
+    public void ReportsTheErrorsOfTheExport()
+    {
+        // The assembly has no [Guid], and the project does not set CsComTypeLibraryGuid.
+        string project = CreateConsumer(
+            "build-package-export-error",
+            references: string.Empty,
+            program: """Console.WriteLine();""",
+            properties: "<CsComExportTypeLibrary>true</CsComExportTypeLibrary>");
+        string directory = Path.GetDirectoryName(project)!;
+
+        var (exitCode, output) = DotNetCli.Run(["build", project, "-v", "n"], directory, NullLogger.Instance);
+
+        string text = string.Join(Environment.NewLine, output);
+        Assert.AreNotEqual(0, exitCode, text);
+        StringAssert.Contains(text, "error CSCOM1000: 'Consumer.dll' has no identifier for its type library");
+
+        // With an identifier, the library of a project without COM types is empty, which is a warning of every build.
+        for (int build = 0; build < 2; build++)
+        {
+            (exitCode, output) = DotNetCli.Run(
+                ["build", project, "-v", "n", "-p:CsComTypeLibraryGuid=7C1F2D2A-4C1E-4B71-9D0B-7B7C2E0A6100", "-p:TreatWarningsAsErrors=false"], directory, NullLogger.Instance);
+            text = string.Join(Environment.NewLine, output);
+            Assert.AreEqual(0, exitCode, text);
+            StringAssert.Contains(text, "warning CSCOM2000: 'Consumer.dll' has no public [GeneratedComInterface] interface");
+            Assert.AreEqual(build == 1, text.Contains("CsCom: the type library", StringComparison.Ordinal), text);
+        }
+    }
+
     [TestMethod]
     [DataRow(false)]
     [DataRow(true)]
@@ -266,11 +415,26 @@ public sealed class BuildPackageTests
             Assert.Inconclusive("The MSBuild of Visual Studio was not found.");
         }
 
-        string project = CreateConsumer($"build-package-vs{(is64Bit ? "64" : "32")}", $"""
+        // The type library of the project is exported as well.
+        string project = CreateConsumer(
+            $"build-package-vs{(is64Bit ? "64" : "32")}",
+            $"""
             <CsComReference Include="{TestEnvironment.TestTypeLibrary}" />
             <CsComReference Include="{TestEnvironment.DrawingTypeLibrary}" Namespace="Drawing.Interop" />
             <CsComReference Include="Scripting.Dictionary" />
-            """);
+            """,
+            program: Program + """
+
+                /// <summary>An interface of the project.</summary>
+                [System.Runtime.InteropServices.Marshalling.GeneratedComInterface]
+                [System.Runtime.InteropServices.Guid("7C1F2D2A-4C1E-4B71-9D0B-7B7C2E0A6201")]
+                public partial interface IProjectInterface
+                {
+                    /// <summary>Draws on a canvas.</summary>
+                    void Draw([System.Runtime.InteropServices.Marshalling.MarshalUsing(typeof(CsCom.Runtime.ComObjectMarshaller<Drawing.Interop.ICanvas>))] Drawing.Interop.ICanvas canvas);
+                }
+                """,
+            properties: "<CsComExportTypeLibrary>true</CsComExportTypeLibrary><CsComTypeLibraryGuid>7C1F2D2A-4C1E-4B71-9D0B-7B7C2E0A6200</CsComTypeLibraryGuid>");
 
         var (exitCode, output) = RunProcess(msbuild, ["-restore", "-nologo", "-nodeReuse:false", "-p:TreatWarningsAsErrors=true", project], Path.GetDirectoryName(project)!);
 
@@ -278,6 +442,10 @@ public sealed class BuildPackageTests
         Assert.AreEqual(0, exitCode, text);
         Assert.IsFalse(output.Any(static line => line.Contains(": warning ", StringComparison.Ordinal)), text);
         Assert.IsTrue(File.Exists(Path.Combine(Path.GetDirectoryName(project)!, "bin", "Debug", TestEnvironment.TargetFramework, "Consumer.dll")), text);
+        var library = ModelDescriber.ReadWithImports(
+            Path.Combine(Path.GetDirectoryName(project)!, "bin", "Debug", TestEnvironment.TargetFramework, "Consumer.tlb"), TestEnvironment.DrawingTypeLibrary);
+        Assert.AreEqual("IProjectInterface", library.Types.Single(static t => t.ImportedFrom is null).Name);
+        Assert.AreEqual("CsComDrawing", library.Types.Single(static t => t.Name == "ICanvas").ImportedFrom?.Name);
     }
 
     // A console application in an isolated directory, which restores CsCom.Build and CsCom.Runtime from the local feed. It

@@ -1,6 +1,7 @@
 <Project>
 
   <UsingTask TaskName="CsCom.Build.CsComGenerate" AssemblyFile="$(MSBuildThisFileDirectory)..\tasks\netstandard2.0\CsCom.Build.dll" />
+  <UsingTask TaskName="CsCom.Build.CsComExportTypeLibrary" AssemblyFile="$(MSBuildThisFileDirectory)..\tasks\netstandard2.0\CsCom.Build.dll" />
 
   <PropertyGroup>
     <!-- The generated files are written into the intermediate output, per target framework. -->
@@ -127,6 +128,58 @@
       <NoWarn Condition="'$(CsComSuppressGeneratorWarnings)' == 'true' and '$(CsComSupportCode)' != 'internal'">$(NoWarn);CA2256</NoWarn>
       <NoWarn Condition="'$(CsComSuppressGeneratorWarnings)' == 'true' and '$(CsComSupportCode)' != 'internal' and '$(GenerateDocumentationFile)' == 'true'">$(NoWarn);CS1591</NoWarn>
     </PropertyGroup>
+  </Target>
+
+  <PropertyGroup Condition="'$(CsComExportTypeLibrary)' == 'true'">
+    <!-- The type library is written into the intermediate output, per target framework, and copied with the assembly. -->
+    <CsComTypeLibraryPath Condition="'$(CsComTypeLibraryPath)' == ''">$(IntermediateOutputPath)$(TargetName).tlb</CsComTypeLibraryPath>
+    <!-- The layouts of a type library are those of a platform: the 32-bit one for an assembly that only runs as x86. -->
+    <CsComTypeLibraryPlatform Condition="'$(CsComTypeLibraryPlatform)' == '' and '$(PlatformTarget)' == 'x86'">win32</CsComTypeLibraryPlatform>
+    <CsComTypeLibraryPlatform Condition="'$(CsComTypeLibraryPlatform)' == ''">win64</CsComTypeLibraryPlatform>
+  </PropertyGroup>
+
+  <!--
+    The type library is a file of the output of the project, which is copied to the output and publish directories, also
+    those of the projects that reference the project. The item is added before the build collects these files; the file
+    itself is written after the compilation.
+  -->
+  <Target Name="_CsComAddTypeLibraryToOutput" BeforeTargets="AssignTargetPaths" Condition="'$(CsComExportTypeLibrary)' == 'true'">
+    <ItemGroup>
+      <None Include="$(CsComTypeLibraryPath)"
+            Link="$([System.IO.Path]::GetFileName('$(CsComTypeLibraryPath)'))"
+            CopyToOutputDirectory="PreserveNewest"
+            CopyToPublishDirectory="PreserveNewest"
+            Visible="false" />
+    </ItemGroup>
+  </Target>
+
+  <!--
+    Exports the type library of the assembly after the compilation, when the assembly, the assemblies that it references and
+    whose types it uses, the type libraries that it refers to or the properties changed. Design-time builds do not compile
+    the assembly.
+  -->
+  <Target Name="CsComExportTypeLibrary"
+          AfterTargets="CoreCompile"
+          Condition="'$(CsComExportTypeLibrary)' == 'true' and '$(DesignTimeBuild)' != 'true' and '$(SkipCompilerExecution)' != 'true'">
+    <CsComExportTypeLibrary Assembly="@(IntermediateAssembly->'%(FullPath)')"
+                            OutputPath="$(CsComTypeLibraryPath)"
+                            StateDirectory="$(_CsComStatePath)"
+                            ProjectDirectory="$(MSBuildProjectDirectory)"
+                            CsComPath="$(_CsComToolPath)"
+                            DotNetHostPath="$(_CsComDotNetHostPath)"
+                            LibraryName="$(CsComTypeLibraryName)"
+                            LibraryGuid="$(CsComTypeLibraryGuid)"
+                            LibraryVersion="$(CsComTypeLibraryVersion)"
+                            Platform="$(CsComTypeLibraryPlatform)"
+                            ReferencePaths="@(ReferencePath)"
+                            TypeLibraries="@(CsComTypeLibraryReference)"
+                            References="@(CsComReference)">
+      <Output TaskParameter="TypeLibrary" ItemName="_CsComTypeLibrary" />
+    </CsComExportTypeLibrary>
+
+    <ItemGroup>
+      <FileWrites Include="@(_CsComTypeLibrary);$(_CsComStatePath)cscom.typelib.request.json;$(_CsComStatePath)cscom.typelib.state" />
+    </ItemGroup>
   </Target>
 
 </Project>

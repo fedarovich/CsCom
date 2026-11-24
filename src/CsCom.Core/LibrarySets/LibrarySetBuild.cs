@@ -221,7 +221,8 @@ public sealed partial class LibrarySetBuild
 
     private static string Describe(string name, string? item) => item is null ? name : $"the {name} metadata of the CsComReference '{item}'";
 
-    private static void WriteState(
+    // Writes a state file, also that of the export of a type library (TypeLibraryExportBuild).
+    internal static void WriteState(
         string path, string requestHash, IReadOnlyList<string> inputs, IReadOnlyList<string> outputs, DateTime started, IReadOnlyCollection<string> warnings)
     {
         var builder = new StringBuilder();
