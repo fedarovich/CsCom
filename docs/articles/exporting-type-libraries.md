@@ -95,7 +95,8 @@ The [CsCom.Build](msbuild.md) package exports the type library of a project afte
 - **Enumerations and structures:** those that the members of the exported interfaces and the fields of the exported
   structures use; others are not exported.
 - **Visibility:** `[ComVisible(false)]` on a type, or on the assembly unless the type has `[ComVisible(true)]`, leaves the
-  type out. Types that are not public are left out.
+  type out. Types that are not public are left out. Older project templates put `[assembly: ComVisible(false)]` into
+  `AssemblyInfo.cs`, which hides all the types; the export tells when that leaves the library empty.
 - **Names:** the types have their names without their namespaces. Names are not case-sensitive in a type library, so two
   types whose names only differ in case, or in their namespaces, are an error. For the same reason a type library
   spells a name the way it was first written: a parameter `size` of a structure `Size` is named `Size`.
@@ -115,17 +116,24 @@ from `IUnknown`.
 - **Parameters:** a parameter passed by value is `[in]`; `in` is an `[in]` pointer, `ref` an `[in, out]` pointer and
   `out` an `[out]` pointer.
 - **Optional parameters:** a default value is the `[defaultvalue]` of an `[optional]` parameter. A parameter whose
-  default value is `null`, or that only has `[Optional]`, is `[optional]`.
+  default value is `null`, or that only has `[Optional]`, is `[optional]` without a default value, whatever its type.
 - **Properties:** source-generated COM interfaces have no properties, so the accessors of a property are the methods
   named `get_Name` (`propget`), `set_Name`, `put_Name` or `let_Name` (`propput`) and `putref_Name` (`propputref`), as
   in the code that CsCom generates. A getter returns a value and a setter returns none; a method with such a name that
   is not an accessor, e.g. a `[PreserveSig]` one, is exported as a method, with a warning.
 - **Identifiers:** `[DispId]` sets the identifier of a member (its DISPID in a dual interface); the accessors of a
   property share the identifier that one of them declares. Without it, a member gets an identifier that follows those
-  of the base interfaces, and `get__NewEnum` gets `DISPID_NEWENUM`.
-- **Flags:** `[TypeLibFunc]` sets the flags of a member and `[TypeLibType]` those of a type. Without `[TypeLibType]`, an
-  interface is marked `oleautomation`, as TlbExp marks its interfaces, and a class with a public parameterless
-  constructor can be created.
+  of the base interfaces, and `get__NewEnum` gets `DISPID_NEWENUM`. Two members with the same identifier are an error.
+- **Flags:** `[TypeLibFunc]` sets the flags of a member and `[TypeLibType]` those of a type. Without `[TypeLibType]`, a
+  class with a public parameterless constructor can be created.
+- **`oleautomation`:** when a type library is registered, the type library marshaller of OLE Automation becomes the
+  proxy of its interfaces that are marked `oleautomation`. An interface without `[TypeLibType]` is therefore only
+  marked when that marshaller can marshal it: all its members return an `HRESULT`, their parameters have Automation
+  types (the numeric types, `BSTR`, `VARIANT_BOOL`, `DATE`, `CURRENCY`, `DECIMAL`, `SCODE`, `VARIANT`, interface
+  pointers, enumerations, structures, `GUID` and `SAFEARRAY`s of these, also by reference), and the same holds for
+  the interfaces of the library that it derives from. A `[PreserveSig]` member with another return type, an `LPWSTR`
+  or a `void*` parameter leaves the interface unmarked. A dual interface is always marked, as OLE Automation requires;
+  the export warns about a member of one that is not compatible.
 
 ### Classes
 
@@ -155,13 +163,17 @@ or were generated into a project.
 | `object[]` with `UnknownSafeArrayMarshaller` | `SAFEARRAY(IUnknown*)` |
 | `ComBool`, `ComDate`, `ComCurrency`, `ComBstr`, `ComBstrValue` | `VARIANT_BOOL`, `DATE`, `CURRENCY`, `BSTR` |
 | An enumeration based on `int` or `uint` | The enumeration |
-| A structure | The structure; a union when all its fields have the offset 0. A fixed buffer or an `[InlineArray]` field is an array. |
+| A structure | The structure, with all its instance fields; the field of an auto-property has the name of the property. A union when all its fields have the offset 0. A fixed buffer or an `[InlineArray]` field is an array. |
 | `nint`, `nuint`, `void*`, `T*` | `void*`, `T*` |
 
 What a type library cannot describe is exported as the closest type, with a warning, so that the layout of the
 interface stays the same: an array that is not marshalled as a `SAFEARRAY` as a pointer to its first element, an
 enumeration of another size as its underlying type, and an interface or a class that is not a COM type of a library
 as `IUnknown*`. A structure of .NET, such as `TimeSpan`, is an error.
+
+A type library has the fields of a structure and its packing (`Pack`, 8 by default), from which the offsets and the
+size follow for each platform. It cannot describe other offsets or a size, so a structure with an explicit layout
+that is not a union, or with a `Size`, is exported with a sequential layout, with a warning.
 
 ## Types of generated code
 
@@ -189,10 +201,15 @@ public partial class Renderer : IShapeEventsVt // An interface and a dispinterfa
   names, without their directories. A program therefore only loads the types of a library that is not registered when
   the file of that library is in the current directory or on the path; the export tells when a library is not
   registered. Register the type libraries that the exported one refers to where it is used.
+- **Your types in a generated namespace:** a type that you declare in a namespace of generated code, which the type
+  library of that code does not have, is a type of your library. When the type library is not found, every type of
+  such a namespace is taken for a type of it.
 - **Dispinterfaces:** the late-bound wrapper class of a dispinterface stands for the dispinterface, e.g. in
   `[ComSourceInterfaces]`.
 - **Support code:** the interfaces of the support code, such as `IConnectionPoint`, are in no type library; only
   `IDispatch` and `IEnumVARIANT` are known.
-- **Other assemblies:** a referenced assembly that was not generated by CsCom and has an `[assembly: Guid]` is taken to
-  have a type library of its own, exported with the same identity, to which the library refers. The types of an
-  assembly without either are exported as the closest type, with a warning.
+- **Other assemblies:** a referenced assembly that was not generated by CsCom has a type library of its own when the
+  library that the export of that assembly writes is found: the one with the identifier of its `[assembly: Guid]`,
+  among the `--type-library` files or in the registry. The exported library then refers to it. Many assemblies have
+  an `[assembly: Guid]` that identifies no type library; their types, like those of an assembly without one, are
+  exported as the closest type, with a warning.
