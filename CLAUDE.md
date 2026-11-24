@@ -97,7 +97,9 @@ interfaces and `[GeneratedComClass]` classes of an assembly with `MetadataLoadCo
   `TypeLibraryCatalog` finds these libraries (the `--type-library` files, then the registry) for the reader, which asks
   it whether a library has a type, and for the writer, which refers to the types. Its `Files` are inputs of the export.
   The type library of a referenced assembly without generated code is the one with its `[assembly: Guid]`, or else the
-  file of the catalog that has one of its interfaces (`GetAssemblyLibrary`).
+  file of the catalog that has all its COM-visible interfaces (`GetAssemblyLibrary`); a type of another assembly is
+  never defined in the exported library. OLE Automation resolves the references of a library by LIBID, to
+  any library with that LIBID that the process has loaded, so the catalog rejects two files with one LIBID.
   It does not release its libraries: their wrappers are shared with every other reader of the same library in the
   process (`ComWrappers` caches them), so `FinalRelease` would break those.
 - A 64-bit process sees the layouts of a 32-bit library converted to its own, so a test of a win32 layout compares

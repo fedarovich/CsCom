@@ -220,8 +220,16 @@ public partial class Renderer : IShapeEventsVt // An interface and a dispinterfa
 - **Other assemblies:** the other interfaces, enumerations and structures of a referenced assembly, which were not
   generated from a type library, are those of its own type library when the library that the export of that assembly
   writes is found and has them. That is the library with the identifier of its `[assembly: Guid]`, among the
-  `--type-library` files or in the registry, or else the `--type-library` file that has an interface of the assembly,
-  because the library can be exported with another identifier. The exported library then refers to it. So export the
-  type library of a referenced project first, and specify its file. Many assemblies have an `[assembly: Guid]` that
-  identifies no type library; their types, like those of an assembly without one, are exported as the closest type,
-  with a warning. The classes of a referenced assembly are not referred to.
+  `--type-library` files or in the registry, or else the `--type-library` file that has all the COM-visible
+  interfaces of the assembly, because the library can be exported with another identifier; an assembly that is named
+  like those of .NET (`System.*`, `Microsoft.*`) is only found by its `[assembly: Guid]`. The exported library then
+  refers to it: to an interface by its identifier, and to an enumeration or a structure when the library has one
+  with the same name and members. So export the type library of a referenced project first, again after its
+  interfaces change, and specify its file. Many assemblies have an `[assembly: Guid]` that identifies no type
+  library; their types, like those of an assembly without one, are exported as the closest type, with a warning.
+  The classes of a referenced assembly are not referred to.
+- **Interfaces of other assemblies:** an interface of a referenced assembly is not defined again in the library.
+  Without the type library of that assembly, a class does not get such an interface, with a warning, and an interface
+  that derives from one is an error, because its members follow those of its base.
+- **Files with one identifier:** a type library refers to another one by its identifier, so two different
+  `--type-library` files with the same identifier are an error: specify only one of them.
