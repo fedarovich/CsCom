@@ -123,7 +123,8 @@ from `IUnknown`.
   is not an accessor, e.g. a `[PreserveSig]` one, is exported as a method, with a warning.
 - **Names:** the members of an interface of a type library have different names, which are not case-sensitive. The
   overloads of a method are exported as `Name`, `Name_2`, `Name_3` and so on, in the order of their declarations, as
-  by TlbExp. A property and a method with the same name, or a property with overloaded accessors, are an error.
+  by TlbExp. A property and a method with the same name, or a property with overloaded accessors, are an error. The
+  names of the interfaces that an interface derives from are not considered, as by TlbExp.
 - **Identifiers:** `[DispId]` sets the identifier of a member (its DISPID in a dual interface); the accessors of a
   property share the identifier that one of them declares. Without it, a member gets an identifier that follows those
   of the base interfaces, and `get__NewEnum` gets `DISPID_NEWENUM`. Two members with the same identifier are an error.
@@ -134,7 +135,8 @@ from `IUnknown`.
   marked when that marshaller can marshal it: all its members return an `HRESULT`, their parameters have Automation
   types (the numeric types, `BSTR`, `VARIANT_BOOL`, `DATE`, `CURRENCY`, `DECIMAL`, `SCODE`, `VARIANT`, interface
   pointers, enumerations and `SAFEARRAY`s of these, also by reference, and structures and `GUID`s by reference or in
-  `SAFEARRAY`s), and the same holds for the interfaces of the library that it derives from. A `[PreserveSig]` member
+  `SAFEARRAY`s, where the fields of a structure have these types as well and a union is none), and the same holds for
+  the interfaces of the library that it derives from. A `[PreserveSig]` member
   with another return type, an `LPWSTR` or a `void*` parameter, or a structure that is passed by value, leaves the
   interface unmarked; `[TypeLibType(TypeLibTypeFlags.FOleAutomation)]` marks it anyway. A dual interface is always
   marked, as OLE Automation requires; the export warns about a member of one that is not compatible.
@@ -177,7 +179,8 @@ as `IUnknown*`. A structure of .NET, such as `TimeSpan`, is an error.
 
 A type library has the fields of a structure and its packing (`Pack`, 8 by default), from which the offsets and the
 size follow for each platform. It cannot describe other offsets or a size, so a structure with an explicit layout
-that is not a union, or with a `Size`, is exported with a sequential layout, with a warning.
+that is not a union, or with a `Size`, is exported with a sequential layout, with a warning. A structure without
+fields, which has one byte in .NET, has no size in a type library; the export warns about it.
 
 ## Types of generated code
 
@@ -214,9 +217,11 @@ public partial class Renderer : IShapeEventsVt // An interface and a dispinterfa
   `[ComSourceInterfaces]`.
 - **Support code:** the interfaces of the support code, such as `IConnectionPoint`, are in no type library; only
   `IDispatch` and `IEnumVARIANT` are known.
-- **Other assemblies:** the other types of a referenced assembly, which were not generated from a type library, are
-  those of its own type library when the library that the export of that assembly writes is found and has them: the
-  one with the identifier of its `[assembly: Guid]`, among the `--type-library` files or in the registry. The exported
-  library then refers to it. So export the type library of a referenced project first, and specify its file. Many
-  assemblies have an `[assembly: Guid]` that identifies no type library; their types, like those of an assembly
-  without one, are exported as the closest type, with a warning.
+- **Other assemblies:** the other interfaces, enumerations and structures of a referenced assembly, which were not
+  generated from a type library, are those of its own type library when the library that the export of that assembly
+  writes is found and has them. That is the library with the identifier of its `[assembly: Guid]`, among the
+  `--type-library` files or in the registry, or else the `--type-library` file that has an interface of the assembly,
+  because the library can be exported with another identifier. The exported library then refers to it. So export the
+  type library of a referenced project first, and specify its file. Many assemblies have an `[assembly: Guid]` that
+  identifies no type library; their types, like those of an assembly without one, are exported as the closest type,
+  with a warning. The classes of a referenced assembly are not referred to.

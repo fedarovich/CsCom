@@ -96,6 +96,8 @@ interfaces and `[GeneratedComClass]` classes of an assembly with `MetadataLoadCo
   `LibrarySetGenerator`), so that the reader imports its types from these libraries instead of exporting them.
   `TypeLibraryCatalog` finds these libraries (the `--type-library` files, then the registry) for the reader, which asks
   it whether a library has a type, and for the writer, which refers to the types. Its `Files` are inputs of the export.
+  The type library of a referenced assembly without generated code is the one with its `[assembly: Guid]`, or else the
+  file of the catalog that has one of its interfaces (`GetAssemblyLibrary`).
   It does not release its libraries: their wrappers are shared with every other reader of the same library in the
   process (`ComWrappers` caches them), so `FinalRelease` would break those.
 - A 64-bit process sees the layouts of a 32-bit library converted to its own, so a test of a win32 layout compares
