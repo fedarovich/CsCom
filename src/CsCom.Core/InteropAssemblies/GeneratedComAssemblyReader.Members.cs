@@ -66,11 +66,81 @@ public sealed partial class GeneratedComAssemblyReader
                 definition.Methods.Add(ReadMethod(type, method, name, kind, memberId, settings));
             }
 
-            if (definition.Methods.Where(static m => m.InvokeKind == InvokeKind.Method).GroupBy(static m => m.MemberId).FirstOrDefault(static g => g.Count() > 1) is { } duplicates)
+            // The accessors of a property are one member, which has one identifier.
+            var members = definition.Methods
+                .Select(static m => (m.MemberId, Name: m.OriginalName, IsProperty: m.InvokeKind != InvokeKind.Method))
+                .Distinct()
+                .ToList();
+            if (members.GroupBy(static m => m.MemberId).FirstOrDefault(static g => g.Count() > 1) is { } duplicates)
             {
                 throw new CsComException(
-                    $"The members {string.Join(" and ", duplicates.Select(m => $"'{type.Name}.{m.OriginalName}'"))} have the same [DispId] {duplicates.Key}.");
+                    $"The members {string.Join(" and ", duplicates.Select(m => $"'{type.Name}.{m.Name}'"))} have the same [DispId] {duplicates.Key}.");
             }
+        }
+
+        // An interface without [TypeLibType] is marked oleautomation when the type library marshaller can marshal it: its
+        // members return HRESULTs and have parameters of the Automation types, and so do those of the interfaces of the
+        // library that it derives from. A registered type library makes that marshaller the proxy of the interfaces that
+        // are marked, so an interface with other members must not be. Dual interfaces are always marked.
+        private void MarkAutomationInterfaces()
+        {
+            var incompatible = new Dictionary<InterfaceDefinition, string?>();
+            foreach (var definition in _unmarkedInterfaces)
+            {
+                string? member = FindIncompatibleMember(definition);
+                if (definition.InterfaceKind == InterfaceKind.Dual)
+                {
+                    if (member is not null)
+                    {
+                        LogIncompatibleDualInterface(definition.Name, member);
+                    }
+                }
+                else if (member is null)
+                {
+                    definition.Flags |= Model.TypeFlags.OleAutomation;
+                }
+            }
+
+            string? FindIncompatibleMember(InterfaceDefinition definition)
+            {
+                if (incompatible.TryGetValue(definition, out string? member))
+                {
+                    return member;
+                }
+
+                var method = definition.Methods.FirstOrDefault(static m => !m.ReturnsHResult || !m.Parameters.All(static p => IsAutomationType(p.Type)));
+                member = method is not null ? $"{definition.Name}.{method.OriginalName}"
+                    : definition.BaseInterface is UserDefinedTypeReference { Definition: InterfaceDefinition { ImportedFrom: null } baseDefinition } ? FindIncompatibleMember(baseDefinition)
+                    : null;
+                incompatible[definition] = member;
+                return member;
+            }
+        }
+
+        // The types that the type library marshaller marshals: the Automation types, the enumerations, the structures and
+        // the interface pointers, SAFEARRAYs of them, and pointers to them for the parameters that are passed by reference.
+        private static bool IsAutomationType(TypeReference type)
+        {
+            return type switch
+            {
+                PointerTypeReference { ElementType: PointerTypeReference { ElementType: var pointee } } => IsInterface(pointee),
+                PointerTypeReference { ElementType: var pointee } => IsInterface(pointee) || IsValue(pointee),
+                _ => IsValue(type),
+            };
+
+            static bool IsInterface(TypeReference type) =>
+                type is UserDefinedTypeReference { Definition: InterfaceDefinition or CoClassDefinition } or WellKnownTypeReference { Type: WellKnownType.IEnumVariant };
+
+            static bool IsValue(TypeReference type) => type switch
+            {
+                PrimitiveTypeReference primitive => primitive.VarType is VarEnum.VT_I1 or VarEnum.VT_UI1 or VarEnum.VT_I2 or VarEnum.VT_UI2 or VarEnum.VT_I4 or VarEnum.VT_UI4
+                    or VarEnum.VT_I8 or VarEnum.VT_UI8 or VarEnum.VT_INT or VarEnum.VT_UINT or VarEnum.VT_R4 or VarEnum.VT_R8 or VarEnum.VT_CY or VarEnum.VT_DATE
+                    or VarEnum.VT_BSTR or VarEnum.VT_BOOL or VarEnum.VT_DECIMAL or VarEnum.VT_ERROR or VarEnum.VT_VARIANT or VarEnum.VT_UNKNOWN or VarEnum.VT_DISPATCH,
+                SafeArrayTypeReference array => IsValue(array.ElementType) || IsAutomationType(array.ElementType),
+                UserDefinedTypeReference { Definition: EnumDefinition or RecordDefinition } => true,
+                WellKnownTypeReference { Type: WellKnownType.Guid } => true,
+                _ => false,
+            };
         }
 
         private static int? GetDispId(MethodInfo method) =>

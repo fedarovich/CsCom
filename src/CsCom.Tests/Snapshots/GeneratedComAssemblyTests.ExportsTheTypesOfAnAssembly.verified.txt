@@ -8,9 +8,10 @@ interface ICalculator : IUnknown
     method Values([in] VARIANT variant, [in] IUnknown* unknown, [in] CURRENCY money, [in] DECIMAL Number, [in] DATE date, [in] VARIANT_BOOL flag, [in] unsigned char Raw, [in] VARIANT value, [in] GUID id, [in] GUID* reference)
     method Others([in] Level Level, [in] unsigned char small, [in] void* handle, [in] void* pointer, [in] long* numbers, [in] SCODE code, [in] VARIANT_BOOL flag, [in] DATE date, [in] CURRENCY money)
     method Arrays([in] SAFEARRAY(long) numbers, [in] SAFEARRAY(IUnknown*) objects, [in] SAFEARRAY(VARIANT) any, [in] SAFEARRAY(double) wrapped, [in, out] SAFEARRAY(Level)* levels, [in] long* counted, [in] long count, [out, retval] SAFEARRAY(BSTR)* pRetVal)
-    method Defaults([in, optional, defaultvalue(5)] long a, [in, optional, defaultvalue("x")] BSTR Text, [in, optional, defaultvalue(5)] Level Level, [in, optional] VARIANT any, [in, optional, defaultvalue(1.5)] double factor, [in, optional, defaultvalue(true)] VARIANT_BOOL flag, [in, optional, defaultvalue(2.5)] CURRENCY money)
+    method Defaults([in, optional, defaultvalue(5)] long a, [in, optional, defaultvalue("x")] BSTR Text, [in, optional, defaultvalue(5)] Level Level, [in, optional] VARIANT any, [in, optional, defaultvalue(1.5)] double factor, [in, optional, defaultvalue(true)] VARIANT_BOOL flag, [in, optional, defaultvalue(2.5)] CURRENCY money, [in, optional] BSTR missing, [in, optional] IUnknown* parent)
     method GetItem([out, retval] Item* pRetVal)
-    ~ guid 7c1f2d2a-4c1e-4b71-9d0b-7b7c2e0a2001, flags OleAutomation
+    method Structures([in] Pair Pair, [in] Counter* Counter, [in] Sparse Sparse)
+    ~ guid 7c1f2d2a-4c1e-4b71-9d0b-7b7c2e0a2001, flags None
     ~ help A calculator
     ~ base slots 3
     ~ Method Add: id 1610678272, slot 3, None
@@ -23,11 +24,22 @@ interface ICalculator : IUnknown
     ~ Method Arrays: id 1610678279, slot 10, None
     ~ Method Defaults: id 1610678280, slot 11, None
     ~ Method GetItem: id 1610678281, slot 12, None
+    ~ Method Structures: id 1610678282, slot 13, None
+interface IAutomation : IUnknown
+    method Convert([in, out] VARIANT* value, [in] Level Level, [in] Size* Size, [out] SAFEARRAY(long)* numbers, [in, out] IAutomation** other, [out, retval] BSTR* pRetVal)
+    ~ guid 7c1f2d2a-4c1e-4b71-9d0b-7b7c2e0a2008, flags OleAutomation
+    ~ base slots 3
+    ~ Method Convert: id 1610678272, slot 3, None
+interface IDerivedCalculator : ICalculator
+    method Reset()
+    ~ guid 7c1f2d2a-4c1e-4b71-9d0b-7b7c2e0a2009, flags None
+    ~ base slots 14
+    ~ Method Reset: id 1610743808, slot 14, None
 interface IShape : IDispatch (dual)
     propget Name([out, retval] BSTR* pRetVal)
     propput Name([in] BSTR pRetVal)
-    propget Parent([out, retval] IShape** pRetVal)
-    propputref Parent([in] IShape* pRetVal)
+    propget parent([out, retval] IShape** pRetVal)
+    propputref parent([in] IShape* pRetVal)
     method Move([in] long dx, [in] long dy)
     propget _NewEnum([out, retval] IUnknown** pRetVal)
     method GetCalculator([out, retval] ICalculator** pRetVal)
@@ -37,8 +49,8 @@ interface IShape : IDispatch (dual)
     ~ base slots 7
     ~ PropertyGet Name: id 0, slot 7, None
     ~ PropertyPut Name: id 0, slot 8, None
-    ~ PropertyGet Parent: id 1610743810, slot 9, None
-    ~ PropertyPutRef Parent: id 1610743810, slot 10, None
+    ~ PropertyGet parent: id 1610743810, slot 9, None
+    ~ PropertyPutRef parent: id 1610743810, slot 10, None
     ~ Method Move: id 42, slot 11, Hidden, help Moves the shape
     ~ PropertyGet _NewEnum: id -4, slot 12, Restricted
     ~ Method GetCalculator: id 1610743814, slot 13, None
@@ -47,10 +59,12 @@ interface IShape : IDispatch (dual)
 interface ICircle : IShape (dual)
     propget Radius([out, retval] double* pRetVal)
     propput Radius([in] double pRetVal)
+    method Label([in] LPWSTR Text)
     ~ guid 7c1f2d2a-4c1e-4b71-9d0b-7b7c2e0a2003, flags Dual, Dispatchable
     ~ base slots 16
     ~ PropertyGet Radius: id 1610809344, slot 16, None
     ~ PropertyPut Radius: id 1610809344, slot 17, None
+    ~ Method Label: id 1610809346, slot 18, None
 interface IShapeEvents : IUnknown
     method Changed([in] long kind)
     ~ guid 7c1f2d2a-4c1e-4b71-9d0b-7b7c2e0a2004, flags Hidden
@@ -58,7 +72,7 @@ interface IShapeEvents : IUnknown
     ~ Method Changed: id 1610678272, slot 3, None
 interface ISimple : IShapeEvents
     method Run([in] LPWSTR wide)
-    ~ guid 7c1f2d2a-4c1e-4b71-9d0b-7b7c2e0a2005, flags OleAutomation
+    ~ guid 7c1f2d2a-4c1e-4b71-9d0b-7b7c2e0a2005, flags None
     ~ base slots 4
     ~ Method Run: id 1610743808, slot 4, None
 coclass Sink
@@ -96,6 +110,20 @@ struct Item
     Level Level
     ~ guid none, flags None
     ~ size 136, alignment 4, offsets 0 8 16 40 48 56 72 76 84 108 116 132
+struct Pair
+    long First
+    long Second
+    ~ guid none, flags None
+    ~ size 8, alignment 4, offsets 0 4
+struct Counter
+    long count
+    ~ guid none, flags None
+    ~ size 4, alignment 4, offsets 0
+struct Sparse
+    long First
+    long Second
+    ~ guid none, flags None
+    ~ size 8, alignment 4, offsets 0 4
 union Number
     long AsInteger
     double AsDouble
@@ -104,6 +132,8 @@ union Number
 
 'ICalculator.Others(small)' uses the enumeration Small based on Byte, which is not supported; it is exported as Byte
 'ICalculator.Arrays(counted)' uses the array System.Int32[] that is not marshalled as a SAFEARRAY, which is not supported; it is exported as a pointer to its first element
+The structure 'Sparse' has an explicit layout or size, which a type library cannot describe; it is exported with a sequential layout
 'IShape.get_Bad' is named like an accessor of a property, but does not have the parameters or the return value of one; it is exported as a method
 'IShape.Dispatch(comparable)' uses System.IComparable, which is not supported; it is exported as IUnknown*
 The source interface 'Exported.Missing' of the class 'Factory' is not a COM interface that the class can have in the type library
+The dual interface 'ICircle' is marked oleautomation, which OLE Automation requires of dual interfaces, but 'ICircle.Label' is not compatible with Automation

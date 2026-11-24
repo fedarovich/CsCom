@@ -112,9 +112,14 @@ public sealed partial class TypeLibraryExporter
         }
 
         var catalog = new TypeLibraryCatalog(typeLibraryPaths);
-        var library = new GeneratedComAssemblyReader(_loggerFactory.CreateLogger<GeneratedComAssemblyReader>(), request.ReferencePaths).Read(assemblyPath, identity, catalog);
+        var reader = new GeneratedComAssemblyReader(_loggerFactory.CreateLogger<GeneratedComAssemblyReader>(), request.ReferencePaths);
+        var library = reader.Read(assemblyPath, identity, catalog);
         int count = library.Types.Count(static t => t.ImportedFrom is null);
-        if (count == 0)
+        if (count == 0 && reader.HiddenTypeCount > 0)
+        {
+            LogHiddenTypes(Path.GetFileName(assemblyPath), reader.HiddenTypeCount);
+        }
+        else if (count == 0)
         {
             LogNoTypes(Path.GetFileName(assemblyPath));
         }
@@ -167,6 +172,11 @@ public sealed partial class TypeLibraryExporter
 
     [LoggerMessage(Level = LogLevel.Warning, Message = "'{Assembly}' has no public [GeneratedComInterface] interface and no public [GeneratedComClass] class with a [Guid]: its type library is empty")]
     private partial void LogNoTypes(string assembly);
+
+    [LoggerMessage(
+        Level = LogLevel.Warning,
+        Message = "The type library of '{Assembly}' is empty: [ComVisible(false)], on the assembly or on the types, hides its {Count} public COM interfaces and classes; mark them or the assembly [ComVisible(true)]")]
+    private partial void LogHiddenTypes(string assembly, int count);
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Exported the type library '{Name}' {Major}.{Minor} with {Count} types to '{Path}'")]
     private partial void LogExported(string name, int major, int minor, int count, string path);

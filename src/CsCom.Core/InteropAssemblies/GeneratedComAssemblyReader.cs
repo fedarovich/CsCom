@@ -73,6 +73,12 @@ public sealed partial class GeneratedComAssemblyReader
     public IReadOnlyList<string> ReferencePaths { get; }
 
     /// <summary>
+    /// Gets the number of the public COM interfaces and classes that the last <see cref="Read"/> left out because of
+    /// <c>[ComVisible(false)]</c>, on them or on the assembly.
+    /// </summary>
+    public int HiddenTypeCount { get; private set; }
+
+    /// <summary>
     /// Reads the assembly.
     /// </summary>
     /// <param name="path">The path to the assembly.</param>
@@ -108,12 +114,15 @@ public sealed partial class GeneratedComAssemblyReader
         try
         {
             using var session = new Session(context, assembly, fullPath, identity ?? new ExportedLibraryIdentity(), catalog, _logger);
-            return session.Read();
+            HiddenTypeCount = 0;
+            var library = session.Read();
+            HiddenTypeCount = session.HiddenTypeCount;
+            return library;
         }
         catch (FileNotFoundException e) when (resolver.Missing is { } missing)
         {
             throw new CsComException(
-                $"The assembly '{missing.FullName}', which '{Path.GetFileName(fullPath)}' references, was not found. Add the directory that contains it with --reference-path.",
+                $"The assembly '{missing.FullName}', which '{Path.GetFileName(fullPath)}' references, was not found: specify the assembly, or the directory that contains it, as a reference path.",
                 e);
         }
     }
@@ -164,6 +173,7 @@ public sealed partial class GeneratedComAssemblyReader
         private readonly Dictionary<Type, TypeDefinition> _definitions = [];
         private readonly Dictionary<Assembly, AssemblyMarkers> _markers = [];
         private readonly Dictionary<Type, TypeLibraryReference?> _imported = [];
+        private readonly List<InterfaceDefinition> _unmarkedInterfaces = [];
         private readonly Dictionary<Guid, TypeLibraryReference> _importedLibraries = [];
         private readonly HashSet<string> _importedFiles = new(StringComparer.OrdinalIgnoreCase);
         private readonly Queue<(Type Type, TypeDefinition Definition)> _pending = [];
@@ -215,6 +225,7 @@ public sealed partial class GeneratedComAssemblyReader
             }
 
             RejectDuplicates();
+            MarkAutomationInterfaces();
 
             // The types of the library first, then the imported ones in the order they were encountered.
             var ordered = _library.Types.Where(static t => t.ImportedFrom is null).Concat(_library.Types.Where(static t => t.ImportedFrom is not null)).ToList();
@@ -225,33 +236,39 @@ public sealed partial class GeneratedComAssemblyReader
             return _library;
         }
 
+        public int HiddenTypeCount { get; private set; }
+
         public void Dispose() => _marshalling.Dispose();
 
         // The types that are exported whether they are used or not: the COM interfaces and classes that are visible.
         private bool IsRoot(Type type)
         {
-            if (!type.IsVisible || type.IsGenericTypeDefinition || !IsComVisible(type) || GetImportedLibrary(type) is not null || IsSupportType(type))
+            if (!type.IsVisible || type.IsGenericTypeDefinition || GetImportedLibrary(type) is not null || IsSupportType(type))
             {
                 return false;
             }
 
-            if (type.IsInterface)
+            bool isComType = type.IsInterface
+                ? IsGeneratedComInterface(type) && GetWellKnownInterface(type) is null
+                : type.IsClass && Find(type.GetCustomAttributesData(), MarshallingNamespace + "GeneratedComClassAttribute") is not null;
+            if (!isComType)
             {
-                return IsGeneratedComInterface(type) && GetWellKnownInterface(type) is null;
+                return false;
             }
 
-            if (type.IsClass && Find(type.GetCustomAttributesData(), MarshallingNamespace + "GeneratedComClassAttribute") is not null)
+            if (!IsComVisible(type))
             {
-                if (GetGuid(type.GetCustomAttributesData()) is null)
-                {
-                    LogSkippingClass(type.Name);
-                    return false;
-                }
-
-                return true;
+                HiddenTypeCount++;
+                return false;
             }
 
-            return false;
+            if (type.IsClass && GetGuid(type.GetCustomAttributesData()) is null)
+            {
+                LogSkippingClass(type.Name);
+                return false;
+            }
+
+            return true;
         }
 
         private static bool IsGeneratedComInterface(Type type) =>
@@ -359,8 +376,14 @@ public sealed partial class GeneratedComAssemblyReader
             }
             else if (type.IsValueType)
             {
-                bool isUnion = type.StructLayoutAttribute?.Value == LayoutKind.Explicit
-                    && GetInstanceFields(type) is { Count: > 0 } fields && fields.All(f => _marshalling.GetFieldOffset(f) == 0);
+                bool isExplicit = type.StructLayoutAttribute?.Value == LayoutKind.Explicit;
+                bool isUnion = isExplicit && GetInstanceFields(type) is { Count: > 0 } fields && fields.All(f => _marshalling.GetFieldOffset(f) == 0);
+                if (importedFrom is null && ((isExplicit && !isUnion) || type.StructLayoutAttribute is { Size: > 0 }))
+                {
+                    // A type library has the fields of a structure, whose offsets and size it computes itself.
+                    LogExplicitLayout(name);
+                }
+
                 definition = new RecordDefinition
                 {
                     Name = name,
@@ -378,8 +401,8 @@ public sealed partial class GeneratedComAssemblyReader
                     throw new CsComException($"The interface '{type.FullName}' has no [Guid], which the interfaces of a type library need.");
                 }
 
-                // The interfaces are compatible with Automation as far as the exporter of .NET Framework tells, which marks
-                // all of them: the type library marshaller then marshals them.
+                // Whether an interface without [TypeLibType] is compatible with Automation is told by its members, see
+                // MarkAutomationInterfaces.
                 bool isDual = IsDispatchInterface(type);
                 definition = new InterfaceDefinition
                 {
@@ -387,10 +410,12 @@ public sealed partial class GeneratedComAssemblyReader
                     OriginalName = name,
                     Guid = guid,
                     InterfaceKind = isDual ? InterfaceKind.Dual : InterfaceKind.Vtable,
-                    Flags = flags ?? (isDual
-                        ? Model.TypeFlags.Dual | Model.TypeFlags.OleAutomation | Model.TypeFlags.Dispatchable
-                        : Model.TypeFlags.OleAutomation),
+                    Flags = flags ?? (isDual ? Model.TypeFlags.Dual | Model.TypeFlags.OleAutomation | Model.TypeFlags.Dispatchable : Model.TypeFlags.None),
                 };
+                if (flags is null && importedFrom is null)
+                {
+                    _unmarkedInterfaces.Add((InterfaceDefinition)definition);
+                }
             }
             else if (importedFrom is not null)
             {
@@ -480,12 +505,16 @@ public sealed partial class GeneratedComAssemblyReader
             {
                 definition.Fields.Add(new Model.FieldDefinition
                 {
-                    Name = field.Name,
-                    Type = MapField(field, $"{type.Name}.{field.Name}"),
+                    Name = GetFieldName(field),
+                    Type = MapField(field, $"{type.Name}.{GetFieldName(field)}"),
                     Documentation = GetDescription(field.GetCustomAttributesData()),
                 });
             }
         }
+
+        // The field that the compiler declares for an auto-property, <Name>k__BackingField, has the name of the property.
+        private static string GetFieldName(FieldInfo field) =>
+            field.Name.StartsWith('<') && field.Name.EndsWith(">k__BackingField", StringComparison.Ordinal) ? field.Name[1..^16] : field.Name;
 
         private void PopulateCoClass(Type type, CoClassDefinition definition)
         {
@@ -657,12 +686,20 @@ public sealed partial class GeneratedComAssemblyReader
         [LoggerMessage(Level = LogLevel.Warning, Message = "'{Member}' uses {Type}, which is not supported; it is exported as {Native}")]
         private partial void LogUnsupportedType(string member, string type, string native);
 
+        [LoggerMessage(Level = LogLevel.Warning, Message = "The structure '{Name}' has an explicit layout or size, which a type library cannot describe; it is exported with a sequential layout")]
+        private partial void LogExplicitLayout(string name);
+
+        [LoggerMessage(
+            Level = LogLevel.Warning,
+            Message = "The dual interface '{Name}' is marked oleautomation, which OLE Automation requires of dual interfaces, but '{Member}' is not compatible with Automation")]
+        private partial void LogIncompatibleDualInterface(string name, string member);
+
         [LoggerMessage(Level = LogLevel.Warning, Message = "'{Member}' is named like an accessor of a property, but does not have the parameters or the return value of one; it is exported as a method")]
         private partial void LogInvalidAccessor(string member);
 
         [LoggerMessage(
             Level = LogLevel.Warning,
-            Message = "'{Type}' is a type of the assembly '{Assembly}', which has neither the metadata of code that CsCom generated from a type library nor a [Guid] of a type library of its own: regenerate it with this version of CsCom, or export its type library first")]
+            Message = "'{Type}' is a type of the assembly '{Assembly}', which has neither the metadata of code that CsCom generated from a type library nor a type library of its own that is found by its [Guid]: regenerate it with this version of CsCom, or export its type library and specify the file")]
         private partial void LogUnknownLibrary(string type, string assembly);
 
         // The metadata that tells which types of an assembly were generated from which type libraries.

@@ -60,6 +60,41 @@ public sealed class GeneratedComAssemblyTests : VerifyBase
         Assert.AreEqual(1, new GeneratedComAssemblyReader().Read(assembly, new ExportedLibraryIdentity { Guid = Guid.NewGuid() }).MajorVersion, "0.0 is 1.0.");
     }
 
+    // [assembly: ComVisible(false)], which older project templates have, hides all the types.
+    [TestMethod]
+    public void TellsWhenComVisibleHidesAllTheTypes()
+    {
+        string directory = TestEnvironment.CreateDirectory("export");
+        string assembly = Compile(directory, "Hidden", """
+            using System.Runtime.InteropServices;
+            using System.Runtime.InteropServices.Marshalling;
+
+            [assembly: Guid("7C1F2D2A-4C1E-4B71-9D0B-7B7C2E0A2300")]
+            [assembly: ComVisible(false)]
+
+            [GeneratedComInterface, Guid("7C1F2D2A-4C1E-4B71-9D0B-7B7C2E0A2301")]
+            public partial interface IHidden { void M(); }
+
+            [GeneratedComClass, Guid("7C1F2D2A-4C1E-4B71-9D0B-7B7C2E0A2302")]
+            public partial class Hidden : IHidden { public void M() { } }
+
+            [ComVisible(true), GeneratedComInterface, Guid("7C1F2D2A-4C1E-4B71-9D0B-7B7C2E0A2303")]
+            internal partial interface IInternal { void M(); }
+            """);
+        var warnings = new WarningCollector<TypeLibraryExporter>();
+
+        var result = new TypeLibraryExporter(new CollectorFactory(warnings)).Export(new TypeLibraryExportRequest { AssemblyPath = assembly });
+
+        Assert.IsEmpty(result.Library.Types);
+        StringAssert.Contains(warnings.Messages.Single(), "[ComVisible(false)], on the assembly or on the types, hides its 2 public COM interfaces and classes");
+
+        // Without COM types, the library is empty for another reason.
+        string empty = Compile(directory, "Empty", """[assembly: System.Runtime.InteropServices.Guid("7C1F2D2A-4C1E-4B71-9D0B-7B7C2E0A2310")]""");
+        warnings.Messages.Clear();
+        new TypeLibraryExporter(new CollectorFactory(warnings)).Export(new TypeLibraryExportRequest { AssemblyPath = empty });
+        StringAssert.Contains(warnings.Messages.Single(), "has no public [GeneratedComInterface] interface");
+    }
+
     [TestMethod]
     public void RejectsWhatATypeLibraryCannotDescribe()
     {
@@ -97,6 +132,12 @@ public sealed class GeneratedComAssemblyTests : VerifyBase
             [GeneratedComInterface, Guid("7C1F2D2A-4C1E-4B71-9D0B-7B7C2E0A2201")] public partial interface IOne { [DispId(1)] int get_P(); [DispId(2)] void set_P(int value); }
             """,
             "The accessors of the property 'IOne.P' have different [DispId] values");
+        AssertRejected(
+            "MemberDispIds",
+            """
+            [GeneratedComInterface, Guid("7C1F2D2A-4C1E-4B71-9D0B-7B7C2E0A2201")] public partial interface IOne { [DispId(1)] int get_Count(); void set_Count(int value); [DispId(1)] void Reset(); }
+            """,
+            "'IOne.Count' and 'IOne.Reset' have the same [DispId] 1");
         AssertRejected(
             "FrameworkStructure",
             """
@@ -462,6 +503,20 @@ public sealed class GeneratedComAssemblyTests : VerifyBase
                 public Level Level;
             }
 
+            public record struct Pair(int First, int Second);
+
+            public struct Counter
+            {
+                public int Count { get; set; }
+            }
+
+            [StructLayout(LayoutKind.Explicit)]
+            public struct Sparse
+            {
+                [FieldOffset(0)] public int First;
+                [FieldOffset(8)] public int Second;
+            }
+
             [System.Runtime.CompilerServices.InlineArray(3)]
             public struct Buffer
             {
@@ -517,9 +572,34 @@ public sealed class GeneratedComAssemblyTests : VerifyBase
                     [MarshalUsing(typeof(OptionalVariantMarshaller))] object any = null,
                     double factor = 1.5,
                     [MarshalAs(UnmanagedType.VariantBool)] bool flag = true,
-                    [MarshalUsing(typeof(CurrencyMarshaller))] decimal money = 2.5m);
+                    [MarshalUsing(typeof(CurrencyMarshaller))] decimal money = 2.5m,
+                    string missing = null,
+                    [MarshalUsing(typeof(ComObjectMarshaller<object>))] object parent = null);
 
                 Item GetItem();
+
+                void Structures(Pair pair, in Counter counter, Sparse sparse);
+            }
+
+            // An interface whose members all have Automation types, unlike those of ICalculator.
+            [GeneratedComInterface(StringMarshalling = StringMarshalling.Custom, StringMarshallingCustomType = typeof(BStrStringMarshaller))]
+            [Guid("7C1F2D2A-4C1E-4B71-9D0B-7B7C2E0A2008")]
+            public partial interface IAutomation
+            {
+                string Convert(
+                    [MarshalUsing(typeof(VariantMarshaller))] ref object value,
+                    Level level,
+                    in Size size,
+                    [MarshalUsing(typeof(SafeArrayMarshaller<int>))] out int[] numbers,
+                    [MarshalUsing(typeof(ComObjectMarshaller<IAutomation>))] ref IAutomation other);
+            }
+
+            // An interface that derives from one that is not compatible is not compatible either.
+            [GeneratedComInterface]
+            [Guid("7C1F2D2A-4C1E-4B71-9D0B-7B7C2E0A2009")]
+            public partial interface IDerivedCalculator : ICalculator
+            {
+                void Reset();
             }
 
             [GeneratedComInterface(StringMarshalling = StringMarshalling.Custom, StringMarshallingCustomType = typeof(BStrStringMarshaller))]
@@ -557,6 +637,8 @@ public sealed class GeneratedComAssemblyTests : VerifyBase
                 double get_Radius();
 
                 void set_Radius(double value);
+
+                void Label([MarshalAs(UnmanagedType.LPWStr)] string text);
 
                 // The COM generator adds the members of the base interfaces like this one.
                 new string get_Name() => throw null;
