@@ -59,42 +59,69 @@ The sources are described in [Sources](sources.md), and the `reference` commands
 
 ## project create and project update
 
-`project create` writes `<Name>.csproj`, a `cscom.json` file with the sources and the options it was generated with, and the C#
-files into the `Generated` folder, in a folder per namespace. `project update` replaces the C# files of the `Generated` folder using
-the sources and the options recorded in `cscom.json`; `Source` arguments replace the recorded sources. It accepts `--namespace` and
-`--config`, which change the recorded values of the libraries they name (`LIBRARY=` removes one, and `--config ""` removes all the
-configuration files), `--csharp-version`, `--single-file [true|false]`, the marshalling options, `--event-style`, `--struct-properties`,
-`--overloads-for-default-values [true|false]`, `--named-indexers`, `--dynamic [true|false]` and `--reference-path` (an empty value removes the paths) to change them.
-`cscom.json` records the root namespace of several sources, which the update keeps, so that the support code does not move: also when
-the order or the number of the sources changes, down to a single source, until `--namespace` without a library name sets another one.
-With a single source, that is its namespace, which is its root namespace again. The projects of several sources of earlier versions,
-and the projects of a single source that get more sources, keep the namespace of their first source as their root namespace, which the
-update records: on that update, list the original first source first, also when the sources are replaced or reordered, and keep its
-namespace, or set the root namespace with `--namespace`, so that the support code stays where it is. Update a project of a single source
-of an earlier version once without `Source` arguments before you add sources: its namespace and configuration file apply only to a
-single source until the update records them by library name. Update a project with the version
-of the tool that created it or a later one, e.g. pinned in a tool manifest: earlier versions do not know the recorded root namespace,
-see [Known issues](../known-issues.md#projects). Code outside of
-the `Generated` folder, e.g. partial classes, is not touched. `cscom.json` records the type libraries and interop assemblies of the
-project directory by their relative paths, so the project can be updated from another clone. In the project file, the update sets the versions of the CsCom.Runtime
-packages, `LangVersion` only with `--csharp-version`, and `RootNamespace` only with `--namespace` without a library name; neither is
-added to a project file without it, and the rest of the file keeps its text and its encoding.
+`project create` writes `<Name>.csproj`, a `cscom.json` file with the sources and the options it was generated with, and
+the C# files into the `Generated` folder, in a folder per namespace.
+
+`project update` replaces the C# files of the `Generated` folder using the sources and the options recorded in
+`cscom.json`. Code outside of the `Generated` folder, e.g. partial classes, is not touched. `cscom.json` records the type
+libraries and interop assemblies of the project directory by their relative paths, so the project can be updated from
+another clone.
+
+### Changing the sources and the options
+
+`Source` arguments of `project update` replace the recorded sources, and these options change the recorded values:
+
+- `--namespace` and `--config`, which change the values of the libraries they name: `LIBRARY=` removes one, and
+  `--config ""` removes all the configuration files;
+- `--csharp-version`, the marshalling options, `--event-style`, `--struct-properties` and `--named-indexers`;
+- `--single-file [true|false]`, `--overloads-for-default-values [true|false]` and `--dynamic [true|false]`;
+- `--reference-path`, whose empty value removes the paths.
+
+### The project file
+
+In the project file, the update sets the versions of the CsCom.Runtime packages, `LangVersion` only with
+`--csharp-version`, and `RootNamespace` only with `--namespace` without a library name; neither is added to a project file
+without it, and the rest of the file keeps its text and its encoding.
+
+### The root namespace
+
+`cscom.json` records the root namespace of several sources, which the update keeps, so that the support code does not
+move. It keeps it also when the order or the number of the sources changes, down to a single source, until `--namespace`
+without a library name sets another one. With a single source, that is its namespace, which is its root namespace again.
+
+The projects of several sources of earlier versions, and the projects of a single source that get more sources, keep the
+namespace of their first source as their root namespace, which the update records. So that the support code stays where
+it is, on that update either:
+
+- list the original first source first, also when the sources are replaced or reordered, and keep its namespace;
+- or set the root namespace with `--namespace`.
+
+### Earlier versions
+
+- Update a project of a single source of an earlier version once without `Source` arguments before you add sources: its
+  namespace and configuration file apply only to a single source until the update records them by library name.
+- Update a project with the version of the tool that created it or a later one, e.g. pinned in a tool manifest: earlier
+  versions do not know the recorded root namespace, see [Known issues](../known-issues.md#projects).
 
 ## assembly build
 
-`assembly build` generates the project in a temporary directory, builds it with `dotnet build` once per runtime identifier and copies
-the assemblies, PDBs and XML documentation (and `CsCom.Runtime.dll`) to the output directory. With a single target framework and at
-most one runtime identifier, the files are copied directly into the output directory; otherwise into `<TFM>\<RID>` subfolders.
-`--property` sets MSBuild properties of the project and overrides the ones CsCom sets, e.g. the assembly version (`Version=1.2.3`)
-or a strong name (`SignAssembly=true` and `AssemblyOriginatorKeyFile=<full path>`; relative paths are relative to the temporary
-project). Ctrl+C stops the build and deletes the temporary project, once the code is generated; a second Ctrl+C ends the tool
-at once. The project of a build that fails is kept, and its path is reported.
+`assembly build` generates the project in a temporary directory, builds it with `dotnet build` once per runtime identifier
+and copies the assemblies, PDBs and XML documentation (and `CsCom.Runtime.dll`) to the output directory.
+
+- **Output folders:** with a single target framework and at most one runtime identifier, the files are copied directly
+  into the output directory; otherwise into `<TFM>\<RID>` subfolders.
+- **Properties:** `--property` sets MSBuild properties of the project and overrides the ones CsCom sets, e.g. the assembly
+  version (`Version=1.2.3`) or a strong name (`SignAssembly=true` and `AssemblyOriginatorKeyFile=<full path>`; relative
+  paths are relative to the temporary project).
+- **Cancellation and failures:** Ctrl+C stops the build and deletes the temporary project, once the code is generated; a
+  second Ctrl+C ends the tool at once. The project of a build that fails is kept, and its path is reported.
 
 ## assembly pack
 
 `assembly pack` generates the same project and packs it with `dotnet pack` into `<Name>.<Version>.nupkg`, with the assembly and its
 XML documentation in `lib/<TFM>` for each target framework, and `<Name>.<Version>.snupkg` with the PDBs. The package is RID-neutral,
 because the interop assembly is IL-only.
+
 - **Metadata:** the package ID is the assembly name (`--name`), the version is `--package-version` or the type library version
   (Excel 1.9 gives `1.9.0`; `1.0.0` with several sources), and the description is `<help string of the type library>: COM interop
   types generated by CsCom.` (`<Library>, <Library>: …` with several sources).

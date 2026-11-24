@@ -89,7 +89,7 @@ DShapeEvents events = shape.GetEvents();           // and the late-bound wrapper
   - `-=` and `RemoveEventHandlers` never fail. A removed handler gets no more events, also when the object cannot be
     disconnected at the moment, e.g. because the server is busy or the call comes from another apartment: the connection
     then passes no events on and is disconnected again by the next `+=`, `-=` or `RemoveEventHandlers` of that object.
-    Any other error than the transient ones listed in [Events](events.md) gives the connection up, also the exception of a
+    Any other error than the transient ones listed in [Events](events.md#transient-errors) gives the connection up, also the exception of a
     connection point that is a managed object, which counts as its `HRESULT`: the source keeps the closed sink until it
     releases it.
   - `+=` and `-=` of the same handler on several threads take effect one after another, each at some moment between its
