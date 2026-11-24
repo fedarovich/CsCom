@@ -21,6 +21,7 @@ public sealed unsafe partial class TypeLibraryCatalog
     // A file is the library of its identifier in any version; the registry has the versions of a library apart.
     private readonly Dictionary<TypeLibraryReference, CatalogLibrary?> _libraries = new(ReferenceComparer.Instance);
     private readonly Dictionary<TypeLibraryReference, string> _loadErrors = new(ReferenceComparer.Instance);
+    private readonly HashSet<CatalogLibrary> _replacing = [];
     private List<CatalogLibrary>? _files;
 
     /// <summary>
@@ -65,18 +66,19 @@ public sealed unsafe partial class TypeLibraryCatalog
     /// Gets a type library, or <see langword="false"/> if it is neither among the files nor registered, or if it is
     /// registered and cannot be loaded, as a library that was uninstalled without removing its registration.
     /// </summary>
-    /// <exception cref="TypeLibraryException">
-    /// A file of the catalog cannot be loaded, or two of its files have the same identifier.
-    /// </exception>
+    /// <exception cref="TypeLibraryException">A file of the catalog cannot be loaded.</exception>
     internal bool TryGetLibrary(TypeLibraryReference reference, [System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out CatalogLibrary? library)
     {
         if (!_libraries.TryGetValue(reference, out library))
         {
             string? registered = _findRegistered(reference);
-            if (GetFiles().FirstOrDefault(f => f.LibraryId == reference.Guid) is { } file)
+            if (FindFile(reference) is { } file)
             {
-                // A file is the library of its identifier in every version.
                 library = file;
+                if (registered is not null && _replacing.Add(file))
+                {
+                    ReportRegisteredLibrary(reference, file, registered);
+                }
             }
             else if (registered is not null)
             {
@@ -102,6 +104,41 @@ public sealed unsafe partial class TypeLibraryCatalog
     /// Gets why a registered type library that <see cref="TryGetLibrary"/> did not return could not be loaded.
     /// </summary>
     internal string? GetLoadError(TypeLibraryReference reference) => _loadErrors.GetValueOrDefault(reference);
+
+    /// <summary>
+    /// Gets the file of another library that the catalog has loaded with the identifier of a library, in any version: a
+    /// file that it was given, or a registered library. OLE Automation resolves the references of a type library by the
+    /// identifiers of the libraries alone, to any such library that the process has loaded, so a type library cannot
+    /// refer to the types of one of two such libraries.
+    /// </summary>
+    internal string? GetAmbiguousFile(CatalogLibrary library) =>
+        (_files ?? []).Concat(_libraries.Values.OfType<CatalogLibrary>())
+            .FirstOrDefault(other => other.LibraryId == library.LibraryId && !string.Equals(other.Path, library.Path, StringComparison.OrdinalIgnoreCase))?.Path;
+
+    // The file of a library: the one with the version of the reference, or else the first one with its identifier, which
+    // is the library of that identifier in every version.
+    private CatalogLibrary? FindFile(TypeLibraryReference reference)
+    {
+        var files = GetFiles();
+        return files.FirstOrDefault(f => ReferenceComparer.Instance.Equals(f.Reference, reference)) ?? files.FirstOrDefault(f => f.LibraryId == reference.Guid);
+    }
+
+    // The programs that load the exported library find the registered library, not the file that was read in its place.
+    private void ReportRegisteredLibrary(TypeLibraryReference reference, CatalogLibrary file, string registered)
+    {
+        try
+        {
+            string path = TypeLibrarySource.GetFilePath(TypeLibrarySource.Resolve(registered));
+            if (!string.Equals(path, file.Path, StringComparison.OrdinalIgnoreCase))
+            {
+                LogFilePreferred(reference.Name, file.Path, path);
+            }
+        }
+        catch (CsComException)
+        {
+            // The registration is stale, so there is no other library to find.
+        }
+    }
 
     /// <summary>
     /// Finds the type library that has all the given interfaces among the files of the catalog: the type library of an
@@ -133,17 +170,19 @@ public sealed unsafe partial class TypeLibraryCatalog
         Message = "The registered type library '{Name}' {Major}.{Minor} cannot be loaded, so it cannot be told which types it has: {Error}")]
     private partial void LogUnloadableLibrary(string name, int major, int minor, string error);
 
-    // The libraries of the files. OLE Automation resolves the references of a type library by the identifiers of the
-    // libraries, to any library with that identifier that the process has loaded, so two files with one identifier
-    // cannot be told apart and are rejected.
+    [LoggerMessage(
+        Level = LogLevel.Information,
+        Message = "The type library '{Name}' is read from '{File}', while '{Registered}' is registered: the programs that load the exported library find its types in the registered one")]
+    private partial void LogFilePreferred(string name, string file, string registered);
+
+    // The libraries of the files, in the order they were given.
     private List<CatalogLibrary> GetFiles()
     {
         if (_files is null)
         {
             _files = [];
-            foreach (string path in _paths)
+            foreach (string fullPath in _paths.Select(Path.GetFullPath).Distinct(StringComparer.OrdinalIgnoreCase))
             {
-                string fullPath = Path.GetFullPath(path);
                 ITypeLib typeLib = Load(fullPath);
                 typeLib.GetLibAttr(out TLIBATTR* attr);
                 Guid guid = attr->guid;
@@ -152,17 +191,6 @@ public sealed unsafe partial class TypeLibraryCatalog
                 typeLib.ReleaseTLibAttr(attr);
                 typeLib.GetDocumentation(-1, out string? name, out _, out _, out _);
                 var reference = new TypeLibraryReference(name ?? Path.GetFileNameWithoutExtension(fullPath), guid, major, minor);
-                if (_files.FirstOrDefault(f => f.LibraryId == guid) is { } first)
-                {
-                    if (!string.Equals(first.Path, TypeLibrarySource.GetFilePath(fullPath), StringComparison.OrdinalIgnoreCase))
-                    {
-                        throw new TypeLibraryException(
-                            $"The type libraries '{first.Path}' and '{fullPath}' have the same identifier {guid:B}: specify only one of them.");
-                    }
-
-                    continue;
-                }
-
                 _files.Add(new CatalogLibrary(reference, fullPath, typeLib, _findRegistered(reference) is not null));
             }
         }

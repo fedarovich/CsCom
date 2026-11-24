@@ -3,6 +3,7 @@ using CsCom.LibrarySets;
 using CsCom.Model;
 using CsCom.Output;
 using CsCom.TypeLibraries;
+using Microsoft.Extensions.Logging;
 
 namespace CsCom.Tests;
 
@@ -764,8 +765,153 @@ public sealed class GeneratedComAssemblyTests : VerifyBase
         var library = new GeneratedComAssemblyReader().Read(assembly, catalog: new TypeLibraryCatalog([first, first]));
         Assert.AreEqual("IShared* shared", string.Join(", ", library.Types.OfType<InterfaceDefinition>().Single(static t => t.ImportedFrom is null).Methods.Single().Parameters));
 
-        var exception = Assert.ThrowsExactly<TypeLibraryException>(() => new GeneratedComAssemblyReader().Read(assembly, catalog: new TypeLibraryCatalog([first, second])));
-        StringAssert.Contains(exception.Message, "have the same identifier {7c1f2d2a-4c1e-4b71-9d0b-7b7c2e0a7b00}: specify only one of them");
+        // The library cannot refer to the types of one of two such files.
+        var catalog = new TypeLibraryCatalog([first, second]);
+        library = new GeneratedComAssemblyReader().Read(assembly, catalog: catalog);
+        var exception = Assert.ThrowsExactly<TypeLibraryException>(
+            () => new TypeLibraryWriter().Write(library, Path.Combine(directory, "Consumer.tlb"), new TypeLibraryWriterOptions { Catalog = catalog }));
+        StringAssert.Contains(exception.Message, "have the same identifier {7c1f2d2a-4c1e-4b71-9d0b-7b7c2e0a7b00}");
+        StringAssert.Contains(exception.Message, "specify only one of them");
+
+        // The files are no obstacle for a library that does not refer to them.
+        string unrelated = Compile(directory, "Unrelated", """
+            using System.Runtime.InteropServices;
+            using System.Runtime.InteropServices.Marshalling;
+
+            [assembly: Guid("7C1F2D2A-4C1E-4B71-9D0B-7B7C2E0A7B20")]
+
+            [GeneratedComInterface, Guid("7C1F2D2A-4C1E-4B71-9D0B-7B7C2E0A7B21")]
+            public partial interface IUnrelated { void Use(Interop.CsComTest.IShape shape); }
+            """, Compile(directory, "Interop.Fake2", """
+            using System.Reflection;
+            using System.Runtime.InteropServices;
+            using System.Runtime.InteropServices.Marshalling;
+
+            [assembly: AssemblyMetadata("CsCom.TypeLibrary", "Interop.CsComTest|CsComTest|{6B1F2D2A-4C1E-4B71-9D0B-7B7C2E0A1000}|1.2")]
+
+            namespace Interop.CsComTest
+            {
+                [GeneratedComInterface, Guid("6B1F2D2A-4C1E-4B71-9D0B-7B7C2E0A1011")]
+                public partial interface IShape { void M(); }
+            }
+            """));
+        var result = new TypeLibraryExporter().Export(new TypeLibraryExportRequest { AssemblyPath = unrelated, TypeLibraryPaths = [first, second, TestEnvironment.TestTypeLibrary] });
+        Assert.AreEqual("CsComTest", result.Library.ImportedLibraries.Single().Name);
+    }
+
+    // The versions of a type library have one identifier, as those of MSXML, by which alone OLE Automation resolves the
+    // references of a type library: with two of them loaded, a library cannot refer to the types of either.
+    [TestMethod]
+    public void CannotReferToTwoVersionsOfATypeLibrary()
+    {
+        const string header = """
+            using System.Runtime.InteropServices;
+            using System.Runtime.InteropServices.Marshalling;
+
+            """;
+        string directory = TestEnvironment.CreateDirectory("export");
+        var libraryId = new Guid("7C1F2D2A-4C1E-4B71-9D0B-7B7C2E0A7C00");
+        string one = Compile(directory, "VersionOne", header + """
+            [GeneratedComInterface, Guid("7C1F2D2A-4C1E-4B71-9D0B-7B7C2E0A7C01")]
+            public partial interface IOne { void M(); }
+            """);
+        string two = Compile(directory, "VersionTwo", header + """
+            [GeneratedComInterface, Guid("7C1F2D2A-4C1E-4B71-9D0B-7B7C2E0A7C02")]
+            public partial interface ITwo { void M(); }
+            """);
+        string first = Path.Combine(directory, "Versioned1.tlb");
+        string second = Path.Combine(directory, "Versioned2.tlb");
+        new TypeLibraryWriter().Write(new GeneratedComAssemblyReader().Read(one, new ExportedLibraryIdentity { Name = "Versioned", Guid = libraryId, Version = (1, 0) }), first);
+        new TypeLibraryWriter().Write(new GeneratedComAssemblyReader().Read(two, new ExportedLibraryIdentity { Name = "Versioned", Guid = libraryId, Version = (2, 0) }), second);
+        string assembly = Compile(directory, "Consumer", header + """
+            [assembly: Guid("7C1F2D2A-4C1E-4B71-9D0B-7B7C2E0A7C10")]
+
+            [GeneratedComInterface, Guid("7C1F2D2A-4C1E-4B71-9D0B-7B7C2E0A7C11")]
+            public partial interface IConsumer { void Use(IOne one, ITwo two); }
+            """, one, two);
+
+        // A file with the version of the reference is preferred to the first file of the identifier.
+        var catalog = new TypeLibraryCatalog([first, second]);
+        Assert.IsTrue(catalog.TryGetLibrary(new TypeLibraryReference("Versioned", libraryId, 2, 0), out var found));
+        Assert.AreEqual(second, found.Path);
+        Assert.IsTrue(catalog.TryGetLibrary(new TypeLibraryReference("Versioned", libraryId, 5, 0), out found));
+        Assert.AreEqual(first, found.Path);
+
+        catalog = new TypeLibraryCatalog([first, second]);
+        var library = new GeneratedComAssemblyReader().Read(assembly, catalog: catalog);
+        Assert.AreEqual("IOne* one, ITwo* two", string.Join(", ", library.Types.OfType<InterfaceDefinition>().Single(static t => t.ImportedFrom is null).Methods.Single().Parameters));
+        Assert.HasCount(2, library.ImportedLibraries);
+        var exception = Assert.ThrowsExactly<TypeLibraryException>(
+            () => new TypeLibraryWriter().Write(library, Path.Combine(directory, "Consumer.tlb"), new TypeLibraryWriterOptions { Catalog = catalog }));
+        StringAssert.Contains(exception.Message, "have the same identifier {7c1f2d2a-4c1e-4b71-9d0b-7b7c2e0a7c00}");
+        StringAssert.Contains(exception.Message, "refer to one version of the library");
+    }
+
+    // The interfaces of the support code are in no type library, wherever the support code is.
+    [TestMethod]
+    public void LeavesOutTheSupportCodeOfTheAssembly()
+    {
+        const string header = """
+            using System.Reflection;
+            using System.Runtime.InteropServices;
+            using System.Runtime.InteropServices.Marshalling;
+
+            [assembly: Guid("7C1F2D2A-4C1E-4B71-9D0B-7B7C2E0A7D00")]
+            [assembly: AssemblyMetadata("CsCom.SupportNamespace", "My.Support")]
+
+            namespace My.Support
+            {
+                [GeneratedComInterface, Guid("7C1F2D2A-4C1E-4B71-9D0B-7B7C2E0A7D01")]
+                public partial interface IHelper { void Help(); }
+            }
+
+            """;
+        string directory = TestEnvironment.CreateDirectory("export");
+        string assembly = Compile(directory, "WithSupport", header + """
+            [GeneratedComInterface, Guid("7C1F2D2A-4C1E-4B71-9D0B-7B7C2E0A7D02")]
+            public partial interface IOwn { void M(); }
+
+            [GeneratedComClass, Guid("7C1F2D2A-4C1E-4B71-9D0B-7B7C2E0A7D03")]
+            public partial class Widget : IOwn, My.Support.IHelper { public void M() { } public void Help() { } }
+            """);
+        var warnings = new WarningCollector<GeneratedComAssemblyReader>();
+
+        var library = new GeneratedComAssemblyReader(warnings).Read(assembly);
+
+        CollectionAssert.AreEquivalent(new[] { "IOwn", "Widget" }, library.Types.Select(static t => t.Name).ToArray());
+        Assert.IsEmpty(warnings.Messages);
+
+        string deriving = Compile(directory, "Deriving", header + """
+            [GeneratedComInterface, Guid("7C1F2D2A-4C1E-4B71-9D0B-7B7C2E0A7D04")]
+            public partial interface IDerived : My.Support.IHelper { void M(); }
+            """);
+        var exception = Assert.ThrowsExactly<CsComException>(() => new GeneratedComAssemblyReader().Read(deriving));
+        StringAssert.Contains(exception.Message, "The interface 'IDerived' derives from 'IHelper' of the support code of CsCom, whose interfaces are in no type library");
+    }
+
+    // A file is preferred to the registered library with its identifier, which the programs that load the exported library
+    // find instead.
+    [TestMethod]
+    public void TellsWhenAFileReplacesARegisteredTypeLibrary()
+    {
+        string directory = TestEnvironment.CreateDirectory("export");
+        string registered = Path.Combine(directory, "Registered.tlb");
+        File.Copy(TestEnvironment.TestTypeLibrary, registered);
+        var messages = new WarningCollector<TypeLibraryCatalog> { MinimumLevel = LogLevel.Information };
+        var reference = new TypeLibraryReference("CsComTest", new Guid("6B1F2D2A-4C1E-4B71-9D0B-7B7C2E0A1000"), 1, 2);
+
+        var catalog = new TypeLibraryCatalog([TestEnvironment.TestTypeLibrary], messages, _ => registered);
+        Assert.IsTrue(catalog.TryGetLibrary(reference, out var library));
+        Assert.IsTrue(catalog.TryGetLibrary(reference, out _));
+
+        Assert.AreEqual(TestEnvironment.TestTypeLibrary, library.Path);
+        StringAssert.Contains(messages.Messages.Single(), "while 'Registered.tlb' is registered".Replace("Registered.tlb", registered, StringComparison.Ordinal));
+
+        // The registered library is the file itself.
+        messages.Messages.Clear();
+        catalog = new TypeLibraryCatalog([TestEnvironment.TestTypeLibrary], messages, _ => TestEnvironment.TestTypeLibrary);
+        Assert.IsTrue(catalog.TryGetLibrary(reference, out _));
+        Assert.IsEmpty(messages.Messages);
     }
 
     // Two versions of a type library are two libraries.

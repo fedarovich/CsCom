@@ -19,6 +19,12 @@ public sealed partial class GeneratedComAssemblyReader
             if (baseInterface is not null && GetWellKnownInterface(baseInterface) is null && !IsAvailableInterface(baseInterface))
             {
                 // The members of the base come first in the interface, so there is no other type to derive it from.
+                if (IsSupportType(baseInterface))
+                {
+                    throw new CsComException(
+                        $"The interface '{type.Name}' derives from '{baseInterface.Name}' of the support code of CsCom, whose interfaces are in no type library: only IDispatch and IEnumVARIANT are known.");
+                }
+
                 throw new CsComException(
                     $"The interface '{type.Name}' derives from '{baseInterface.Name}' of the assembly '{baseInterface.Assembly.GetName().Name}', whose type library was not found: "
                     + "export the type library of that assembly and specify the file.");

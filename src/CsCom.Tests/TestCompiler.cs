@@ -52,10 +52,13 @@ internal sealed class WarningCollector<T> : ILogger<T>
 {
     public List<string> Messages { get; } = [];
 
+    /// <summary>The level from which the messages are collected.</summary>
+    public LogLevel MinimumLevel { get; init; } = LogLevel.Warning;
+
     public IDisposable? BeginScope<TState>(TState state)
         where TState : notnull => null;
 
-    public bool IsEnabled(LogLevel logLevel) => logLevel >= LogLevel.Warning;
+    public bool IsEnabled(LogLevel logLevel) => logLevel >= MinimumLevel;
 
     public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
     {

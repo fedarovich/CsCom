@@ -107,6 +107,12 @@ public sealed partial class TypeLibraryWriter
                     $"The type library '{reference.Name}' {reference.MajorVersion}.{reference.MinorVersion} ({reference.Guid:B}), which the types of '{_library.Name}' use, {reason}: specify its file.");
             }
 
+            if (_catalog.GetAmbiguousFile(imported) is { } other)
+            {
+                throw new TypeLibraryException(
+                    $"The type libraries '{imported.Path}' and '{other}' have the same identifier {reference.Guid:B}, and '{_library.Name}' cannot refer to the types of one of two such libraries: specify only one of them, or refer to one version of the library.");
+            }
+
             // A file is the library of every version of its identifier, and is reported once.
             _imported.Add(key, imported);
             if (_reported.Add(imported))

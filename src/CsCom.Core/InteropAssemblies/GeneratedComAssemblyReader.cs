@@ -175,7 +175,7 @@ public sealed partial class GeneratedComAssemblyReader
         private readonly Dictionary<Type, TypeLibraryReference?> _imported = [];
         private readonly Dictionary<Assembly, (TypeLibraryReference Reference, CatalogLibrary Library)?> _assemblyLibraries = [];
         private readonly List<InterfaceDefinition> _unmarkedInterfaces = [];
-        private readonly Dictionary<Guid, TypeLibraryReference> _importedLibraries = [];
+        private readonly Dictionary<(Guid Guid, ushort Major, ushort Minor), TypeLibraryReference> _importedLibraries = [];
         private readonly HashSet<string> _importedFiles = new(StringComparer.OrdinalIgnoreCase);
         private readonly Queue<(Type Type, TypeDefinition Definition)> _pending = [];
         private readonly Dictionary<VarEnum, PrimitiveTypeReference> _primitives = [];
@@ -436,7 +436,8 @@ public sealed partial class GeneratedComAssemblyReader
         // An interface that the library can have or refer to: one of the assembly, or one of a type library that is found.
         // An interface of another assembly is not defined again in the library, where it would have the same identifier
         // as in the library of that assembly.
-        private bool IsAvailableInterface(Type type) => type.Assembly == _assembly || GetImportedLibrary(type) is not null;
+        // The interfaces of the support code are in no type library, wherever the support code is.
+        private bool IsAvailableInterface(Type type) => !IsSupportType(type) && (type.Assembly == _assembly || GetImportedLibrary(type) is not null);
 
         private TypeDefinition GetOrCreateDefinition(Type type)
         {
@@ -544,7 +545,7 @@ public sealed partial class GeneratedComAssemblyReader
             else
             {
                 // The types of other libraries are only referred to, so their members are not read.
-                _importedLibraries.TryAdd(importedFrom.Guid, importedFrom);
+                _importedLibraries.TryAdd((importedFrom.Guid, importedFrom.MajorVersion, importedFrom.MinorVersion), importedFrom);
                 if (type.Assembly != _assembly && !string.IsNullOrEmpty(type.Assembly.Location))
                 {
                     _importedFiles.Add(type.Assembly.Location);
