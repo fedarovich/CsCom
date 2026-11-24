@@ -373,13 +373,13 @@ internal static class CommandLine
         DefaultValueFactory = static _ => TypeLibraryPlatform.Win64,
     };
 
-    private static readonly Option<string[]> ExportReferencePathOption = new("--reference-path")
+    private static readonly Option<string[]> ExportReferencePathOption = new("--reference-path", "--ref")
     {
         Description = "An assembly that the assembly references, or a directory of such assemblies; can be repeated. The directory of the assembly and the .NET runtime of the tool are searched as well.",
         HelpName = "PATH",
     };
 
-    private static readonly Option<string[]> TypeLibraryPathOption = new("--type-library")
+    private static readonly Option<string[]> TypeLibraryPathOption = new("--type-library", "--tlb")
     {
         Description = "The file of a type library that the assembly, or an assembly that it references, has generated code of; can be repeated. "
             + "The exported type library refers to the types of that code in their type libraries, which are found in the registry by default.",

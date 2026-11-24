@@ -54,8 +54,8 @@ class factory and the registration of the classes are up to the program.
 | `--guid <GUID>` | The identifier (LIBID) of the library. The `[Guid]` of the assembly by default; one of them is required. |
 | `--library-version <MAJOR.MINOR>` | The version of the library. `[TypeLibVersion]` of the assembly by default, otherwise the version of the assembly, where 0.0 is 1.0. |
 | `--platform <win32\|win64>` | The platform that the layouts of the structures and the interfaces are written for. `win64` by default. |
-| `--reference-path <PATH>` | An assembly that the assembly references, or a directory of such assemblies; can be specified multiple times. The directory of the assembly and the .NET runtime of the tool are searched as well. |
-| `--type-library <PATH>` | The file of a type library whose generated code the assembly uses, see [Types of generated code](#types-of-generated-code); can be specified multiple times. |
+| `--ref`, `--reference-path <PATH>` | An assembly that the assembly references, or a directory of such assemblies; can be specified multiple times. The directory of the assembly and the .NET runtime of the tool are searched as well. |
+| `--tlb`, `--type-library <PATH>` | The file of a type library whose generated code the assembly uses, see [Types of generated code](#types-of-generated-code); can be specified multiple times. |
 
 ## During the build
 

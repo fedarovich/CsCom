@@ -550,6 +550,11 @@ public sealed class CommandLineTests
         Assert.AreEqual(1, Run("typelib", "export", assembly, "--guid", "none", "-v", "quiet"));
         Assert.AreEqual(1, Run("typelib", "export", assembly, "--name", "My Library", "-v", "quiet"));
         Assert.AreEqual(1, Run("typelib", "export", assembly, "--type-library", Path.Combine(directory, "Missing.tlb"), "-v", "quiet"));
+
+        // The short forms of the options.
+        Assert.AreEqual(0, Run(
+            "typelib", "export", assembly, "-o", Path.Combine(directory, "Short.tlb"), "--ref", directory, "--tlb", TestEnvironment.TestTypeLibrary, "-v", "quiet"));
+        Assert.AreEqual(1, Run("typelib", "export", assembly, "--tlb", Path.Combine(directory, "Missing.tlb"), "-v", "quiet"));
         Assert.AreNotEqual(0, Run("typelib", "export", assembly, "--platform", "arm64"));
         Assert.AreNotEqual(0, Run("typelib", "export"));
     }
