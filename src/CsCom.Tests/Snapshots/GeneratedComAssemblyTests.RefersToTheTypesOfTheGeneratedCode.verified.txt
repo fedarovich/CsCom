@@ -1,0 +1,26 @@
+﻿library Server 1.0 7c1f2d2a-4c1e-4b71-9d0b-7b7c2e0a3000, lcid 0, help none, imports CsComTest 1.2 stdole 2.0
+interface IRenderer : IUnknown
+    method Draw([in] IShape* shape, [in] Color color, [in] Point* point, [in] DShapeEvents* events, [in] SAFEARRAY(Color) colors)
+    method GetCircle([out] Font** font, [in] Record record, [out, retval] ICircle** pRetVal)
+    ~ guid 7c1f2d2a-4c1e-4b71-9d0b-7b7c2e0a3001, flags OleAutomation
+    ~ base slots 3
+    ~ Method Draw: id 1610678272, slot 3, None
+    ~ Method GetCircle: id 1610678273, slot 4, None
+coclass Renderer
+    [default] IRenderer
+    IShapeEventsVt
+    [default, source] DShapeEvents
+    [source] IShapeEventsDual
+    ~ guid 7c1f2d2a-4c1e-4b71-9d0b-7b7c2e0a3010, flags CanCreate
+imported:
+    CsComTest: Enum Color
+    CsComTest: Interface DShapeEvents
+    stdole: Interface Font
+    CsComTest: Interface ICircle
+    stdole: Alias IFontDisp
+    CsComTest: Interface IShape
+    CsComTest: Interface IShapeEventsDual
+    CsComTest: Interface IShapeEventsVt
+    CsComTest: Record Point
+    CsComTest: Record Record
+

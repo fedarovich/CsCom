@@ -1,0 +1,109 @@
+﻿library Exported 2.5 7c1f2d2a-4c1e-4b71-9d0b-7b7c2e0a2000, lcid 0, help The exported test library, imports 
+interface ICalculator : IUnknown
+    method Add([in] long a, [in] long b, [out, retval] long* pRetVal)
+    method long Raw([in] long value)
+    method RawResult()
+    method Sizes([in] Size Size, [in] Size* input, [in, out] Size* both, [out] Size* result)
+    method Text([in] BSTR bstr, [in] LPWSTR wide, [in] LPSTR utf8, [in] BSTR wrapper, [out, retval] BSTR* pRetVal)
+    method Values([in] VARIANT variant, [in] IUnknown* unknown, [in] CURRENCY money, [in] DECIMAL Number, [in] DATE date, [in] VARIANT_BOOL flag, [in] unsigned char Raw, [in] VARIANT value, [in] GUID id, [in] GUID* reference)
+    method Others([in] Level Level, [in] unsigned char small, [in] void* handle, [in] void* pointer, [in] long* numbers, [in] SCODE code, [in] VARIANT_BOOL flag, [in] DATE date, [in] CURRENCY money)
+    method Arrays([in] SAFEARRAY(long) numbers, [in] SAFEARRAY(IUnknown*) objects, [in] SAFEARRAY(VARIANT) any, [in] SAFEARRAY(double) wrapped, [in, out] SAFEARRAY(Level)* levels, [in] long* counted, [in] long count, [out, retval] SAFEARRAY(BSTR)* pRetVal)
+    method Defaults([in, optional, defaultvalue(5)] long a, [in, optional, defaultvalue("x")] BSTR Text, [in, optional, defaultvalue(5)] Level Level, [in, optional] VARIANT any, [in, optional, defaultvalue(1.5)] double factor, [in, optional, defaultvalue(true)] VARIANT_BOOL flag, [in, optional, defaultvalue(2.5)] CURRENCY money)
+    method GetItem([out, retval] Item* pRetVal)
+    ~ guid 7c1f2d2a-4c1e-4b71-9d0b-7b7c2e0a2001, flags OleAutomation
+    ~ help A calculator
+    ~ base slots 3
+    ~ Method Add: id 1610678272, slot 3, None
+    ~ Method Raw: id 1610678273, slot 4, None
+    ~ Method RawResult: id 1610678274, slot 5, None
+    ~ Method Sizes: id 1610678275, slot 6, None
+    ~ Method Text: id 1610678276, slot 7, None
+    ~ Method Values: id 1610678277, slot 8, None
+    ~ Method Others: id 1610678278, slot 9, None
+    ~ Method Arrays: id 1610678279, slot 10, None
+    ~ Method Defaults: id 1610678280, slot 11, None
+    ~ Method GetItem: id 1610678281, slot 12, None
+interface IShape : IDispatch (dual)
+    propget Name([out, retval] BSTR* pRetVal)
+    propput Name([in] BSTR pRetVal)
+    propget Parent([out, retval] IShape** pRetVal)
+    propputref Parent([in] IShape* pRetVal)
+    method Move([in] long dx, [in] long dy)
+    propget _NewEnum([out, retval] IUnknown** pRetVal)
+    method GetCalculator([out, retval] ICalculator** pRetVal)
+    method get_Bad()
+    method Dispatch([in] IEnumVARIANT* enumerator, [in] IUnknown* comparable, [out, retval] IDispatch** pRetVal)
+    ~ guid 7c1f2d2a-4c1e-4b71-9d0b-7b7c2e0a2002, flags Dual, Dispatchable
+    ~ base slots 7
+    ~ PropertyGet Name: id 0, slot 7, None
+    ~ PropertyPut Name: id 0, slot 8, None
+    ~ PropertyGet Parent: id 1610743810, slot 9, None
+    ~ PropertyPutRef Parent: id 1610743810, slot 10, None
+    ~ Method Move: id 42, slot 11, Hidden, help Moves the shape
+    ~ PropertyGet _NewEnum: id -4, slot 12, Restricted
+    ~ Method GetCalculator: id 1610743814, slot 13, None
+    ~ Method get_Bad: id 1610743815, slot 14, None
+    ~ Method Dispatch: id 1610743816, slot 15, None
+interface ICircle : IShape (dual)
+    propget Radius([out, retval] double* pRetVal)
+    propput Radius([in] double pRetVal)
+    ~ guid 7c1f2d2a-4c1e-4b71-9d0b-7b7c2e0a2003, flags Dual, Dispatchable
+    ~ base slots 16
+    ~ PropertyGet Radius: id 1610809344, slot 16, None
+    ~ PropertyPut Radius: id 1610809344, slot 17, None
+interface IShapeEvents : IUnknown
+    method Changed([in] long kind)
+    ~ guid 7c1f2d2a-4c1e-4b71-9d0b-7b7c2e0a2004, flags Hidden
+    ~ base slots 3
+    ~ Method Changed: id 1610678272, slot 3, None
+interface ISimple : IShapeEvents
+    method Run([in] LPWSTR wide)
+    ~ guid 7c1f2d2a-4c1e-4b71-9d0b-7b7c2e0a2005, flags OleAutomation
+    ~ base slots 4
+    ~ Method Run: id 1610743808, slot 4, None
+coclass Sink
+    [default] ISimple
+    [default, source] IShapeEvents
+    [source] ICircle
+    ~ guid 7c1f2d2a-4c1e-4b71-9d0b-7b7c2e0a2010, flags CanCreate
+    ~ help A sink
+coclass Factory
+    [default] IShapeEvents
+    [default, source] IShapeEvents
+    ~ guid 7c1f2d2a-4c1e-4b71-9d0b-7b7c2e0a2011, flags None
+struct Size
+    long Width
+    long Height
+    ~ guid none, flags None
+    ~ size 8, alignment 4, offsets 0 4
+enum Level
+    Low = 0
+    High = 5
+    ~ guid none, flags None
+    ~ help The levels
+struct Item
+    Size Size
+    BSTR Name
+    VARIANT Data
+    short[4] Codes
+    Size* Next
+    GUID id
+    VARIANT_BOOL flag
+    Number Number
+    double[3] Values
+    void* handle
+    DECIMAL Amount
+    Level Level
+    ~ guid none, flags None
+    ~ size 136, alignment 4, offsets 0 8 16 40 48 56 72 76 84 108 116 132
+union Number
+    long AsInteger
+    double AsDouble
+    ~ guid none, flags None
+    ~ size 8, alignment 8, offsets 0 0
+
+'ICalculator.Others(small)' uses the enumeration Small based on Byte, which is not supported; it is exported as Byte
+'ICalculator.Arrays(counted)' uses the array System.Int32[] that is not marshalled as a SAFEARRAY, which is not supported; it is exported as a pointer to its first element
+'IShape.get_Bad' is named like an accessor of a property, but does not have the parameters or the return value of one; it is exported as a method
+'IShape.Dispatch(comparable)' uses System.IComparable, which is not supported; it is exported as IUnknown*
+The source interface 'Exported.Missing' of the class 'Factory' is not a COM interface that the class can have in the type library

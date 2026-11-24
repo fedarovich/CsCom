@@ -1,0 +1,21 @@
+﻿library Client 1.0 7c1f2d2a-4c1e-4b71-9d0b-7b7c2e0a4000, lcid 0, help none, imports CsComTest 1.2 stdole 2.0
+interface IPainter : IShape (dual)
+    method Paint([in] Color color, [in] IShape* figure, [in] IUnknown* point)
+    method GetDispatch([out, retval] IDispatch** pRetVal)
+    ~ guid 7c1f2d2a-4c1e-4b71-9d0b-7b7c2e0a4001, flags Dual, Dispatchable
+    ~ base slots 28
+    ~ Method Paint: id 1610809344, slot 28, None
+    ~ Method GetDispatch: id 1610809345, slot 29, None
+interface IAutomation : IDispatch (dual)
+    method Run()
+    ~ guid 7c1f2d2a-4c1e-4b71-9d0b-7b7c2e0a4002, flags Dual, Dispatchable
+    ~ base slots 7
+    ~ Method Run: id 1610743808, slot 7, None
+imported:
+    CsComTest: Enum Color
+    CsComTest: Interface DShapeEvents
+    stdole: Interface Font
+    stdole: Alias IFontDisp
+    CsComTest: Interface IShape
+
+'IPainter.Paint(point)' uses Fake.ComSupport.IConnectionPoint, which is not supported; it is exported as IUnknown*

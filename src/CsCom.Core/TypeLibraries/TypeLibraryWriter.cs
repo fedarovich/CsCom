@@ -533,7 +533,15 @@ public sealed partial class TypeLibraryWriter
             function.lprgelemdescParam = parameters;
             function.wFuncFlags = (FUNCFLAGS)((int)method.Flags & 0xFFFF);
             FillTypeDesc(owner, method.ReturnType, &function.elemdescFunc.tdesc);
-            typeInfo.AddFuncDesc(index, &function);
+            try
+            {
+                typeInfo.AddFuncDesc(index, &function);
+            }
+            catch (COMException e)
+            {
+                throw new TypeLibraryException(
+                    $"Failed to write the member '{owner.OriginalName}.{method.OriginalName}' to the type library (HRESULT 0x{e.HResult:X8}): {e.Message}", e);
+            }
 
             // The value of a property setter, its last parameter, has no name.
             int named = method.InvokeKind is InvokeKind.PropertyPut or InvokeKind.PropertyPutRef ? Math.Max(count - 1, 0) : count;

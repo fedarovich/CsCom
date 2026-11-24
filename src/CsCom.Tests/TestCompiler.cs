@@ -13,7 +13,9 @@ internal static class TestCompiler
     /// Compiles C# source into a library, written to <paramref name="path"/> if specified.
     /// </summary>
     /// <param name="languageVersion">The C# version, e.g. <see cref="LanguageVersion.Preview"/> for features of C# 15 such as extension indexers.</param>
-    public static MemoryStream Compile(string name, string source, string? path = null, MemoryStream? reference = null, LanguageVersion languageVersion = LanguageVersion.Default)
+    /// <param name="referencePaths">The assemblies to reference in addition to those of .NET, e.g. CsCom.Runtime.</param>
+    public static MemoryStream Compile(
+        string name, string source, string? path = null, MemoryStream? reference = null, LanguageVersion languageVersion = LanguageVersion.Default, IEnumerable<string>? referencePaths = null)
     {
         var references = ((string)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")!).Split(Path.PathSeparator)
             .Where(static f => Path.GetFileName(f).StartsWith("System.", StringComparison.Ordinal) || Path.GetFileName(f) is "mscorlib.dll" or "netstandard.dll")
@@ -23,6 +25,8 @@ internal static class TestCompiler
         {
             references.Add(MetadataReference.CreateFromImage(reference.ToArray()));
         }
+
+        references.AddRange((referencePaths ?? []).Select(static f => MetadataReference.CreateFromFile(f)));
 
         var compilation = CSharpCompilation.Create(
             name,
