@@ -256,15 +256,16 @@ public sealed partial class GeneratedComAssemblyReader
                 return false;
             }
 
-            if (!IsComVisible(type))
-            {
-                HiddenTypeCount++;
-                return false;
-            }
-
             if (type.IsClass && GetGuid(type.GetCustomAttributesData()) is null)
             {
                 LogSkippingClass(type.Name);
+                return false;
+            }
+
+            // The types that are hidden are counted, to tell why a library is empty.
+            if (!IsComVisible(type))
+            {
+                HiddenTypeCount++;
                 return false;
             }
 
@@ -385,10 +386,12 @@ public sealed partial class GeneratedComAssemblyReader
             else if (type.IsValueType)
             {
                 bool isExplicit = type.StructLayoutAttribute?.Value == LayoutKind.Explicit;
-                bool isUnion = isExplicit && GetInstanceFields(type) is { Count: > 0 } fields && fields.All(f => _marshalling.GetFieldOffset(f) == 0);
-                if (importedFrom is null && ((isExplicit && !isUnion) || type.StructLayoutAttribute is { Size: > 0 }))
+                var fields = GetInstanceFields(type);
+                bool isUnion = isExplicit && fields.Count > 0 && fields.All(f => _marshalling.GetFieldOffset(f) == 0);
+                if (importedFrom is null && fields.Count > 0 && ((isExplicit && !isUnion) || type.StructLayoutAttribute is { Size: > 0 }))
                 {
-                    // A type library has the fields of a structure, whose offsets and size it computes itself.
+                    // A type library has the fields of a structure, whose offsets and size it computes itself. The
+                    // compiler gives a structure without fields a size, of one byte.
                     LogExplicitLayout(name);
                 }
 

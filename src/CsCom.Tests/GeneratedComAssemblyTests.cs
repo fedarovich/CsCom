@@ -170,6 +170,11 @@ public sealed class GeneratedComAssemblyTests : VerifyBase
 
         // A structure without fields has a size of one byte, which is not a layout to warn about.
         Assert.IsEmpty(warnings.Messages);
+
+        // A type library can have a structure without fields.
+        string path = Path.Combine(Path.GetDirectoryName(assembly)!, "Structures.tlb");
+        new TypeLibraryWriter().Write(library, path);
+        Assert.IsEmpty(new TypeLibraryReader().Read(path).Types.OfType<RecordDefinition>().Single(static t => t.Name == "Empty").Fields);
     }
 
     [TestMethod]
