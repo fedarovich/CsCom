@@ -54,6 +54,7 @@
     Interop.CsComDrawing/Canvas.cs,
     Interop.stdole/Font.cs,
     Interop.stdole/FontEvents.cs,
-    Interop.stdole/Picture.cs
+    Interop.stdole/Picture.cs,
+    CsComAssemblyAttributes.cs
   ]
 }
