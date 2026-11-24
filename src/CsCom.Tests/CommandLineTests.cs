@@ -510,6 +510,50 @@ public sealed class CommandLineTests
         Assert.AreEqual(string.Empty, output);
     }
 
+    [TestMethod]
+    public void ExportsTheTypeLibraryOfAnAssembly()
+    {
+        string directory = TestEnvironment.CreateDirectory("cli-export");
+        string assembly = GeneratedComAssemblyTests.Compile(directory, "Exported", """
+            using System.Runtime.InteropServices;
+            using System.Runtime.InteropServices.Marshalling;
+
+            [assembly: Guid("7C1F2D2A-4C1E-4B71-9D0B-7B7C2E0A5000")]
+            [assembly: TypeLibVersion(2, 1)]
+
+            [GeneratedComInterface, Guid("7C1F2D2A-4C1E-4B71-9D0B-7B7C2E0A5001")]
+            public partial interface IGreeter
+            {
+                int Greet(int times);
+            }
+            """);
+
+        Assert.AreEqual(0, Run("typelib", "export", assembly, "-v", "quiet"));
+
+        var library = new TypeLibraries.TypeLibraryReader().Read(Path.Combine(directory, "Exported.tlb"));
+        Assert.AreEqual(("Exported", new Guid("7C1F2D2A-4C1E-4B71-9D0B-7B7C2E0A5000"), 2, 1), (library.Name, library.Guid, (int)library.MajorVersion, (int)library.MinorVersion));
+        Assert.AreEqual("IGreeter", library.Types.Single().Name);
+
+        // The options name the file and the library.
+        string output = Path.Combine(directory, "out", "Custom.tlb");
+        Assert.AreEqual(0, Run(
+            "typelib", "export", assembly, "-o", output, "-n", "Custom", "--guid", "{7C1F2D2A-4C1E-4B71-9D0B-7B7C2E0A5002}", "--library-version", "3.7",
+            "--platform", "win32", "--reference-path", directory, "--type-library", TestEnvironment.TestTypeLibrary, "-v", "quiet"));
+        library = new TypeLibraries.TypeLibraryReader().Read(output);
+        Assert.AreEqual(("Custom", new Guid("7C1F2D2A-4C1E-4B71-9D0B-7B7C2E0A5002"), 3, 7), (library.Name, library.Guid, (int)library.MajorVersion, (int)library.MinorVersion));
+
+        // Invalid input is reported as an error.
+        Assert.AreEqual(1, Run("typelib", "export", Path.Combine(directory, "Missing.dll"), "-v", "quiet"));
+        Assert.AreEqual(1, Run("typelib", "export", TestEnvironment.TestTypeLibrary, "-v", "quiet"), "A type library is not an assembly.");
+        Assert.AreEqual(1, Run("typelib", "export", assembly, "-o", assembly, "-v", "quiet"));
+        Assert.AreEqual(1, Run("typelib", "export", assembly, "--library-version", "3", "-v", "quiet"));
+        Assert.AreEqual(1, Run("typelib", "export", assembly, "--guid", "none", "-v", "quiet"));
+        Assert.AreEqual(1, Run("typelib", "export", assembly, "--name", "My Library", "-v", "quiet"));
+        Assert.AreEqual(1, Run("typelib", "export", assembly, "--type-library", Path.Combine(directory, "Missing.tlb"), "-v", "quiet"));
+        Assert.AreNotEqual(0, Run("typelib", "export", assembly, "--platform", "arm64"));
+        Assert.AreNotEqual(0, Run("typelib", "export"));
+    }
+
     // Writes a request as the MSBuild task of CsCom.Build does.
     private static string WriteBuildRequest(string project, string config)
     {

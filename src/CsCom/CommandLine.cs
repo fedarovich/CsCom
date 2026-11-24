@@ -5,6 +5,7 @@ using CsCom.CodeGeneration;
 using CsCom.Configuration;
 using CsCom.LibrarySets;
 using CsCom.Output;
+using CsCom.TypeLibraries;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Console;
 
@@ -333,6 +334,55 @@ internal static class CommandLine
         Recursive = true,
     };
 
+    private static readonly Argument<string> AssemblyArgument = new("Assembly")
+    {
+        Description = "The .NET assembly whose public [GeneratedComInterface] interfaces and [GeneratedComClass] classes are exported.",
+    };
+
+    private static readonly Option<string?> TypeLibraryOutputOption = new("--output", "-o")
+    {
+        Description = "The type library to write. Default: the path of the assembly with the extension .tlb.",
+        HelpName = "PATH",
+    };
+
+    private static readonly Option<string?> TypeLibraryNameOption = new("--name", "-n")
+    {
+        Description = "The name of the type library. Default: the name of the assembly.",
+        HelpName = "NAME",
+    };
+
+    private static readonly Option<string?> TypeLibraryGuidOption = new("--guid")
+    {
+        Description = "The identifier (LIBID) of the type library. Default: the [Guid] of the assembly, which is required without this option.",
+        HelpName = "GUID",
+    };
+
+    private static readonly Option<string?> TypeLibraryVersionOption = new("--library-version")
+    {
+        Description = "The version of the type library. Default: [TypeLibVersion] of the assembly, otherwise the version of the assembly.",
+        HelpName = "MAJOR.MINOR",
+    };
+
+    private static readonly Option<TypeLibraryPlatform> TypeLibraryPlatformOption = new("--platform")
+    {
+        Description = "The platform that the layouts of the structures and of the interfaces are written for: win32 or win64.",
+        HelpName = "PLATFORM",
+        DefaultValueFactory = static _ => TypeLibraryPlatform.Win64,
+    };
+
+    private static readonly Option<string[]> ExportReferencePathOption = new("--reference-path")
+    {
+        Description = "An assembly that the assembly references, or a directory of such assemblies; can be repeated. The directory of the assembly and the .NET runtime of the tool are searched as well.",
+        HelpName = "PATH",
+    };
+
+    private static readonly Option<string[]> TypeLibraryPathOption = new("--type-library")
+    {
+        Description = "The file of a type library that the assembly, or an assembly that it references, has generated code of; can be repeated. "
+            + "The exported type library refers to the types of that code in their type libraries, which are found in the registry by default.",
+        HelpName = "PATH",
+    };
+
     public static RootCommand Create()
     {
         var createProject = new Command("create", "Generates a new C# project with the interop types of type libraries or interop assemblies.");
@@ -534,6 +584,33 @@ internal static class CommandLine
             new CsComReferenceEditor(loggerFactory).Remove(result.GetValue(ProjectOption), result.GetRequiredValue(RemoveSourceArgument))));
 
         // The generator of the MSBuild task of CsCom.Build, which bundles the tool.
+        var exportTypeLibrary = new Command(
+            "export",
+            "Exports the type library (.tlb) of a .NET assembly with source-generated COM types, like TlbExp: its public [GeneratedComInterface] interfaces, "
+            + "its public [GeneratedComClass] classes with a [Guid], and the enumerations and structures that they use.")
+        {
+            AssemblyArgument,
+            TypeLibraryOutputOption,
+            TypeLibraryNameOption,
+            TypeLibraryGuidOption,
+            TypeLibraryVersionOption,
+            TypeLibraryPlatformOption,
+            ExportReferencePathOption,
+            TypeLibraryPathOption,
+        };
+        exportTypeLibrary.SetAction(static result => Run(result, (_, loggerFactory) =>
+            new TypeLibraryExporter(loggerFactory).Export(new TypeLibraryExportRequest
+            {
+                AssemblyPath = result.GetRequiredValue(AssemblyArgument),
+                OutputPath = result.GetValue(TypeLibraryOutputOption),
+                Name = result.GetValue(TypeLibraryNameOption),
+                Guid = result.GetValue(TypeLibraryGuidOption),
+                Version = result.GetValue(TypeLibraryVersionOption),
+                Platform = result.GetValue(TypeLibraryPlatformOption),
+                ReferencePaths = result.GetValue(ExportReferencePathOption) ?? [],
+                TypeLibraryPaths = result.GetValue(TypeLibraryPathOption) ?? [],
+            })));
+
         var buildGenerate = new Command(BuildGenerateCommandName, "Generates the code of the CsComReference items of a project for the MSBuild task of CsCom.Build.")
         {
             RequestArgument,
@@ -554,6 +631,7 @@ internal static class CommandLine
                 listReferences,
                 removeReference,
             },
+            new Command("typelib", "Exports type libraries.") { exportTypeLibrary },
             list,
             buildGenerate,
         };
