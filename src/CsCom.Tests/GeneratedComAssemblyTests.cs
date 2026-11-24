@@ -121,13 +121,17 @@ public sealed class GeneratedComAssemblyTests : VerifyBase
         string assembly = Compile(directory, "Server", ServerHeader + GenerateInterop(directory) + ServerSource);
         var warnings = new WarningCollector<GeneratedComAssemblyReader>();
 
-        var library = new GeneratedComAssemblyReader(warnings, [RuntimeAssembly]).Read(assembly);
+        var catalog = new TypeLibraryCatalog([TestEnvironment.TestTypeLibrary]);
+        var library = new GeneratedComAssemblyReader(warnings, [RuntimeAssembly]).Read(assembly, catalog: catalog);
         string path = Path.Combine(directory, "Server.tlb");
-        var imported = new TypeLibraryWriter().Write(library, path, new TypeLibraryWriterOptions { TypeLibraryPaths = [TestEnvironment.TestTypeLibrary] });
+        var imported = new TypeLibraryWriter().Write(library, path, new TypeLibraryWriterOptions { Catalog = catalog });
 
+        // IOwnShape and OwnShape are written into the namespace of the generated code, whose type library does not have them.
         CollectionAssert.AreEqual(new[] { TestEnvironment.TestTypeLibrary }, imported.ToArray());
         var written = ModelDescriber.ReadWithImports(path, TestEnvironment.TestTypeLibrary);
-        CollectionAssert.AreEquivalent(new[] { "IRenderer", "Renderer" }, written.Types.Where(static t => t.ImportedFrom is null).Select(static t => t.Name).ToArray());
+        CollectionAssert.AreEquivalent(
+            new[] { "IRenderer", "Renderer", "IOwnShape", "OwnShape" },
+            written.Types.Where(static t => t.ImportedFrom is null).Select(static t => t.Name).ToArray());
         return Verify(DescribeOwn(written) + Environment.NewLine + string.Join(Environment.NewLine, warnings.Messages));
     }
 
@@ -144,6 +148,48 @@ public sealed class GeneratedComAssemblyTests : VerifyBase
         StringAssert.Contains(exception.Message, "The type library 'CsComTest' 1.2 ({6b1f2d2a-4c1e-4b71-9d0b-7b7c2e0a1000})");
         StringAssert.Contains(exception.Message, "is not registered");
         Assert.IsFalse(File.Exists(path));
+    }
+
+    // Many assemblies have a [Guid] that identifies no type library: their types are not taken for types of one, unless
+    // the type library with that identifier is found.
+    [TestMethod]
+    public void RefersToTheTypeLibraryOfAReferencedAssemblyThatHasOne()
+    {
+        const string source = """
+            using System.Runtime.InteropServices;
+            using System.Runtime.InteropServices.Marshalling;
+
+            [assembly: Guid("7C1F2D2A-4C1E-4B71-9D0B-7B7C2E0A7000")]
+
+            [GeneratedComInterface, Guid("7C1F2D2A-4C1E-4B71-9D0B-7B7C2E0A7001")]
+            public partial interface ILogger
+            {
+                void Log(Exported.Level level, Exported.ISimple simple);
+            }
+            """;
+        string directory = TestEnvironment.CreateDirectory("export");
+        string referenced = Compile(directory, "Exported", ExportedSource);
+        string assembly = Compile(directory, "Logger", source, referenced);
+        var warnings = new WarningCollector<GeneratedComAssemblyReader>();
+        var reader = new GeneratedComAssemblyReader(warnings, [RuntimeAssembly]);
+
+        // Without the type library of the referenced assembly, its types are exported as the closest types.
+        var library = reader.Read(assembly, catalog: new TypeLibraryCatalog());
+        var method = library.Types.OfType<InterfaceDefinition>().Single().Methods.Single();
+        Assert.AreEqual("VT_I4 level, VT_UNKNOWN simple", string.Join(", ", method.Parameters));
+        Assert.IsEmpty(library.ImportedLibraries);
+        Assert.IsTrue(warnings.Messages.Any(static m => m.Contains("'ILogger.Log(level)' uses Exported.Level, which is not supported; it is exported as long", StringComparison.Ordinal)), string.Join(Environment.NewLine, warnings.Messages));
+        new TypeLibraryWriter().Write(library, Path.Combine(directory, "Logger.tlb"));
+
+        // With it, the library refers to them.
+        string exported = Path.Combine(directory, "Exported.tlb");
+        new TypeLibraryWriter().Write(new GeneratedComAssemblyReader(referencePaths: [RuntimeAssembly]).Read(referenced), exported);
+        var catalog = new TypeLibraryCatalog([exported]);
+        library = reader.Read(assembly, catalog: catalog);
+        method = library.Types.OfType<InterfaceDefinition>().Single(static t => t.ImportedFrom is null).Methods.Single();
+        Assert.AreEqual("Level level, ISimple* simple", string.Join(", ", method.Parameters));
+        Assert.AreEqual("Exported", library.ImportedLibraries.Single().Name);
+        CollectionAssert.AreEqual(new[] { exported }, new TypeLibraryWriter().Write(library, Path.Combine(directory, "Logger2.tlb"), new TypeLibraryWriterOptions { Catalog = catalog }).ToArray());
     }
 
     // An assembly with the metadata of generated code whose types were renamed and whose support code is public, and an
@@ -270,6 +316,24 @@ public sealed class GeneratedComAssemblyTests : VerifyBase
                 public void Closing(ref bool Cancel) { }
                 public void Renamed(string Name) { }
                 public string Describe(object Value, out int length) => throw null;
+            }
+        }
+
+        namespace Interop.CsComTest
+        {
+            using System.Runtime.InteropServices;
+            using System.Runtime.InteropServices.Marshalling;
+
+            [GeneratedComInterface, Guid("7C1F2D2A-4C1E-4B71-9D0B-7B7C2E0A3002")]
+            public partial interface IOwnShape
+            {
+                void Draw(Color color);
+            }
+
+            [GeneratedComClass, Guid("7C1F2D2A-4C1E-4B71-9D0B-7B7C2E0A3011")]
+            public partial class OwnShape : IOwnShape
+            {
+                public void Draw(Color color) { }
             }
         }
         """;

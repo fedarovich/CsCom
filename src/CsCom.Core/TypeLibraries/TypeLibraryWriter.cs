@@ -44,6 +44,12 @@ public sealed class TypeLibraryWriterOptions
     /// looked up in the registry.
     /// </summary>
     public IReadOnlyList<string> TypeLibraryPaths { get; init; } = [];
+
+    /// <summary>
+    /// The catalog of the type libraries that the types of the library are imported from, which replaces
+    /// <see cref="TypeLibraryPaths"/>: the one that the reader of the model used, so that both find the same libraries.
+    /// </summary>
+    public TypeLibraryCatalog? Catalog { get; init; }
 }
 
 /// <summary>
@@ -157,8 +163,8 @@ public sealed partial class TypeLibraryWriter
         private readonly List<TypeDefinition> _types;
         private readonly Dictionary<TypeDefinition, ICreateTypeInfo> _created = [];
         private readonly Dictionary<(TypeDefinition Owner, object Target, bool Vtable), uint> _references = [];
-        private readonly Dictionary<Guid, ImportedLibrary> _imported = [];
-        private readonly Dictionary<Guid, string> _libraryPaths = [];
+        private readonly Dictionary<Guid, CatalogLibrary> _imported = [];
+        private readonly TypeLibraryCatalog _catalog;
         private readonly HashSet<TypeDefinition> _laidOut = [];
         private readonly List<nint> _allocations = [];
         private readonly List<nint> _variants = [];
@@ -169,13 +175,12 @@ public sealed partial class TypeLibraryWriter
             _library = library;
             _options = options;
             _logger = logger;
+            _catalog = options.Catalog ?? new TypeLibraryCatalog(options.TypeLibraryPaths);
             _types = [.. library.Types.Where(static t => t.ImportedFrom is null)];
         }
 
         public IReadOnlyList<string> Write(string path)
         {
-            IndexTypeLibraryPaths();
-
             SYSKIND kind = _options.Platform == TypeLibraryPlatform.Win32 ? SYSKIND.SYS_WIN32 : SYSKIND.SYS_WIN64;
             int hr = OleAut32.CreateTypeLib2(kind, path, out ICreateTypeLib? typeLib);
             if (hr < 0 || typeLib is null)

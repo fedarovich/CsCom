@@ -4,6 +4,7 @@ using System.Runtime.InteropServices;
 using System.Text.RegularExpressions;
 using CsCom.LibrarySets;
 using CsCom.Model;
+using CsCom.TypeLibraries;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -76,12 +77,18 @@ public sealed partial class GeneratedComAssemblyReader
     /// </summary>
     /// <param name="path">The path to the assembly.</param>
     /// <param name="identity">The identity of the type library, which overrides that of the assembly.</param>
+    /// <param name="catalog">
+    /// The type libraries that the library can refer to. With it, a type in a namespace of generated code that its type
+    /// library does not have is a type of the assembly, and a referenced assembly with a <c>[Guid]</c> is only taken to
+    /// have a type library of its own when that library is found. Without it, every type of such a namespace is taken
+    /// for a type of the type library, and no referenced assembly has one of its own.
+    /// </param>
     /// <returns>The model of the type library of the assembly.</returns>
     /// <exception cref="CsComException">
     /// The assembly or one of the assemblies it references cannot be loaded, the type library has no identifier, or a type
     /// cannot be described in a type library.
     /// </exception>
-    public TypeLibrary Read(string path, ExportedLibraryIdentity? identity = null)
+    public TypeLibrary Read(string path, ExportedLibraryIdentity? identity = null, TypeLibraryCatalog? catalog = null)
     {
         ArgumentException.ThrowIfNullOrEmpty(path);
         string fullPath = Path.GetFullPath(path);
@@ -100,7 +107,7 @@ public sealed partial class GeneratedComAssemblyReader
         LogLoading(fullPath);
         try
         {
-            using var session = new Session(context, assembly, fullPath, identity ?? new ExportedLibraryIdentity(), _logger);
+            using var session = new Session(context, assembly, fullPath, identity ?? new ExportedLibraryIdentity(), catalog, _logger);
             return session.Read();
         }
         catch (FileNotFoundException e) when (resolver.Missing is { } missing)
@@ -151,18 +158,21 @@ public sealed partial class GeneratedComAssemblyReader
         private readonly Assembly _assembly;
         private readonly string _path;
         private readonly ExportedLibraryIdentity _identity;
+        private readonly TypeLibraryCatalog? _catalog;
         private readonly ILogger _logger;
         private readonly MarshallingMetadata _marshalling = new();
         private readonly Dictionary<Type, TypeDefinition> _definitions = [];
         private readonly Dictionary<Assembly, AssemblyMarkers> _markers = [];
+        private readonly Dictionary<Type, TypeLibraryReference?> _imported = [];
         private readonly Dictionary<Guid, TypeLibraryReference> _importedLibraries = [];
         private readonly HashSet<string> _importedFiles = new(StringComparer.OrdinalIgnoreCase);
         private readonly Queue<(Type Type, TypeDefinition Definition)> _pending = [];
         private readonly Dictionary<VarEnum, PrimitiveTypeReference> _primitives = [];
         private TypeLibrary _library = null!;
 
-        public Session(MetadataLoadContext context, Assembly assembly, string path, ExportedLibraryIdentity identity, ILogger logger)
+        public Session(MetadataLoadContext context, Assembly assembly, string path, ExportedLibraryIdentity identity, TypeLibraryCatalog? catalog, ILogger logger)
         {
+            _catalog = catalog;
             _context = context;
             _assembly = assembly;
             _path = path;
@@ -280,14 +290,42 @@ public sealed partial class GeneratedComAssemblyReader
         // its types.
         private TypeLibraryReference? GetImportedLibrary(Type type)
         {
+            if (!_imported.TryGetValue(type, out var library))
+            {
+                library = FindImportedLibrary(type);
+                _imported.Add(type, library);
+            }
+
+            return library;
+        }
+
+        private TypeLibraryReference? FindImportedLibrary(Type type)
+        {
             var markers = GetMarkers(type.Assembly);
             if (type.Namespace is { } @namespace && markers.Libraries.TryGetValue(@namespace, out var library))
             {
-                return library;
+                // A type that was written into a namespace of generated code is not a type of its type library. When the
+                // library is not found, the writer reports it for the types that are used.
+                if (_catalog is null || !_catalog.TryGetLibrary(library, out var catalogLibrary))
+                {
+                    return library;
+                }
+
+                Guid? id = type.IsInterface ? GetGuid(type.GetCustomAttributesData()) : null;
+                return catalogLibrary.Find(id, GetOriginalName(type)) is not null ? library : null;
             }
 
-            return type.Assembly != _assembly && markers.Libraries.Count == 0 && !IsSupportType(type) && markers.Exported is { } exported ? exported : null;
+            // An assembly with a [Guid] that CsCom did not generate has a type library of its own if that library exists:
+            // many assemblies have a [Guid] that identifies nothing.
+            return type.Assembly != _assembly && markers.Libraries.Count == 0 && !IsSupportType(type)
+                && markers.Exported is { } exported && _catalog?.TryGetLibrary(exported, out _) == true
+                ? exported
+                : null;
         }
+
+        // The name of a type of generated code in its type library.
+        private string GetOriginalName(Type type) =>
+            GetMarkers(type.Assembly).OriginalNames.TryGetValue(type.FullName ?? type.Name, out string? original) ? original : type.Name;
 
         // The support code of CsCom: its package, or the namespace that it was generated into.
         private bool IsSupportType(Type type) =>
@@ -307,7 +345,7 @@ public sealed partial class GeneratedComAssemblyReader
 
             var attributes = type.GetCustomAttributesData();
             TypeLibraryReference? importedFrom = GetImportedLibrary(type);
-            string name = importedFrom is not null && GetMarkers(type.Assembly).OriginalNames.TryGetValue(type.FullName ?? type.Name, out string? original) ? original : type.Name;
+            string name = importedFrom is not null ? GetOriginalName(type) : type.Name;
             Guid? guid = GetGuid(attributes);
             string? documentation = GetArgument<string>(attributes, "System.ComponentModel.DescriptionAttribute");
             Model.TypeFlags? flags = Find(attributes, InteropNamespace + "TypeLibTypeAttribute") is { ConstructorArguments: [var flagsArgument] }

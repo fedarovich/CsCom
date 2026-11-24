@@ -12,6 +12,14 @@ coclass Renderer
     [default, source] DShapeEvents
     [source] IShapeEventsDual
     ~ guid 7c1f2d2a-4c1e-4b71-9d0b-7b7c2e0a3010, flags CanCreate
+interface IOwnShape : IUnknown
+    method Draw([in] Color color)
+    ~ guid 7c1f2d2a-4c1e-4b71-9d0b-7b7c2e0a3002, flags OleAutomation
+    ~ base slots 3
+    ~ Method Draw: id 1610678272, slot 3, None
+coclass OwnShape
+    [default] IOwnShape
+    ~ guid 7c1f2d2a-4c1e-4b71-9d0b-7b7c2e0a3011, flags CanCreate
 imported:
     CsComTest: Enum Color
     CsComTest: Interface DShapeEvents

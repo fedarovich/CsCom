@@ -111,7 +111,8 @@ public sealed partial class TypeLibraryExporter
             throw new CsComException($"The type library cannot be written to the assembly '{assemblyPath}' itself.");
         }
 
-        var library = new GeneratedComAssemblyReader(_loggerFactory.CreateLogger<GeneratedComAssemblyReader>(), request.ReferencePaths).Read(assemblyPath, identity);
+        var catalog = new TypeLibraryCatalog(typeLibraryPaths);
+        var library = new GeneratedComAssemblyReader(_loggerFactory.CreateLogger<GeneratedComAssemblyReader>(), request.ReferencePaths).Read(assemblyPath, identity, catalog);
         int count = library.Types.Count(static t => t.ImportedFrom is null);
         if (count == 0)
         {
@@ -119,7 +120,7 @@ public sealed partial class TypeLibraryExporter
         }
 
         var imported = new TypeLibraryWriter(_loggerFactory.CreateLogger<TypeLibraryWriter>())
-            .Write(library, outputPath, new TypeLibraryWriterOptions { Platform = request.Platform, TypeLibraryPaths = typeLibraryPaths });
+            .Write(library, outputPath, new TypeLibraryWriterOptions { Platform = request.Platform, Catalog = catalog });
         LogExported(library.Name, library.MajorVersion, library.MinorVersion, count, outputPath);
         return new TypeLibraryExportResult(
             outputPath,
