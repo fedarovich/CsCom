@@ -203,7 +203,9 @@ public partial class Renderer : IShapeEventsVt // An interface and a dispinterfa
   does not have them and must be generated again.
 - **Finding the type libraries:** the export reads the type libraries to refer to their types. A type library is found
   in the registry by its identifier and version, unless its file is specified with `--type-library`, a
-  `CsComTypeLibraryReference` item or a `CsComReference` item that is a file.
+  `CsComTypeLibraryReference` item or a `CsComReference` item that is a file. Of several files with the identifier,
+  the one with the version is taken, or else the first. When the library is also registered from another file, the
+  export tells so: the programs that load the exported library find the registered one.
 - **Loading the exported library:** a type library names the libraries that it refers to by their identifiers and file
   names, without their directories. A program therefore only loads the types of a library that is not registered when
   the file of that library is in the current directory or on the path; the export tells when a library is not
@@ -215,8 +217,9 @@ public partial class Renderer : IShapeEventsVt // An interface and a dispinterfa
   exported library refers to a type of it.
 - **Dispinterfaces:** the late-bound wrapper class of a dispinterface stands for the dispinterface, e.g. in
   `[ComSourceInterfaces]`.
-- **Support code:** the interfaces of the support code, such as `IConnectionPoint`, are in no type library; only
-  `IDispatch` and `IEnumVARIANT` are known.
+- **Support code:** the interfaces of the support code, such as `IConnectionPoint`, are in no type library, whether
+  the support code is in CsCom.Runtime or generated into the assembly; only `IDispatch` and `IEnumVARIANT` are known.
+  A class does not get such an interface in the library, and an interface that derives from one is an error.
 - **Other assemblies:** the other interfaces, enumerations and structures of a referenced assembly, which were not
   generated from a type library, are those of its own type library when the library that the export of that assembly
   writes is found and has them. That is the library with the identifier of its `[assembly: Guid]`, among the
@@ -231,5 +234,8 @@ public partial class Renderer : IShapeEventsVt // An interface and a dispinterfa
 - **Interfaces of other assemblies:** an interface of a referenced assembly is not defined again in the library.
   Without the type library of that assembly, a class does not get such an interface, with a warning, and an interface
   that derives from one is an error, because its members follow those of its base.
-- **Files with one identifier:** a type library refers to another one by its identifier, so two different
-  `--type-library` files with the same identifier are an error: specify only one of them.
+- **Libraries with one identifier:** OLE Automation resolves the references of a type library by the identifiers of
+  the libraries alone, so the exported library cannot refer to the types of a library when the export has loaded two
+  libraries with that identifier: two `--type-library` files, or two versions of a library, as those of MSXML. That
+  is an error: specify only one of the files, or refer to one version. Such files are no obstacle as long as the
+  exported library does not refer to their types.
