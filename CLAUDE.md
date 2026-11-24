@@ -95,7 +95,9 @@ interfaces and `[GeneratedComClass]` classes of an assembly with `MetadataLoadCo
 - The generated code names its type libraries in `AssemblyMetadata` attributes (`TypeLibraryMarker`, emitted by
   `LibrarySetGenerator`), so that the reader imports its types from these libraries instead of exporting them.
   `TypeLibraryCatalog` finds these libraries (the `--type-library` files, then the registry) for the reader, which asks
-  it whether a library has a type, and for the writer, which refers to the types.
+  it whether a library has a type, and for the writer, which refers to the types. Its `Files` are inputs of the export.
+  It does not release its libraries: their wrappers are shared with every other reader of the same library in the
+  process (`ComWrappers` caches them), so `FinalRelease` would break those.
 - A 64-bit process sees the layouts of a 32-bit library converted to its own, so a test of a win32 layout compares
   files, or inspects the library from a 32-bit process.
 - `TypeLibraryWriterTests` round-trip real type libraries (read, write, read): a difference is a bug of the writer or
