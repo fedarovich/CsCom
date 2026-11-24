@@ -91,6 +91,14 @@ of the items override them for a reference:
 - **Errors:** the errors and warnings are reported in the format of MSBuild, with the location of errors in configuration files,
   e.g. `cscom.xml(3,6): error CSCOM1000: Unknown model transformer <Rename>.`
 
+## Exporting the type library
+
+With `<CsComExportTypeLibrary>true</CsComExportTypeLibrary>`, CsCom.Build also exports the type library of the
+assembly of the project after the compilation: its public `[GeneratedComInterface]` interfaces and `[GeneratedComClass]`
+classes. The properties `CsComTypeLibraryName`, `CsComTypeLibraryGuid`, `CsComTypeLibraryVersion`,
+`CsComTypeLibraryPlatform` and `CsComTypeLibraryPath`, and the `CsComTypeLibraryReference` items, are described in
+[Exporting type libraries](exporting-type-libraries.md#during-the-build). A project needs no `CsComReference` item for it.
+
 ## Managing references
 
 The `reference` commands edit the `CsComReference` items of a project file, like `dotnet add package` does for packages:

@@ -34,7 +34,8 @@ foreach (object? key in dictionary)                 // _NewEnum, through IEnumVA
 ```
 
 `cscom assembly build` and `cscom assembly pack` build a ready-to-use interop assembly or NuGet package instead, and
-`cscom list` lists the types and members of a type library.
+`cscom list` lists the types and members of a type library. `cscom typelib export` goes the other way, like TlbExp: it
+writes the type library of an assembly with `[GeneratedComInterface]` and `[GeneratedComClass]` types.
 
 ## Documentation
 

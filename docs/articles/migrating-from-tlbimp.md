@@ -2,7 +2,8 @@
 
 CsCom generates the same kind of types as TlbImp, from the same type libraries, but as C# code for source-generated COM
 interop instead of an assembly for the built-in COM interop of .NET. Most calling code keeps working, and this article lists
-what changes. The [limitations](limitations.md) of the generated code apply as well.
+what changes. The [limitations](limitations.md) of the generated code apply as well. The counterpart of TlbExp, for the
+COM types that an assembly implements, is described in [Exporting type libraries](exporting-type-libraries.md).
 
 ## Replacing the interop assembly
 

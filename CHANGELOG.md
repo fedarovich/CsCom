@@ -5,8 +5,26 @@ same version. The versions up to 2.0.0 are not described here.
 
 ## Unreleased
 
+### Changed
+
+- **Assembly metadata of the generated code:** the generated code has `[assembly: AssemblyMetadata]` attributes that name
+  its type libraries, their namespaces, the types that were renamed and the namespace of the generated support code,
+  which the export of a type library reads. They are in `CsComAssemblyAttributes.cs`, which is now generated for
+  projects as well and not only by CsCom.Build, or at the top of the file with `--single-file`.
+
 ### Added
 
+- **Type library export:** `cscom typelib export <Assembly>` writes the type library (`.tlb`) of an assembly with
+  source-generated COM types, like TlbExp: the public `[GeneratedComInterface]` interfaces, the public
+  `[GeneratedComClass]` classes with a `[Guid]`, and the enumerations and structures that they use. `[DispId]`,
+  `[ComDefaultInterface]`, `[ComSourceInterfaces]`, `[TypeLibType]`, `[TypeLibFunc]`, `[ComVisible]` and `[Description]`
+  are honoured, and the methods named `get_X`, `set_X` and `putref_X` are the accessors of a property. The library
+  refers to the types of the code that CsCom generated from type libraries instead of defining them again. The
+  options set the file, the name, the identifier, the version and the platform (`win32` or `win64`). See
+  [Exporting type libraries](https://cscom.fedarovich.com/articles/exporting-type-libraries.html).
+- **Type library export during the build:** with `<CsComExportTypeLibrary>true</CsComExportTypeLibrary>`, CsCom.Build
+  exports the type library of the project after the compilation and copies it to the output and publish directories,
+  again only when the assembly or what it refers to changed.
 - **Icon:** the packages and the documentation site have an icon.
 - **Readmes:** the packages have a readme, which nuget.org shows on their pages: what the package is for, how it is used,
   and a link to the documentation.

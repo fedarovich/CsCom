@@ -1,7 +1,8 @@
 # Commands
 
 `cscom` is a .NET tool, see [Getting started](getting-started.md) for installing it. Its commands generate a project,
-build an assembly, pack it into a NuGet package, list a type library and manage the `CsComReference` items of a project:
+build an assembly, pack it into a NuGet package, list a type library, manage the `CsComReference` items of a project and
+export the type library of an assembly:
 
 ```powershell
 # Generate a C# project with the interop types
@@ -24,12 +25,18 @@ cscom list Scripting.Dictionary --type ^IDictionary$
 
 # Generate the interop code during the build of an existing project, with the CsCom.Build package
 cscom reference add Excel.Application --namespace Office.Excel
+
+# Export the type library of an assembly with [GeneratedComInterface] and [GeneratedComClass] types
+cscom typelib export bin\Release\net10.0-windows\Server.dll
 ```
 
-The sources are described in [Sources](sources.md), and the `reference` commands in [Managing references](msbuild.md#managing-references).
+The sources are described in [Sources](sources.md), the `reference` commands in [Managing references](msbuild.md#managing-references),
+and `typelib export`, which has options of its own, in [Exporting type libraries](exporting-type-libraries.md).
 `cscom <command> --help` lists the options of a command.
 
 ## Options
+
+The options of the commands that generate code:
 
 | Option | Description |
 | --- | --- |
@@ -153,3 +160,8 @@ interface IDictionary : IDispatch (dual)
 
 `cscom config create [-o <dir>]` writes `cscom.xsd`, the schema of the configuration files, and a starter `cscom.xml`,
 see [Configuration file](configuration.md).
+
+## typelib export
+
+`cscom typelib export <Assembly> [-o <file>]` writes the type library of a .NET assembly with source-generated COM
+types, like TlbExp, see [Exporting type libraries](exporting-type-libraries.md).

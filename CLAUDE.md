@@ -5,7 +5,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## What this is
 
 CsCom generates COM interop code from type libraries or .NET interop assemblies, like TlbImp, but the generated C# uses
-source-generated COM interop (`[GeneratedComInterface]`, ComWrappers), so it works with trimming and Native AOT. It ships as
+source-generated COM interop (`[GeneratedComInterface]`, ComWrappers), so it works with trimming and Native AOT. It also
+exports the type library of an assembly with such types, like TlbExp. It ships as
 four NuGet packages that are always released together with the same version: `CsCom` (the `cscom` .NET tool), `CsCom.Build`
 (MSBuild integration), `CsCom.Runtime` and `CsCom.Runtime.Dynamic` (support code of the generated code).
 
@@ -81,16 +82,35 @@ it reads several references, merges the types they import from other libraries i
 (`LibrarySetMerger`), transforms each with its own options and configuration, and emits each with an `EmitScope` that knows
 the namespaces of all the libraries. The support code is emitted once, with the first library.
 
+### The export of type libraries
+
+The other direction goes through the same model, without the transformers (`AliasResolver` and `NameSanitizer` would
+change the library): `GeneratedComAssemblyReader` (`InteropAssemblies/`) reads the public `[GeneratedComInterface]`
+interfaces and `[GeneratedComClass]` classes of an assembly with `MetadataLoadContext`, and `TypeLibraryWriter`
+(`TypeLibraries/`) writes a model with `ICreateTypeLib`/`ICreateTypeInfo`. `TypeLibraryExporter` runs both.
+
+- The reader maps marshallers to native types by their simple names, because the support code can be in CsCom.Runtime
+  or in a generated namespace; a change of how the emitters marshal a type (`TypeMapper`) needs the inverse in
+  `GeneratedComAssemblyReader.Types.cs`.
+- The generated code names its type libraries in `AssemblyMetadata` attributes (`TypeLibraryMarker`, emitted by
+  `LibrarySetGenerator`), so that the reader imports its types from these libraries instead of exporting them.
+- `TypeLibraryWriterTests` round-trip real type libraries (read, write, read): a difference is a bug of the writer or
+  something that the model does not keep.
+- A type library names the libraries that it refers to by file name only: reading one that refers to an unregistered
+  library needs that library loaded (`ModelDescriber.ReadWithImports` in the tests), in the current directory or on the path.
+
 ### The tool (`src/CsCom`)
 
 `CommandLine.cs` defines all commands with System.CommandLine: `project create|update`, `assembly build|pack`, `list`,
-`config create`, `reference add|list|remove`, and the hidden `build-generate`, which is the generator of CsCom.Build.
+`config create`, `reference add|list|remove`, `typelib export`, and the hidden `build-generate` and `build-export`, which
+CsCom.Build runs.
 Invalid input is a `CsComException`, which is reported without a stack trace; anything else is logged as an unexpected error.
 
 ### CsCom.Build (`src/CsCom.Build`)
 
-The `CsComGenerate` task targets netstandard2.0 so that it loads into the MSBuild of both the .NET SDK and Visual Studio; it
-cannot reference CsCom.Core. It writes the `CsComReference` items and the `CsCom*` properties into `cscom.request.json` and
+The tasks (`CsComGenerate`, and `CsComExportTypeLibrary`, which exports the type library of the compiled assembly with
+`build-export` when `CsComExportTypeLibrary` is true; both derive from `CsComToolTask`) target netstandard2.0 so that they
+load into the MSBuild of both the .NET SDK and Visual Studio; they cannot reference CsCom.Core. `CsComGenerate` writes the `CsComReference` items and the `CsCom*` properties into `cscom.request.json` and
 runs the bundled `cscom.dll build-generate` as a separate process (`LibrarySetBuild` in CsCom.Core executes the request).
 `cscom.state` in the intermediate output records the hash of the request, the files read and the files generated, which
 makes the generation incremental. The package is described by `CsCom.Build.nuspec`; packing it publishes the tool into its

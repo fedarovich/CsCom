@@ -19,6 +19,14 @@ emits it with the namespaces of all the libraries. The commands and CsCom.Build 
 of the MSBuild task, which the task passes to the hidden `build-generate` command of the bundled cscom tool.
 `CsComReferenceEditor` edits the `CsComReference` items of project files for the `reference` commands.
 
+The [export of a type library](exporting-type-libraries.md) goes through the same model in the other direction, without
+the transformers: `GeneratedComAssemblyReader` reads the source-generated COM types of an assembly with
+`MetadataLoadContext` into the model, and `TypeLibraryWriter` writes a model with `ICreateTypeLib` and `ICreateTypeInfo`.
+`TypeLibraryExporter` runs both for the `typelib export` command, and `TypeLibraryExportBuild` for the hidden
+`build-export` command of the second task of CsCom.Build. The generated code names its type libraries in assembly
+metadata (`TypeLibraryMarker`), so that the reader takes its types for types of these libraries, to which the written
+library refers.
+
 | Project | Description |
 | --- | --- |
 | `src/CsCom` | The command line tool (`cscom`), packed as a .NET tool. |

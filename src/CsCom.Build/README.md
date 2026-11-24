@@ -33,6 +33,9 @@ Console.WriteLine(dictionary.Count);
 
 The options, such as the events, the marshalling and the support code, are item metadata and `CsCom*` properties.
 
+With `<CsComExportTypeLibrary>true</CsComExportTypeLibrary>`, the package also exports the type library (`.tlb`) of the
+`[GeneratedComInterface]` and `[GeneratedComClass]` types of the project after the compilation, like TlbExp.
+
 ## Documentation
 
 See [cscom.fedarovich.com](https://cscom.fedarovich.com/), starting with

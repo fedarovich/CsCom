@@ -42,6 +42,9 @@ cscom list Scripting.Dictionary --type ^IDictionary$
 
 # Generate the interop code during the build of an existing project, with the CsCom.Build package
 cscom reference add Excel.Application --namespace Office.Excel
+
+# Export the type library of an assembly with [GeneratedComInterface] and [GeneratedComClass] types, like TlbExp
+cscom typelib export bin\Release\net10.0-windows\Server.dll
 ```
 
 The generated code:
@@ -75,6 +78,7 @@ The four packages are released together, with the same version.
   [Commands](https://cscom.fedarovich.com/articles/commands.html),
   [Interop assemblies](https://cscom.fedarovich.com/articles/interop-assemblies.html),
   [MSBuild integration](https://cscom.fedarovich.com/articles/msbuild.html),
+  [Exporting type libraries](https://cscom.fedarovich.com/articles/exporting-type-libraries.html),
   [Configuration file](https://cscom.fedarovich.com/articles/configuration.html)
 - [Generated code](https://cscom.fedarovich.com/articles/generated-code.html): marshalling, interface pointers, events,
   late binding with `dynamic`, support code and [limitations](https://cscom.fedarovich.com/articles/limitations.html)

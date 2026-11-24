@@ -12,6 +12,8 @@
     href: interop-assemblies.md
   - name: MSBuild integration
     href: msbuild.md
+  - name: Exporting type libraries
+    href: exporting-type-libraries.md
   - name: Configuration file
     href: configuration.md
 - name: Generated code
