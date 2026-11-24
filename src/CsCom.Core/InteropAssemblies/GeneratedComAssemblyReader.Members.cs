@@ -46,6 +46,7 @@ public sealed partial class GeneratedComAssemblyReader
                 }
             }
 
+            RenameOverloads(type, read);
             for (int i = 0; i < read.Count; i++)
             {
                 var (method, name, kind) = read[i];
@@ -75,6 +76,59 @@ public sealed partial class GeneratedComAssemblyReader
             {
                 throw new CsComException(
                     $"The members {string.Join(" and ", duplicates.Select(m => $"'{type.Name}.{m.Name}'"))} have the same [DispId] {duplicates.Key}.");
+            }
+        }
+
+        // The members of an interface of a type library have different names, which are not case-sensitive: the overloads
+        // of a method get the names that TlbExp gives them, M_2, M_3 and so on, in the order of their declarations.
+        private void RenameOverloads(Type type, List<(MethodInfo Method, string Name, InvokeKind Kind)> read)
+        {
+            var used = new HashSet<string>(read.Select(static r => r.Name), StringComparer.OrdinalIgnoreCase);
+            var first = new Dictionary<string, (string Name, bool IsProperty)>(StringComparer.OrdinalIgnoreCase);
+            var accessors = new HashSet<(string Name, InvokeKind Kind)>();
+            var counts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            for (int i = 0; i < read.Count; i++)
+            {
+                var (method, name, kind) = read[i];
+                bool isProperty = kind != InvokeKind.Method;
+                if (isProperty && !accessors.Add((name, kind)))
+                {
+                    throw new CsComException($"The property '{type.Name}.{name}' has overloaded accessors, which a type library cannot describe.");
+                }
+
+                if (!first.TryGetValue(name, out var previous))
+                {
+                    first.Add(name, (name, isProperty));
+                    continue;
+                }
+
+                if (isProperty != previous.IsProperty)
+                {
+                    throw new CsComException($"'{type.Name}.{name}' is both a property and a method, which have the same name in the type library.");
+                }
+
+                if (isProperty)
+                {
+                    // The accessors of one property share its name.
+                    if (previous.Name != name)
+                    {
+                        throw new CsComException(
+                            $"The properties '{type.Name}.{previous.Name}' and '{type.Name}.{name}' have the same name in the type library, where the names are not case-sensitive.");
+                    }
+
+                    continue;
+                }
+
+                int number = counts.GetValueOrDefault(name, 1) + 1;
+                counts[name] = number;
+                string renamed = $"{name}_{number}";
+                if (!used.Add(renamed))
+                {
+                    throw new CsComException($"The overload of '{type.Name}.{name}' cannot be exported as '{renamed}', which is the name of another member.");
+                }
+
+                LogOverload($"{type.Name}.{name}", renamed);
+                read[i] = (method, renamed, kind);
             }
         }
 
@@ -117,16 +171,21 @@ public sealed partial class GeneratedComAssemblyReader
             }
         }
 
-        // The types that the type library marshaller marshals: the Automation types, the enumerations, the structures and
-        // the interface pointers, SAFEARRAYs of them, and pointers to them for the parameters that are passed by reference.
+        // The types that the type library marshaller marshals: the Automation types, the enumerations and the interface
+        // pointers, SAFEARRAYs of them, and pointers to them for the parameters that are passed by reference. Structures
+        // and GUIDs only count by reference and in SAFEARRAYs: Automation passes its structures by reference, and whether
+        // the marshaller takes them by value is not documented.
         private static bool IsAutomationType(TypeReference type)
         {
             return type switch
             {
                 PointerTypeReference { ElementType: PointerTypeReference { ElementType: var pointee } } => IsInterface(pointee),
-                PointerTypeReference { ElementType: var pointee } => IsInterface(pointee) || IsValue(pointee),
+                PointerTypeReference { ElementType: var pointee } => IsInterface(pointee) || IsValue(pointee) || IsStructure(pointee),
                 _ => IsValue(type),
             };
+
+            static bool IsStructure(TypeReference type) =>
+                type is UserDefinedTypeReference { Definition: RecordDefinition } or WellKnownTypeReference { Type: WellKnownType.Guid };
 
             static bool IsInterface(TypeReference type) =>
                 type is UserDefinedTypeReference { Definition: InterfaceDefinition or CoClassDefinition } or WellKnownTypeReference { Type: WellKnownType.IEnumVariant };
@@ -136,9 +195,8 @@ public sealed partial class GeneratedComAssemblyReader
                 PrimitiveTypeReference primitive => primitive.VarType is VarEnum.VT_I1 or VarEnum.VT_UI1 or VarEnum.VT_I2 or VarEnum.VT_UI2 or VarEnum.VT_I4 or VarEnum.VT_UI4
                     or VarEnum.VT_I8 or VarEnum.VT_UI8 or VarEnum.VT_INT or VarEnum.VT_UINT or VarEnum.VT_R4 or VarEnum.VT_R8 or VarEnum.VT_CY or VarEnum.VT_DATE
                     or VarEnum.VT_BSTR or VarEnum.VT_BOOL or VarEnum.VT_DECIMAL or VarEnum.VT_ERROR or VarEnum.VT_VARIANT or VarEnum.VT_UNKNOWN or VarEnum.VT_DISPATCH,
-                SafeArrayTypeReference array => IsValue(array.ElementType) || IsAutomationType(array.ElementType),
-                UserDefinedTypeReference { Definition: EnumDefinition or RecordDefinition } => true,
-                WellKnownTypeReference { Type: WellKnownType.Guid } => true,
+                SafeArrayTypeReference array => IsStructure(array.ElementType) || IsAutomationType(array.ElementType),
+                UserDefinedTypeReference { Definition: EnumDefinition } => true,
                 _ => false,
             };
         }

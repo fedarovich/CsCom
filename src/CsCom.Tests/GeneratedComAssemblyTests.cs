@@ -80,6 +80,10 @@ public sealed class GeneratedComAssemblyTests : VerifyBase
 
             [ComVisible(true), GeneratedComInterface, Guid("7C1F2D2A-4C1E-4B71-9D0B-7B7C2E0A2303")]
             internal partial interface IInternal { void M(); }
+
+            // A class without a [Guid] is not exported whether it is visible or not.
+            [GeneratedComClass]
+            public partial class Helper : IHidden { public void M() { } }
             """);
         var warnings = new WarningCollector<TypeLibraryExporter>();
 
@@ -93,6 +97,79 @@ public sealed class GeneratedComAssemblyTests : VerifyBase
         warnings.Messages.Clear();
         new TypeLibraryExporter(new CollectorFactory(warnings)).Export(new TypeLibraryExportRequest { AssemblyPath = empty });
         StringAssert.Contains(warnings.Messages.Single(), "has no public [GeneratedComInterface] interface");
+    }
+
+    // The members of an interface of a type library have different names, so the overloads are numbered, as by TlbExp.
+    [TestMethod]
+    public void NumbersTheOverloads()
+    {
+        string directory = TestEnvironment.CreateDirectory("export");
+        string assembly = Compile(directory, "Overloads", """
+            using System.Runtime.InteropServices;
+            using System.Runtime.InteropServices.Marshalling;
+
+            [assembly: Guid("7C1F2D2A-4C1E-4B71-9D0B-7B7C2E0A2400")]
+
+            [GeneratedComInterface, Guid("7C1F2D2A-4C1E-4B71-9D0B-7B7C2E0A2401")]
+            public partial interface IMath
+            {
+                int Add(int a, int b);
+                double Add(double a, double b);
+                void Reset();
+                void add(short value);
+            }
+
+            [GeneratedComInterface, Guid("7C1F2D2A-4C1E-4B71-9D0B-7B7C2E0A2402")]
+            public partial interface IMoreMath : IMath
+            {
+                void Add(long value);
+            }
+            """);
+
+        var library = new GeneratedComAssemblyReader().Read(assembly);
+        string path = Path.Combine(directory, "Overloads.tlb");
+        new TypeLibraryWriter().Write(library, path);
+
+        var written = new TypeLibraryReader().Read(path);
+        CollectionAssert.AreEqual(
+            new[] { "Add", "Add_2", "Reset", "add_3" },
+            written.Types.OfType<InterfaceDefinition>().Single(static t => t.Name == "IMath").Methods.Select(static m => m.OriginalName).ToArray());
+        Assert.AreEqual("Add", written.Types.OfType<InterfaceDefinition>().Single(static t => t.Name == "IMoreMath").Methods.Single().OriginalName);
+    }
+
+    // The type library marshaller is only made the proxy of the interfaces whose parameters it is known to marshal.
+    [TestMethod]
+    public void MarksTheInterfacesWithStructuresByReferenceForAutomation()
+    {
+        string assembly = Compile(TestEnvironment.CreateDirectory("export"), "Structures", """
+            using System.Runtime.InteropServices;
+            using System.Runtime.InteropServices.Marshalling;
+
+            [assembly: Guid("7C1F2D2A-4C1E-4B71-9D0B-7B7C2E0A2500")]
+
+            public struct Size { public int Width; public int Height; }
+
+            public struct Empty { }
+
+            [GeneratedComInterface, Guid("7C1F2D2A-4C1E-4B71-9D0B-7B7C2E0A2501")]
+            public partial interface IByValue { void M(Size size); }
+
+            [GeneratedComInterface, Guid("7C1F2D2A-4C1E-4B71-9D0B-7B7C2E0A2502")]
+            public partial interface IGuidByValue { void M(System.Guid id); }
+
+            [GeneratedComInterface, Guid("7C1F2D2A-4C1E-4B71-9D0B-7B7C2E0A2503")]
+            public partial interface IByReference { Size M(in Size size, in System.Guid id, ref Empty empty); }
+            """);
+        var warnings = new WarningCollector<GeneratedComAssemblyReader>();
+
+        var library = new GeneratedComAssemblyReader(warnings).Read(assembly);
+
+        CollectionAssert.AreEqual(
+            new[] { "IByReference" },
+            library.Types.OfType<InterfaceDefinition>().Where(static t => t.Flags.HasFlag(TypeFlags.OleAutomation)).Select(static t => t.Name).ToArray());
+
+        // A structure without fields has a size of one byte, which is not a layout to warn about.
+        Assert.IsEmpty(warnings.Messages);
     }
 
     [TestMethod]
@@ -138,6 +215,30 @@ public sealed class GeneratedComAssemblyTests : VerifyBase
             [GeneratedComInterface, Guid("7C1F2D2A-4C1E-4B71-9D0B-7B7C2E0A2201")] public partial interface IOne { [DispId(1)] int get_Count(); void set_Count(int value); [DispId(1)] void Reset(); }
             """,
             "'IOne.Count' and 'IOne.Reset' have the same [DispId] 1");
+        AssertRejected(
+            "PropertyAndMethod",
+            """
+            [GeneratedComInterface, Guid("7C1F2D2A-4C1E-4B71-9D0B-7B7C2E0A2201")] public partial interface IOne { int get_Count(); void Count(); }
+            """,
+            "'IOne.Count' is both a property and a method");
+        AssertRejected(
+            "OverloadedAccessors",
+            """
+            [GeneratedComInterface, Guid("7C1F2D2A-4C1E-4B71-9D0B-7B7C2E0A2201")] public partial interface IOne { int get_Item(int index); int get_Item(string name); }
+            """,
+            "The property 'IOne.Item' has overloaded accessors");
+        AssertRejected(
+            "OverloadDispIds",
+            """
+            [GeneratedComInterface, Guid("7C1F2D2A-4C1E-4B71-9D0B-7B7C2E0A2201")] public partial interface IOne { [DispId(1)] void M(); [DispId(1)] void M(int value); }
+            """,
+            "'IOne.M' and 'IOne.M_2' have the same [DispId] 1");
+        AssertRejected(
+            "OverloadName",
+            """
+            [GeneratedComInterface, Guid("7C1F2D2A-4C1E-4B71-9D0B-7B7C2E0A2201")] public partial interface IOne { void M(); void M_2(); void M(int value); }
+            """,
+            "The overload of 'IOne.M' cannot be exported as 'M_2'");
         AssertRejected(
             "FrameworkStructure",
             """

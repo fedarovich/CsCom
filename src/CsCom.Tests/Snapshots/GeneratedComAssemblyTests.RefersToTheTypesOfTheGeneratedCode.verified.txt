@@ -2,7 +2,7 @@
 interface IRenderer : IUnknown
     method Draw([in] IShape* shape, [in] Color color, [in] Point* point, [in] DShapeEvents* events, [in] SAFEARRAY(Color) colors)
     method GetCircle([out] Font** font, [in] Record record, [out, retval] ICircle** pRetVal)
-    ~ guid 7c1f2d2a-4c1e-4b71-9d0b-7b7c2e0a3001, flags OleAutomation
+    ~ guid 7c1f2d2a-4c1e-4b71-9d0b-7b7c2e0a3001, flags None
     ~ base slots 3
     ~ Method Draw: id 1610678272, slot 3, None
     ~ Method GetCircle: id 1610678273, slot 4, None

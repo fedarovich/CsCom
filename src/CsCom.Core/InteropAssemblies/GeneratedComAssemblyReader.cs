@@ -702,6 +702,9 @@ public sealed partial class GeneratedComAssemblyReader
             Message = "The dual interface '{Name}' is marked oleautomation, which OLE Automation requires of dual interfaces, but '{Member}' is not compatible with Automation")]
         private partial void LogIncompatibleDualInterface(string name, string member);
 
+        [LoggerMessage(Level = LogLevel.Information, Message = "'{Member}' is overloaded: the overload is exported as '{Name}'")]
+        private partial void LogOverload(string member, string name);
+
         [LoggerMessage(Level = LogLevel.Warning, Message = "'{Member}' is named like an accessor of a property, but does not have the parameters or the return value of one; it is exported as a method")]
         private partial void LogInvalidAccessor(string member);
 
