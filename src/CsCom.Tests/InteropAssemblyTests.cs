@@ -432,48 +432,10 @@ public sealed partial class InteropAssemblyTests : VerifyBase
     private static T Get<T>(TypeLibrary library, string name)
         where T : TypeDefinition => library.Types.OfType<T>().Single(t => t.Name == name);
 
-    // The listing of `cscom list` by type, with the identifiers, flags and layouts that it does not show. The names of the
-    // [retval] parameters, which interop assemblies do not keep, are replaced.
     private static Dictionary<string, List<string>> Describe(InteropPipeline pipeline, TypeLibrary library)
     {
         pipeline.TransformModel(library, new CodeGenerationOptions { Namespace = "Interop" }, sanitizeNames: false);
-        using var writer = new StringWriter();
-        ModelPrinter.Write(library, writer);
-
-        var blocks = new Dictionary<string, List<string>>();
-        List<string>? block = null;
-        foreach (string line in writer.ToString().Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries))
-        {
-            if (!line.StartsWith(' '))
-            {
-                blocks[HeaderName().Match(line).Groups[1].Value] = block = [line];
-            }
-            else
-            {
-                block!.Add(RetvalName().Replace(line, "[out, retval] $1 retval)"));
-            }
-        }
-
-        foreach (var type in library.Types)
-        {
-            var lines = blocks[type.Name];
-            lines.Add($"    ~ guid {type.Guid?.ToString() ?? "none"}, flags {type.Flags}");
-            switch (type)
-            {
-                case InterfaceDefinition @interface:
-                    lines.Add($"    ~ base slots {@interface.BaseVtableSlots}");
-                    lines.AddRange(@interface.Methods.Select(m => @interface.InterfaceKind == InterfaceKind.Vtable
-                        ? $"    ~ {m.InvokeKind} {m.Name}: slot {m.VtableSlot}, {m.Flags}"
-                        : $"    ~ {m.InvokeKind} {m.Name}: id {m.MemberId.ToString(CultureInfo.InvariantCulture)}, slot {m.VtableSlot}, {m.Flags}"));
-                    lines.AddRange(@interface.Properties.Select(static p => $"    ~ property {p.Name}: id {p.DispId.ToString(CultureInfo.InvariantCulture)}, {p.Flags}"));
-                    break;
-                case RecordDefinition record:
-                    lines.Add($"    ~ size {record.Size}, alignment {record.Alignment}, offsets {string.Join(" ", record.Fields.Select(static f => f.Offset))}");
-                    break;
-            }
-        }
-
-        return blocks;
+        return ModelDescriber.Describe(library);
     }
 
     // The generated files without the documentation and the blank lines.
@@ -482,52 +444,9 @@ public sealed partial class InteropAssemblyTests : VerifyBase
             static d => d.RelativePath.Replace('\\', '/'),
             static d => d.GetText().Split('\n').Select(static l => l.TrimEnd('\r')).Where(static l => l.Trim().Length > 0 && !l.TrimStart().StartsWith("///", StringComparison.Ordinal)).ToList());
 
-    // Lists the lines that only the type library (-) or only the interop assembly (+) has.
-    private static string Compare(Dictionary<string, List<string>> fromTypeLibrary, Dictionary<string, List<string>> fromAssembly)
-    {
-        var report = new StringBuilder();
-        foreach (string key in fromTypeLibrary.Keys.Union(fromAssembly.Keys).Order(StringComparer.Ordinal))
-        {
-            var removed = Except(fromTypeLibrary.GetValueOrDefault(key) ?? [], fromAssembly.GetValueOrDefault(key) ?? []);
-            var added = Except(fromAssembly.GetValueOrDefault(key) ?? [], fromTypeLibrary.GetValueOrDefault(key) ?? []);
-            if (removed.Count == 0 && added.Count == 0)
-            {
-                continue;
-            }
-
-            report.AppendLine(key);
-            removed.ForEach(line => report.AppendLine("- " + line.Trim()));
-            added.ForEach(line => report.AppendLine("+ " + line.Trim()));
-        }
-
-        return report.ToString();
-    }
-
-    private static List<string> Except(List<string> lines, List<string> others)
-    {
-        var remaining = others.GroupBy(static l => l).ToDictionary(static g => g.Key, static g => g.Count());
-        var result = new List<string>();
-        foreach (string line in lines)
-        {
-            if (remaining.TryGetValue(line, out int count) && count > 0)
-            {
-                remaining[line] = count - 1;
-            }
-            else
-            {
-                result.Add(line);
-            }
-        }
-
-        return result;
-    }
+    private static string Compare(Dictionary<string, List<string>> fromTypeLibrary, Dictionary<string, List<string>> fromAssembly) =>
+        ModelDescriber.Compare(fromTypeLibrary, fromAssembly);
 
     private static MemoryStream Compile(string name, string source, string? path = null, MemoryStream? reference = null) =>
         TestCompiler.Compile(name, source, path, reference);
-
-    [GeneratedRegex(@"^\S+ ([^\s:(]+)")]
-    private static partial Regex HeaderName();
-
-    [GeneratedRegex(@"\[out, retval\] (\S+) \w+\)")]
-    private static partial Regex RetvalName();
 }
