@@ -133,7 +133,7 @@ public sealed partial class GeneratedComAssemblyReader
             }
 
             // The late-bound wrapper of a dispinterface of a type library is a pointer to the dispinterface.
-            if (type.IsClass && GetImportedLibrary(type) is not null)
+            if (IsDispatchWrapper(type))
             {
                 return new PointerTypeReference(new UserDefinedTypeReference(GetOrCreateDefinition(type)));
             }

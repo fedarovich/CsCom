@@ -184,8 +184,19 @@ public sealed partial class GeneratedComAssemblyReader
                 _ => IsValue(type),
             };
 
-            static bool IsStructure(TypeReference type) =>
-                type is UserDefinedTypeReference { Definition: RecordDefinition } or WellKnownTypeReference { Type: WellKnownType.Guid };
+            // A structure whose fields are of these types as well; a union is none. The fields of a structure of another
+            // library are not read.
+            static bool IsStructure(TypeReference type, HashSet<RecordDefinition>? visited = null) => type switch
+            {
+                WellKnownTypeReference { Type: WellKnownType.Guid } => true,
+                UserDefinedTypeReference { Definition: RecordDefinition { ImportedFrom: not null } } => true,
+                UserDefinedTypeReference { Definition: RecordDefinition { IsUnion: false } record } =>
+                    !(visited ??= []).Add(record) || record.Fields.All(f => IsField(f.Type, visited)),
+                _ => false,
+            };
+
+            static bool IsField(TypeReference type, HashSet<RecordDefinition> visited) =>
+                IsValue(type) || IsStructure(type, visited) || (type is PointerTypeReference { ElementType: var pointee } && IsInterface(pointee));
 
             static bool IsInterface(TypeReference type) =>
                 type is UserDefinedTypeReference { Definition: InterfaceDefinition or CoClassDefinition } or WellKnownTypeReference { Type: WellKnownType.IEnumVariant };

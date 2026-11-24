@@ -151,6 +151,27 @@ public sealed class GeneratedComAssemblyTests : VerifyBase
 
             public struct Empty { }
 
+            public struct Info { [MarshalAs(UnmanagedType.LPWStr)] public string Name; public nint Handle; }
+
+            public struct Outer { public int Count; public Info Info; }
+
+            public struct Rectangle { public Size Size; public double Scale; }
+
+            [StructLayout(LayoutKind.Explicit)]
+            public struct Either { [FieldOffset(0)] public int Number; [FieldOffset(0)] public float Real; }
+
+            [GeneratedComInterface, Guid("7C1F2D2A-4C1E-4B71-9D0B-7B7C2E0A2504")]
+            public partial interface IInfo { void M(in Info info); }
+
+            [GeneratedComInterface, Guid("7C1F2D2A-4C1E-4B71-9D0B-7B7C2E0A2505")]
+            public partial interface IOuter { void M(in Outer outer); }
+
+            [GeneratedComInterface, Guid("7C1F2D2A-4C1E-4B71-9D0B-7B7C2E0A2506")]
+            public partial interface IEither { void M(in Either either); }
+
+            [GeneratedComInterface, Guid("7C1F2D2A-4C1E-4B71-9D0B-7B7C2E0A2507")]
+            public partial interface IRectangle { void M(in Rectangle rectangle); }
+
             [GeneratedComInterface, Guid("7C1F2D2A-4C1E-4B71-9D0B-7B7C2E0A2501")]
             public partial interface IByValue { void M(Size size); }
 
@@ -165,11 +186,11 @@ public sealed class GeneratedComAssemblyTests : VerifyBase
         var library = new GeneratedComAssemblyReader(warnings).Read(assembly);
 
         CollectionAssert.AreEqual(
-            new[] { "IByReference" },
-            library.Types.OfType<InterfaceDefinition>().Where(static t => t.Flags.HasFlag(TypeFlags.OleAutomation)).Select(static t => t.Name).ToArray());
+            new[] { "IByReference", "IRectangle" },
+            library.Types.OfType<InterfaceDefinition>().Where(static t => t.Flags.HasFlag(TypeFlags.OleAutomation)).Select(static t => t.Name).Order().ToArray());
 
-        // A structure without fields has a size of one byte, which is not a layout to warn about.
-        Assert.IsEmpty(warnings.Messages);
+        // A structure without fields has a size of one byte, which is not a layout that was declared.
+        StringAssert.Contains(warnings.Messages.Single(), "The structure 'Empty' has no fields");
 
         // A type library can have a structure without fields.
         string path = Path.Combine(Path.GetDirectoryName(assembly)!, "Structures.tlb");
@@ -459,6 +480,142 @@ public sealed class GeneratedComAssemblyTests : VerifyBase
         Assert.AreEqual("Mode mode, IShared* shared", string.Join(", ", method.Parameters));
         Assert.AreEqual("Shared", library.ImportedLibraries.Single().Name);
         Assert.IsEmpty(warnings.Messages);
+    }
+
+    // The type library of a referenced assembly can have another identifier than the assembly: it is then found among
+    // the specified files by the interfaces of the assembly.
+    [TestMethod]
+    public void FindsTheTypeLibraryOfAReferencedAssemblyByItsInterfaces()
+    {
+        string directory = TestEnvironment.CreateDirectory("export");
+        string referenced = Compile(directory, "Shared", """
+            using System.Runtime.InteropServices;
+            using System.Runtime.InteropServices.Marshalling;
+
+            public enum Mode { Off, On }
+
+            [GeneratedComInterface, Guid("7C1F2D2A-4C1E-4B71-9D0B-7B7C2E0A7501")]
+            public partial interface IShared { void M(Mode mode); }
+            """);
+        string assembly = Compile(directory, "Consumer", """
+            using System.Runtime.InteropServices;
+            using System.Runtime.InteropServices.Marshalling;
+
+            [assembly: Guid("7C1F2D2A-4C1E-4B71-9D0B-7B7C2E0A7510")]
+
+            [GeneratedComInterface, Guid("7C1F2D2A-4C1E-4B71-9D0B-7B7C2E0A7511")]
+            public partial interface IConsumer { void Use(Mode mode, IShared shared); }
+            """, referenced);
+        string exported = Path.Combine(directory, "Other.tlb");
+        var identity = new ExportedLibraryIdentity { Name = "Other", Guid = new Guid("7C1F2D2A-4C1E-4B71-9D0B-7B7C2E0A7500"), Version = (2, 1) };
+        new TypeLibraryWriter().Write(new GeneratedComAssemblyReader().Read(referenced, identity), exported);
+        var warnings = new WarningCollector<GeneratedComAssemblyReader>();
+        var catalog = new TypeLibraryCatalog([exported]);
+
+        var library = new GeneratedComAssemblyReader(warnings).Read(assembly, catalog: catalog);
+
+        var method = library.Types.OfType<InterfaceDefinition>().Single(static t => t.ImportedFrom is null).Methods.Single();
+        Assert.AreEqual("Mode mode, IShared* shared", string.Join(", ", method.Parameters));
+        var imported = library.ImportedLibraries.Single();
+        Assert.AreEqual(("Other", identity.Guid, 2, 1), (imported.Name, (Guid?)imported.Guid, (int)imported.MajorVersion, (int)imported.MinorVersion));
+        Assert.IsEmpty(warnings.Messages);
+        new TypeLibraryWriter().Write(library, Path.Combine(directory, "Consumer.tlb"), new TypeLibraryWriterOptions { Catalog = catalog });
+    }
+
+    // A class of a referenced assembly is not the late-bound wrapper of a dispinterface, as a class of generated code is.
+    [TestMethod]
+    public void DoesNotTakeTheClassesOfAReferencedAssemblyForDispinterfaces()
+    {
+        string directory = TestEnvironment.CreateDirectory("export");
+        string referenced = Compile(directory, "Widgets", """
+            using System.Runtime.InteropServices;
+            using System.Runtime.InteropServices.Marshalling;
+
+            [assembly: Guid("7C1F2D2A-4C1E-4B71-9D0B-7B7C2E0A7600")]
+
+            [GeneratedComInterface, Guid("7C1F2D2A-4C1E-4B71-9D0B-7B7C2E0A7601")]
+            public partial interface IWidget { void M(); }
+
+            [GeneratedComClass, Guid("7C1F2D2A-4C1E-4B71-9D0B-7B7C2E0A7602")]
+            public partial class Widget : IWidget { public void M() { } }
+            """);
+        string assembly = Compile(directory, "Source", """
+            using System.Runtime.InteropServices;
+            using System.Runtime.InteropServices.Marshalling;
+
+            [assembly: Guid("7C1F2D2A-4C1E-4B71-9D0B-7B7C2E0A7610")]
+
+            [GeneratedComInterface, Guid("7C1F2D2A-4C1E-4B71-9D0B-7B7C2E0A7611")]
+            public partial interface ISource { void M(); }
+
+            [GeneratedComClass, Guid("7C1F2D2A-4C1E-4B71-9D0B-7B7C2E0A7612"), ComSourceInterfaces(typeof(Widget))]
+            public partial class Source : ISource { public void M() { } }
+            """, referenced);
+        string exported = Path.Combine(directory, "Widgets.tlb");
+        new TypeLibraryWriter().Write(new GeneratedComAssemblyReader().Read(referenced), exported);
+        var warnings = new WarningCollector<GeneratedComAssemblyReader>();
+        var catalog = new TypeLibraryCatalog([exported]);
+
+        var library = new GeneratedComAssemblyReader(warnings).Read(assembly, catalog: catalog);
+
+        Assert.IsFalse(library.Types.OfType<CoClassDefinition>().Single().Interfaces.Any(static i => i.IsSource));
+        StringAssert.Contains(warnings.Messages.Single(), "The source interface 'Widget' of the class 'Source' is not a COM interface");
+        new TypeLibraryWriter().Write(library, Path.Combine(directory, "Source.tlb"), new TypeLibraryWriterOptions { Catalog = catalog });
+    }
+
+    // What the type library of a referenced assembly has beats the name of the assembly.
+    [TestMethod]
+    public void RefersToTheTypesOfAReferencedAssemblyNamedLikeThoseOfDotNet()
+    {
+        string directory = TestEnvironment.CreateDirectory("export");
+        string referenced = Compile(directory, "Microsoft.Shared", """
+            using System.Runtime.InteropServices;
+            using System.Runtime.InteropServices.Marshalling;
+
+            [assembly: Guid("7C1F2D2A-4C1E-4B71-9D0B-7B7C2E0A7700")]
+
+            public enum Level { Low, High }
+
+            public struct Size { public int Width; public int Height; }
+
+            [GeneratedComInterface, Guid("7C1F2D2A-4C1E-4B71-9D0B-7B7C2E0A7701")]
+            public partial interface IShared { void M(Level level, in Size size); }
+            """);
+        string assembly = Compile(directory, "Consumer", """
+            using System.Runtime.InteropServices;
+            using System.Runtime.InteropServices.Marshalling;
+
+            [assembly: Guid("7C1F2D2A-4C1E-4B71-9D0B-7B7C2E0A7710")]
+
+            [GeneratedComInterface, Guid("7C1F2D2A-4C1E-4B71-9D0B-7B7C2E0A7711")]
+            public partial interface IConsumer { void Use(Level level, in Size size); }
+            """, referenced);
+        string exported = Path.Combine(directory, "Microsoft.Shared.tlb");
+        new TypeLibraryWriter().Write(new GeneratedComAssemblyReader().Read(referenced), exported);
+
+        var library = new GeneratedComAssemblyReader().Read(assembly, catalog: new TypeLibraryCatalog([exported]));
+
+        var method = library.Types.OfType<InterfaceDefinition>().Single(static t => t.ImportedFrom is null).Methods.Single();
+        Assert.AreEqual("Level level, Size* size", string.Join(", ", method.Parameters));
+        Assert.AreEqual(2, library.Types.Count(static t => t.ImportedFrom?.Name == "Microsoft_Shared"));
+    }
+
+    // Two versions of a type library are two libraries.
+    [TestMethod]
+    public void KeepsTheVersionsOfATypeLibraryApart()
+    {
+        string directory = TestEnvironment.CreateDirectory("export");
+        string first = Path.Combine(directory, "First.tlb");
+        string second = Path.Combine(directory, "Second.tlb");
+        File.Copy(TestEnvironment.TestTypeLibrary, first);
+        File.Copy(TestEnvironment.TestTypeLibrary, second);
+        var catalog = new TypeLibraryCatalog([], null, reference => reference.MajorVersion == 1 ? first : second);
+        var libraryId = Guid.NewGuid();
+
+        Assert.IsTrue(catalog.TryGetLibrary(new TypeLibraryReference("Library", libraryId, 1, 0), out var one));
+        Assert.IsTrue(catalog.TryGetLibrary(new TypeLibraryReference("Library", libraryId, 2, 0), out var two));
+
+        Assert.AreEqual((first, second), (one.Path, two.Path));
     }
 
     // An assembly whose name is like those of .NET exports its own enumerations and structures.

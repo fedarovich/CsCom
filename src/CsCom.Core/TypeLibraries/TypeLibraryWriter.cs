@@ -165,7 +165,7 @@ public sealed partial class TypeLibraryWriter
         private readonly List<TypeDefinition> _types;
         private readonly Dictionary<TypeDefinition, ICreateTypeInfo> _created = [];
         private readonly Dictionary<(TypeDefinition Owner, object Target, bool Vtable), uint> _references = [];
-        private readonly Dictionary<Guid, CatalogLibrary> _imported = [];
+        private readonly Dictionary<(Guid Guid, ushort Major, ushort Minor), CatalogLibrary> _imported = [];
         private readonly TypeLibraryCatalog _catalog;
         private readonly HashSet<TypeDefinition> _laidOut = [];
         private readonly List<nint> _allocations = [];

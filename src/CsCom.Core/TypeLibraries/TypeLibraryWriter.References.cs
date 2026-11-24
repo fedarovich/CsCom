@@ -94,14 +94,15 @@ public sealed partial class TypeLibraryWriter
 
         private CatalogLibrary GetImportedLibrary(TypeLibraryReference reference)
         {
-            if (_imported.TryGetValue(reference.Guid, out var imported))
+            var key = (reference.Guid, reference.MajorVersion, reference.MinorVersion);
+            if (_imported.TryGetValue(key, out var imported))
             {
                 return imported;
             }
 
             if (!_catalog.TryGetLibrary(reference, out imported))
             {
-                string reason = _catalog.GetLoadError(reference.Guid) is { } error ? $"is registered, but cannot be loaded ({error})" : "is not registered";
+                string reason = _catalog.GetLoadError(reference) is { } error ? $"is registered, but cannot be loaded ({error})" : "is not registered";
                 throw new TypeLibraryException(
                     $"The type library '{reference.Name}' {reference.MajorVersion}.{reference.MinorVersion} ({reference.Guid:B}), which the types of '{_library.Name}' use, {reason}: specify its file.");
             }
@@ -111,7 +112,7 @@ public sealed partial class TypeLibraryWriter
                 LogUnregisteredImport(reference.Name, System.IO.Path.GetFileName(imported.Path));
             }
 
-            _imported.Add(reference.Guid, imported);
+            _imported.Add(key, imported);
             LogImportedLibrary(reference.Name, imported.Path);
             return imported;
         }

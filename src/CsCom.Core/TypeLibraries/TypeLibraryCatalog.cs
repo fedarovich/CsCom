@@ -18,9 +18,10 @@ public sealed unsafe partial class TypeLibraryCatalog
     private readonly IReadOnlyList<string> _paths;
     private readonly ILogger _logger;
     private readonly Func<TypeLibraryReference, string?> _findRegistered;
-    private readonly Dictionary<Guid, CatalogLibrary?> _libraries = [];
-    private readonly Dictionary<Guid, string> _loadErrors = [];
-    private Dictionary<Guid, string>? _files;
+    // A file is the library of its identifier in any version; the registry has the versions of a library apart.
+    private readonly Dictionary<TypeLibraryReference, CatalogLibrary?> _libraries = new(ReferenceComparer.Instance);
+    private readonly Dictionary<TypeLibraryReference, string> _loadErrors = new(ReferenceComparer.Instance);
+    private List<(string Path, TypeLibraryReference Reference, ITypeLib TypeLib)>? _files;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="TypeLibraryCatalog"/> class.
@@ -67,12 +68,12 @@ public sealed unsafe partial class TypeLibraryCatalog
     /// <exception cref="TypeLibraryException">A file of the catalog cannot be loaded.</exception>
     internal bool TryGetLibrary(TypeLibraryReference reference, [System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out CatalogLibrary? library)
     {
-        if (!_libraries.TryGetValue(reference.Guid, out library))
+        if (!_libraries.TryGetValue(reference, out library))
         {
             string? registered = _findRegistered(reference);
-            if (GetFiles().GetValueOrDefault(reference.Guid) is { } file)
+            if (GetFiles().FirstOrDefault(f => f.Reference.Guid == reference.Guid) is { Path: not null } file)
             {
-                library = new CatalogLibrary(reference.Guid, file, Load(file), registered is not null);
+                library = new CatalogLibrary(reference.Guid, file.Path, file.TypeLib, registered is not null);
             }
             else if (registered is not null)
             {
@@ -83,12 +84,12 @@ public sealed unsafe partial class TypeLibraryCatalog
                 }
                 catch (CsComException e)
                 {
-                    _loadErrors[reference.Guid] = e.Message;
+                    _loadErrors[reference] = e.Message;
                     LogUnloadableLibrary(reference.Name, reference.MajorVersion, reference.MinorVersion, e.Message);
                 }
             }
 
-            _libraries.Add(reference.Guid, library);
+            _libraries.Add(reference, library);
         }
 
         return library is not null;
@@ -97,15 +98,36 @@ public sealed unsafe partial class TypeLibraryCatalog
     /// <summary>
     /// Gets why a registered type library that <see cref="TryGetLibrary"/> did not return could not be loaded.
     /// </summary>
-    internal string? GetLoadError(Guid libraryId) => _loadErrors.GetValueOrDefault(libraryId);
+    internal string? GetLoadError(TypeLibraryReference reference) => _loadErrors.GetValueOrDefault(reference);
+
+    /// <summary>
+    /// Finds the type library that has an interface among the files of the catalog: the type library of an assembly
+    /// can have another identifier than the assembly, so it is recognized by the interfaces of the assembly.
+    /// </summary>
+    internal TypeLibraryReference? FindFileWithInterface(Guid interfaceId)
+    {
+        foreach (var file in GetFiles())
+        {
+            if (file.TypeLib.GetTypeInfoOfGuid(interfaceId, out ITypeInfo? typeInfo) >= 0 && typeInfo is not null)
+            {
+                return file.Reference;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>Gets a value indicating whether the catalog was given files.</summary>
+    internal bool HasFiles => _paths.Count > 0;
 
     [LoggerMessage(
         Level = LogLevel.Warning,
         Message = "The registered type library '{Name}' {Major}.{Minor} cannot be loaded, so it cannot be told which types it has: {Error}")]
     private partial void LogUnloadableLibrary(string name, int major, int minor, string error);
 
-    // The files by the identifiers of their libraries.
-    private Dictionary<Guid, string> GetFiles()
+    // The files with the identities of their libraries, in the order they were given: the first one of an identifier
+    // is the library of that identifier.
+    private List<(string Path, TypeLibraryReference Reference, ITypeLib TypeLib)> GetFiles()
     {
         if (_files is null)
         {
@@ -116,12 +138,25 @@ public sealed unsafe partial class TypeLibraryCatalog
                 ITypeLib typeLib = Load(fullPath);
                 typeLib.GetLibAttr(out TLIBATTR* attr);
                 Guid guid = attr->guid;
+                ushort major = attr->wMajorVerNum;
+                ushort minor = attr->wMinorVerNum;
                 typeLib.ReleaseTLibAttr(attr);
-                _files.TryAdd(guid, fullPath);
+                typeLib.GetDocumentation(-1, out string? name, out _, out _, out _);
+                _files.Add((fullPath, new TypeLibraryReference(name ?? Path.GetFileNameWithoutExtension(fullPath), guid, major, minor), typeLib));
             }
         }
 
         return _files;
+    }
+
+    private sealed class ReferenceComparer : IEqualityComparer<TypeLibraryReference>
+    {
+        public static readonly ReferenceComparer Instance = new();
+
+        public bool Equals(TypeLibraryReference? x, TypeLibraryReference? y) =>
+            ReferenceEquals(x, y) || (x is not null && y is not null && x.Guid == y.Guid && x.MajorVersion == y.MajorVersion && x.MinorVersion == y.MinorVersion);
+
+        public int GetHashCode(TypeLibraryReference obj) => HashCode.Combine(obj.Guid, obj.MajorVersion, obj.MinorVersion);
     }
 
     private static ITypeLib Load(string path)

@@ -173,6 +173,7 @@ public sealed partial class GeneratedComAssemblyReader
         private readonly Dictionary<Type, TypeDefinition> _definitions = [];
         private readonly Dictionary<Assembly, AssemblyMarkers> _markers = [];
         private readonly Dictionary<Type, TypeLibraryReference?> _imported = [];
+        private readonly Dictionary<Assembly, (TypeLibraryReference Reference, CatalogLibrary Library)?> _assemblyLibraries = [];
         private readonly List<InterfaceDefinition> _unmarkedInterfaces = [];
         private readonly Dictionary<Guid, TypeLibraryReference> _importedLibraries = [];
         private readonly HashSet<string> _importedFiles = new(StringComparer.OrdinalIgnoreCase);
@@ -335,15 +336,58 @@ public sealed partial class GeneratedComAssemblyReader
                 }
             }
 
-            // The other types of a referenced assembly with a [Guid] are those of its own type library, the one that is
-            // exported from it, if that library exists and has the type: many assemblies have a [Guid] that identifies
-            // nothing.
+            // The other types of a referenced assembly are those of its own type library, the one that is exported from
+            // it, if that library is found and has the type.
             return type.Assembly != _assembly && !IsSupportType(type)
-                && markers.Exported is { } exported && _catalog?.TryGetLibrary(exported, out var exportedLibrary) == true
-                && exportedLibrary.Find(GetInterfaceId(type), type.Name) is not null
-                ? exported
+                && GetAssemblyLibrary(type.Assembly) is { } own && own.Library.Find(GetInterfaceId(type), type.Name) is not null
+                ? own.Reference
                 : null;
         }
+
+        // The type library that is exported from a referenced assembly: the one with the [Guid] of the assembly, if it
+        // exists (many assemblies have a [Guid] that identifies nothing), or else the one among the files that were
+        // given that has an interface of the assembly, because the library can be exported with another identifier.
+        private (TypeLibraryReference Reference, CatalogLibrary Library)? GetAssemblyLibrary(Assembly assembly)
+        {
+            if (_catalog is null)
+            {
+                return null;
+            }
+
+            if (_assemblyLibraries.TryGetValue(assembly, out var found))
+            {
+                return found;
+            }
+
+            var markers = GetMarkers(assembly);
+            if (markers.Exported is { } exported && _catalog.TryGetLibrary(exported, out var library))
+            {
+                found = (exported, library);
+            }
+            else if (_catalog.HasFiles)
+            {
+                foreach (Type type in assembly.GetTypes())
+                {
+                    if (type.IsInterface && type.IsVisible && !(type.Namespace is { } @namespace && markers.Libraries.ContainsKey(@namespace))
+                        && IsGeneratedComInterface(type) && GetWellKnownInterface(type) is null && !IsSupportType(type)
+                        && GetGuid(type.GetCustomAttributesData()) is { } interfaceId
+                        && _catalog.FindFileWithInterface(interfaceId) is { } reference
+                        && _catalog.TryGetLibrary(reference, out library))
+                    {
+                        found = (reference, library);
+                        break;
+                    }
+                }
+            }
+
+            _assemblyLibraries.Add(assembly, found);
+            return found;
+        }
+
+        // A class of the code that was generated from a type library is the late-bound wrapper of a dispinterface, which
+        // stands for the dispinterface. The classes of the other assemblies are classes.
+        private bool IsDispatchWrapper(Type type) =>
+            type.IsClass && type.Namespace is { } @namespace && GetMarkers(type.Assembly).Libraries.ContainsKey(@namespace) && GetImportedLibrary(type) is not null;
 
         // The identifier by which an interface is found in a type library; the other types are found by their names.
         private static Guid? GetInterfaceId(Type type) => type.IsInterface ? GetGuid(type.GetCustomAttributesData()) : null;
@@ -357,10 +401,12 @@ public sealed partial class GeneratedComAssemblyReader
             type.Assembly.GetName().Name is "CsCom.Runtime" or "CsCom.Runtime.Dynamic"
             || (type.Namespace is { } @namespace && GetMarkers(type.Assembly).SupportNamespaces.Contains(@namespace));
 
-        // A type of .NET, which is in no type library. The exported assembly can have such a name itself.
+        // A type of .NET, which is in no type library. The exported assembly can have such a name itself, and so can an
+        // assembly whose type library has the type.
         private bool IsFrameworkType(Type type) =>
             type.Assembly != _assembly && type.Assembly.GetName().Name is { } name
-            && (name is "mscorlib" or "netstandard" or "System" || name.StartsWith("System.", StringComparison.Ordinal) || name.StartsWith("Microsoft.", StringComparison.Ordinal));
+            && (name is "mscorlib" or "netstandard" or "System" || name.StartsWith("System.", StringComparison.Ordinal) || name.StartsWith("Microsoft.", StringComparison.Ordinal))
+            && GetImportedLibrary(type) is null;
 
         private TypeDefinition GetOrCreateDefinition(Type type)
         {
@@ -393,6 +439,10 @@ public sealed partial class GeneratedComAssemblyReader
                     // A type library has the fields of a structure, whose offsets and size it computes itself. The
                     // compiler gives a structure without fields a size, of one byte.
                     LogExplicitLayout(name);
+                }
+                else if (importedFrom is null && fields.Count == 0)
+                {
+                    LogEmptyStructure(name);
                 }
 
                 definition = new RecordDefinition
@@ -622,7 +672,7 @@ public sealed partial class GeneratedComAssemblyReader
         }
 
         private bool IsSourceInterface(Type type) =>
-            type.IsInterface ? IsGeneratedComInterface(type) && GetWellKnownInterface(type) is null : type.IsClass && GetImportedLibrary(type) is not null;
+            type.IsInterface ? IsGeneratedComInterface(type) && GetWellKnownInterface(type) is null : IsDispatchWrapper(type);
 
         // Whether the interface derives from IDispatch, which makes it a dual interface.
         private static bool IsDispatchInterface(Type type) =>
@@ -699,6 +749,9 @@ public sealed partial class GeneratedComAssemblyReader
 
         [LoggerMessage(Level = LogLevel.Warning, Message = "The structure '{Name}' has an explicit layout or size, which a type library cannot describe; it is exported with a sequential layout")]
         private partial void LogExplicitLayout(string name);
+
+        [LoggerMessage(Level = LogLevel.Warning, Message = "The structure '{Name}' has no fields: it has a size of one byte in .NET and none in the type library")]
+        private partial void LogEmptyStructure(string name);
 
         [LoggerMessage(
             Level = LogLevel.Warning,
