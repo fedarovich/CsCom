@@ -600,6 +600,174 @@ public sealed class GeneratedComAssemblyTests : VerifyBase
         Assert.AreEqual(2, library.Types.Count(static t => t.ImportedFrom?.Name == "Microsoft_Shared"));
     }
 
+    // An interface of a referenced assembly is not defined again in the library: a class does not get it, and an
+    // interface cannot derive from it, unless the type library of that assembly is found.
+    [TestMethod]
+    public void DoesNotDefineTheInterfacesOfAReferencedAssembly()
+    {
+        const string header = """
+            using System.Runtime.InteropServices;
+            using System.Runtime.InteropServices.Marshalling;
+
+            """;
+        string directory = TestEnvironment.CreateDirectory("export");
+        string referenced = Compile(directory, "Bases", header + """
+            [assembly: Guid("7C1F2D2A-4C1E-4B71-9D0B-7B7C2E0A7800")]
+
+            [GeneratedComInterface, Guid("7C1F2D2A-4C1E-4B71-9D0B-7B7C2E0A7801")]
+            public partial interface IBase { void M(); }
+            """);
+        string implementer = Compile(directory, "Implementer", header + """
+            [assembly: Guid("7C1F2D2A-4C1E-4B71-9D0B-7B7C2E0A7810")]
+
+            [GeneratedComInterface, Guid("7C1F2D2A-4C1E-4B71-9D0B-7B7C2E0A7811")]
+            public partial interface ISelf { void N(); }
+
+            [GeneratedComClass, Guid("7C1F2D2A-4C1E-4B71-9D0B-7B7C2E0A7812")]
+            public partial class Widget : ISelf, IBase { public void M() { } public void N() { } }
+            """, referenced);
+        string deriver = Compile(directory, "Deriver", header + """
+            [assembly: Guid("7C1F2D2A-4C1E-4B71-9D0B-7B7C2E0A7820")]
+
+            [GeneratedComInterface, Guid("7C1F2D2A-4C1E-4B71-9D0B-7B7C2E0A7821")]
+            public partial interface IDerived : IBase { void N(); }
+            """, referenced);
+        var warnings = new WarningCollector<GeneratedComAssemblyReader>();
+        var reader = new GeneratedComAssemblyReader(warnings);
+
+        // Without the type library of the referenced assembly.
+        var library = reader.Read(implementer, catalog: new TypeLibraryCatalog());
+        CollectionAssert.AreEquivalent(new[] { "ISelf", "Widget" }, library.Types.Select(static t => t.Name).ToArray());
+        Assert.AreEqual("ISelf", library.Types.OfType<CoClassDefinition>().Single().Interfaces.Single().Interface.ToString());
+        Assert.IsTrue(warnings.Messages.Any(static m => m.Contains("'IBase' of the assembly 'Bases'", StringComparison.Ordinal)), string.Join(Environment.NewLine, warnings.Messages));
+        var exception = Assert.ThrowsExactly<CsComException>(() => reader.Read(deriver, catalog: new TypeLibraryCatalog()));
+        StringAssert.Contains(exception.Message, "The interface 'IDerived' derives from 'IBase' of the assembly 'Bases', whose type library was not found");
+
+        // With it, the library refers to the interface.
+        string exported = Path.Combine(directory, "Bases.tlb");
+        new TypeLibraryWriter().Write(new GeneratedComAssemblyReader().Read(referenced), exported);
+        var catalog = new TypeLibraryCatalog([exported]);
+        library = reader.Read(implementer, catalog: catalog);
+        Assert.AreEqual("Bases", library.Types.Single(static t => t.Name == "IBase").ImportedFrom?.Name);
+        Assert.HasCount(2, library.Types.OfType<CoClassDefinition>().Single().Interfaces);
+        library = reader.Read(deriver, catalog: catalog);
+        Assert.AreEqual("Bases", library.Types.Single(static t => t.Name == "IBase").ImportedFrom?.Name);
+        string path = Path.Combine(directory, "Deriver.tlb");
+        new TypeLibraryWriter().Write(library, path, new TypeLibraryWriterOptions { Catalog = catalog });
+        var written = ModelDescriber.ReadWithImports(path, exported);
+        Assert.AreEqual("IBase", written.Types.OfType<InterfaceDefinition>().Single(static t => t.Name == "IDerived").BaseInterface?.ToString());
+    }
+
+    // A type library that has a type with the name of a type of a referenced assembly is not its type library.
+    [TestMethod]
+    public void DoesNotReferToTheTypesOfAnotherLibraryWithTheSameNames()
+    {
+        const string source = """
+
+            // An interface of the test type library, declared again as the interfaces of COM often are.
+            [GeneratedComInterface, Guid("6B1F2D2A-4C1E-4B71-9D0B-7B7C2E0A1011")]
+            public partial interface IShape { void M(); }
+
+            // The test type library has an enumeration with this name and other members.
+            public enum Color { Cyan, Magenta }
+
+            [GeneratedComInterface, Guid("7C1F2D2A-4C1E-4B71-9D0B-7B7C2E0A7901")]
+            public partial interface IClash { void M(Color color); }
+            """;
+        const string consumer = """
+            using System.Runtime.InteropServices;
+            using System.Runtime.InteropServices.Marshalling;
+
+            [assembly: Guid("7C1F2D2A-4C1E-4B71-9D0B-7B7C2E0A7910")]
+
+            [GeneratedComInterface, Guid("7C1F2D2A-4C1E-4B71-9D0B-7B7C2E0A7911")]
+            public partial interface IConsumer { void Use(Color color, IClash clash); }
+            """;
+
+        // The assembly has an interface of the library, and then the identifier of the library as well.
+        const string usings = """
+            using System.Runtime.InteropServices;
+            using System.Runtime.InteropServices.Marshalling;
+
+            """;
+        foreach (string attribute in new[] { string.Empty, """[assembly: Guid("6B1F2D2A-4C1E-4B71-9D0B-7B7C2E0A1000")]""" })
+        {
+            string directory = TestEnvironment.CreateDirectory("export");
+            string referenced = Compile(directory, "Clash", usings + attribute + source);
+            string assembly = Compile(directory, "Consumer", consumer, referenced);
+
+            var library = new GeneratedComAssemblyReader().Read(assembly, catalog: new TypeLibraryCatalog([TestEnvironment.TestTypeLibrary]));
+
+            Assert.AreEqual("VT_I4 color, VT_UNKNOWN clash", string.Join(", ", library.Types.OfType<InterfaceDefinition>().Single().Methods.Single().Parameters));
+            Assert.IsEmpty(library.ImportedLibraries);
+        }
+    }
+
+    // An assembly that is named like those of .NET is only looked up by its identifier, not by its interfaces.
+    [TestMethod]
+    public void DoesNotSearchTheAssembliesNamedLikeThoseOfDotNetByTheirInterfaces()
+    {
+        string directory = TestEnvironment.CreateDirectory("export");
+        string referenced = Compile(directory, "Microsoft.NoGuid", """
+            using System.Runtime.InteropServices;
+            using System.Runtime.InteropServices.Marshalling;
+
+            [GeneratedComInterface, Guid("7C1F2D2A-4C1E-4B71-9D0B-7B7C2E0A7A01")]
+            public partial interface IShared { void M(); }
+            """);
+        string assembly = Compile(directory, "Consumer", """
+            using System.Runtime.InteropServices;
+            using System.Runtime.InteropServices.Marshalling;
+
+            [assembly: Guid("7C1F2D2A-4C1E-4B71-9D0B-7B7C2E0A7A10")]
+
+            [GeneratedComInterface, Guid("7C1F2D2A-4C1E-4B71-9D0B-7B7C2E0A7A11")]
+            public partial interface IConsumer { void Use(IShared shared, System.DayOfWeek day); }
+            """, referenced);
+        string exported = Path.Combine(directory, "NoGuid.tlb");
+        new TypeLibraryWriter().Write(new GeneratedComAssemblyReader().Read(referenced, new ExportedLibraryIdentity { Guid = new Guid("7C1F2D2A-4C1E-4B71-9D0B-7B7C2E0A7A00") }), exported);
+
+        var library = new GeneratedComAssemblyReader().Read(assembly, catalog: new TypeLibraryCatalog([exported]));
+
+        Assert.AreEqual("VT_UNKNOWN shared, VT_I4 day", string.Join(", ", library.Types.OfType<InterfaceDefinition>().Single().Methods.Single().Parameters));
+    }
+
+    // A type library refers to another one by its identifier, so two files with one identifier cannot both be given.
+    [TestMethod]
+    public void RejectsTwoFilesWithOneIdentifier()
+    {
+        const string source = """
+            using System.Runtime.InteropServices;
+            using System.Runtime.InteropServices.Marshalling;
+
+            [GeneratedComInterface, Guid("7C1F2D2A-4C1E-4B71-9D0B-7B7C2E0A7B01")]
+            public partial interface IShared { void M(); }
+            """;
+        string directory = TestEnvironment.CreateDirectory("export");
+        var identity = new ExportedLibraryIdentity { Guid = new Guid("7C1F2D2A-4C1E-4B71-9D0B-7B7C2E0A7B00") };
+        string referenced = Compile(directory, "Shared", source);
+        string first = Path.Combine(directory, "Shared.tlb");
+        string second = Path.Combine(directory, "Copy.tlb");
+        new TypeLibraryWriter().Write(new GeneratedComAssemblyReader().Read(referenced, identity), first);
+        File.Copy(first, second);
+        string assembly = Compile(directory, "Consumer", """
+            using System.Runtime.InteropServices;
+            using System.Runtime.InteropServices.Marshalling;
+
+            [assembly: Guid("7C1F2D2A-4C1E-4B71-9D0B-7B7C2E0A7B10")]
+
+            [GeneratedComInterface, Guid("7C1F2D2A-4C1E-4B71-9D0B-7B7C2E0A7B11")]
+            public partial interface IConsumer { void Use(IShared shared); }
+            """, referenced);
+
+        // The same file twice is one file.
+        var library = new GeneratedComAssemblyReader().Read(assembly, catalog: new TypeLibraryCatalog([first, first]));
+        Assert.AreEqual("IShared* shared", string.Join(", ", library.Types.OfType<InterfaceDefinition>().Single(static t => t.ImportedFrom is null).Methods.Single().Parameters));
+
+        var exception = Assert.ThrowsExactly<TypeLibraryException>(() => new GeneratedComAssemblyReader().Read(assembly, catalog: new TypeLibraryCatalog([first, second])));
+        StringAssert.Contains(exception.Message, "have the same identifier {7c1f2d2a-4c1e-4b71-9d0b-7b7c2e0a7b00}: specify only one of them");
+    }
+
     // Two versions of a type library are two libraries.
     [TestMethod]
     public void KeepsTheVersionsOfATypeLibraryApart()
@@ -616,6 +784,13 @@ public sealed class GeneratedComAssemblyTests : VerifyBase
         Assert.IsTrue(catalog.TryGetLibrary(new TypeLibraryReference("Library", libraryId, 2, 0), out var two));
 
         Assert.AreEqual((first, second), (one.Path, two.Path));
+
+        // A file that was given is its library in every version.
+        catalog = new TypeLibraryCatalog([TestEnvironment.TestTypeLibrary]);
+        libraryId = new Guid("6B1F2D2A-4C1E-4B71-9D0B-7B7C2E0A1000");
+        Assert.IsTrue(catalog.TryGetLibrary(new TypeLibraryReference("CsComTest", libraryId, 1, 2), out one));
+        Assert.IsTrue(catalog.TryGetLibrary(new TypeLibraryReference("CsComTest", libraryId, 9, 9), out two));
+        Assert.AreSame(one, two);
     }
 
     // An assembly whose name is like those of .NET exports its own enumerations and structures.

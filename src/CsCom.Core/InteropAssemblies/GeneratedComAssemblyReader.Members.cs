@@ -16,6 +16,14 @@ public sealed partial class GeneratedComAssemblyReader
         private void PopulateInterface(Type type, InterfaceDefinition definition)
         {
             Type? baseInterface = GetBaseInterface(type);
+            if (baseInterface is not null && GetWellKnownInterface(baseInterface) is null && !IsAvailableInterface(baseInterface))
+            {
+                // The members of the base come first in the interface, so there is no other type to derive it from.
+                throw new CsComException(
+                    $"The interface '{type.Name}' derives from '{baseInterface.Name}' of the assembly '{baseInterface.Assembly.GetName().Name}', whose type library was not found: "
+                    + "export the type library of that assembly and specify the file.");
+            }
+
             definition.BaseInterface = baseInterface is null ? null : GetWellKnownInterface(baseInterface) switch
             {
                 { } guid when guid == IID_IDispatch => GetPrimitive(VarEnum.VT_DISPATCH),

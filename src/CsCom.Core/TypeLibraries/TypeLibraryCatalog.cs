@@ -21,7 +21,7 @@ public sealed unsafe partial class TypeLibraryCatalog
     // A file is the library of its identifier in any version; the registry has the versions of a library apart.
     private readonly Dictionary<TypeLibraryReference, CatalogLibrary?> _libraries = new(ReferenceComparer.Instance);
     private readonly Dictionary<TypeLibraryReference, string> _loadErrors = new(ReferenceComparer.Instance);
-    private List<(string Path, TypeLibraryReference Reference, ITypeLib TypeLib)>? _files;
+    private List<CatalogLibrary>? _files;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="TypeLibraryCatalog"/> class.
@@ -65,22 +65,25 @@ public sealed unsafe partial class TypeLibraryCatalog
     /// Gets a type library, or <see langword="false"/> if it is neither among the files nor registered, or if it is
     /// registered and cannot be loaded, as a library that was uninstalled without removing its registration.
     /// </summary>
-    /// <exception cref="TypeLibraryException">A file of the catalog cannot be loaded.</exception>
+    /// <exception cref="TypeLibraryException">
+    /// A file of the catalog cannot be loaded, or two of its files have the same identifier.
+    /// </exception>
     internal bool TryGetLibrary(TypeLibraryReference reference, [System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out CatalogLibrary? library)
     {
         if (!_libraries.TryGetValue(reference, out library))
         {
             string? registered = _findRegistered(reference);
-            if (GetFiles().FirstOrDefault(f => f.Reference.Guid == reference.Guid) is { Path: not null } file)
+            if (GetFiles().FirstOrDefault(f => f.LibraryId == reference.Guid) is { } file)
             {
-                library = new CatalogLibrary(reference.Guid, file.Path, file.TypeLib, registered is not null);
+                // A file is the library of its identifier in every version.
+                library = file;
             }
             else if (registered is not null)
             {
                 try
                 {
                     string path = TypeLibrarySource.Resolve(registered);
-                    library = new CatalogLibrary(reference.Guid, path, Load(path), isRegistered: true);
+                    library = new CatalogLibrary(reference, path, Load(path), isRegistered: true);
                 }
                 catch (CsComException e)
                 {
@@ -101,16 +104,21 @@ public sealed unsafe partial class TypeLibraryCatalog
     internal string? GetLoadError(TypeLibraryReference reference) => _loadErrors.GetValueOrDefault(reference);
 
     /// <summary>
-    /// Finds the type library that has an interface among the files of the catalog: the type library of an assembly
-    /// can have another identifier than the assembly, so it is recognized by the interfaces of the assembly.
+    /// Finds the type library that has all the given interfaces among the files of the catalog: the type library of an
+    /// assembly can have another identifier than the assembly, so it is recognized by the interfaces of the assembly.
     /// </summary>
-    internal TypeLibraryReference? FindFileWithInterface(Guid interfaceId)
+    internal CatalogLibrary? FindFileWithInterfaces(IReadOnlyCollection<Guid> interfaceIds)
     {
+        if (interfaceIds.Count == 0)
+        {
+            return null;
+        }
+
         foreach (var file in GetFiles())
         {
-            if (file.TypeLib.GetTypeInfoOfGuid(interfaceId, out ITypeInfo? typeInfo) >= 0 && typeInfo is not null)
+            if (interfaceIds.All(id => file.FindById(id) is not null))
             {
-                return file.Reference;
+                return file;
             }
         }
 
@@ -125,9 +133,10 @@ public sealed unsafe partial class TypeLibraryCatalog
         Message = "The registered type library '{Name}' {Major}.{Minor} cannot be loaded, so it cannot be told which types it has: {Error}")]
     private partial void LogUnloadableLibrary(string name, int major, int minor, string error);
 
-    // The files with the identities of their libraries, in the order they were given: the first one of an identifier
-    // is the library of that identifier.
-    private List<(string Path, TypeLibraryReference Reference, ITypeLib TypeLib)> GetFiles()
+    // The libraries of the files. OLE Automation resolves the references of a type library by the identifiers of the
+    // libraries, to any library with that identifier that the process has loaded, so two files with one identifier
+    // cannot be told apart and are rejected.
+    private List<CatalogLibrary> GetFiles()
     {
         if (_files is null)
         {
@@ -142,7 +151,19 @@ public sealed unsafe partial class TypeLibraryCatalog
                 ushort minor = attr->wMinorVerNum;
                 typeLib.ReleaseTLibAttr(attr);
                 typeLib.GetDocumentation(-1, out string? name, out _, out _, out _);
-                _files.Add((fullPath, new TypeLibraryReference(name ?? Path.GetFileNameWithoutExtension(fullPath), guid, major, minor), typeLib));
+                var reference = new TypeLibraryReference(name ?? Path.GetFileNameWithoutExtension(fullPath), guid, major, minor);
+                if (_files.FirstOrDefault(f => f.LibraryId == guid) is { } first)
+                {
+                    if (!string.Equals(first.Path, TypeLibrarySource.GetFilePath(fullPath), StringComparison.OrdinalIgnoreCase))
+                    {
+                        throw new TypeLibraryException(
+                            $"The type libraries '{first.Path}' and '{fullPath}' have the same identifier {guid:B}: specify only one of them.");
+                    }
+
+                    continue;
+                }
+
+                _files.Add(new CatalogLibrary(reference, fullPath, typeLib, _findRegistered(reference) is not null));
             }
         }
 
@@ -174,11 +195,14 @@ public sealed unsafe partial class TypeLibraryCatalog
 /// <summary>
 /// A type library of a <see cref="TypeLibraryCatalog"/>.
 /// </summary>
-internal sealed class CatalogLibrary(Guid libraryId, string path, ITypeLib typeLib, bool isRegistered)
+internal sealed unsafe class CatalogLibrary(TypeLibraryReference reference, string path, ITypeLib typeLib, bool isRegistered)
 {
     private Dictionary<string, uint>? _names;
 
-    public Guid LibraryId { get; } = libraryId;
+    /// <summary>The identity of the library: that of a file, or the one by which a registered library was found.</summary>
+    public TypeLibraryReference Reference { get; } = reference;
+
+    public Guid LibraryId => Reference.Guid;
 
     /// <summary>The file of the library, without the index of a type library resource.</summary>
     public string Path { get; } = TypeLibrarySource.GetFilePath(path);
@@ -192,14 +216,45 @@ internal sealed class CatalogLibrary(Guid libraryId, string path, ITypeLib typeL
     /// Finds a type by its identifier, or by its name: the types without an identifier, and the types whose identifiers
     /// the code generated for them does not keep, are only found by their names.
     /// </summary>
-    public ITypeInfo? Find(Guid? id, string name)
+    public ITypeInfo? Find(Guid? id, string name) => (id is { } guid ? FindById(guid) : null) ?? FindByName(name);
+
+    public ITypeInfo? FindById(Guid id) =>
+        TypeLib.GetTypeInfoOfGuid(id, out ITypeInfo? typeInfo) >= 0 ? typeInfo : null;
+
+    /// <summary>
+    /// Finds an enumeration or a structure by its name that has the given members: a name alone does not tell that a type
+    /// of a library is a type of an assembly.
+    /// </summary>
+    public ITypeInfo? FindByMembers(string name, bool isEnum, IReadOnlyCollection<string> members)
     {
-        if (id is { } guid && TypeLib.GetTypeInfoOfGuid(guid, out ITypeInfo? typeInfo) >= 0 && typeInfo is not null)
+        if (FindByName(name) is not { } typeInfo)
         {
-            return typeInfo;
+            return null;
         }
 
-        return FindByName(name);
+        typeInfo.GetTypeAttr(out TYPEATTR* attr);
+        var kind = attr->typekind;
+        uint count = attr->cVars;
+        typeInfo.ReleaseTypeAttr(attr);
+        bool isKind = isEnum
+            ? kind == System.Runtime.InteropServices.ComTypes.TYPEKIND.TKIND_ENUM
+            : kind is System.Runtime.InteropServices.ComTypes.TYPEKIND.TKIND_RECORD or System.Runtime.InteropServices.ComTypes.TYPEKIND.TKIND_UNION;
+        if (!isKind || count != members.Count)
+        {
+            return null;
+        }
+
+        var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        for (uint i = 0; i < count; i++)
+        {
+            typeInfo.GetVarDesc(i, out VARDESC* variable);
+            int id = variable->memid;
+            typeInfo.ReleaseVarDesc(variable);
+            typeInfo.GetDocumentation(id, out string? member, out _, out _, out _);
+            names.Add(member ?? string.Empty);
+        }
+
+        return names.SetEquals(members) ? typeInfo : null;
     }
 
     public ITypeInfo? FindByName(string name)

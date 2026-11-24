@@ -107,13 +107,18 @@ public sealed partial class TypeLibraryWriter
                     $"The type library '{reference.Name}' {reference.MajorVersion}.{reference.MinorVersion} ({reference.Guid:B}), which the types of '{_library.Name}' use, {reason}: specify its file.");
             }
 
-            if (!imported.IsRegistered)
+            // A file is the library of every version of its identifier, and is reported once.
+            _imported.Add(key, imported);
+            if (_reported.Add(imported))
             {
-                LogUnregisteredImport(reference.Name, System.IO.Path.GetFileName(imported.Path));
+                if (!imported.IsRegistered)
+                {
+                    LogUnregisteredImport(reference.Name, System.IO.Path.GetFileName(imported.Path));
+                }
+
+                LogImportedLibrary(reference.Name, imported.Path);
             }
 
-            _imported.Add(key, imported);
-            LogImportedLibrary(reference.Name, imported.Path);
             return imported;
         }
     }

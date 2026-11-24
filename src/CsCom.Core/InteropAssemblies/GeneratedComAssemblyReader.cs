@@ -339,9 +339,28 @@ public sealed partial class GeneratedComAssemblyReader
             // The other types of a referenced assembly are those of its own type library, the one that is exported from
             // it, if that library is found and has the type.
             return type.Assembly != _assembly && !IsSupportType(type)
-                && GetAssemblyLibrary(type.Assembly) is { } own && own.Library.Find(GetInterfaceId(type), type.Name) is not null
+                && GetAssemblyLibrary(type.Assembly) is { } own && HasType(own.Library, type)
                 ? own.Reference
                 : null;
+        }
+
+        // Whether the type library of a referenced assembly has a type of the assembly: an interface by its identifier,
+        // and an enumeration or a structure by its name and its members, because a name alone can be that of another
+        // type. The classes are not referred to.
+        private static bool HasType(CatalogLibrary library, Type type)
+        {
+            if (type.IsInterface)
+            {
+                return GetInterfaceId(type) is { } id && library.FindById(id) is not null;
+            }
+
+            if (type.IsEnum)
+            {
+                var members = type.GetFields(BindingFlags.Public | BindingFlags.Static | BindingFlags.DeclaredOnly).Where(static f => f.IsLiteral).Select(static f => f.Name).ToList();
+                return library.FindByMembers(type.Name, isEnum: true, members) is not null;
+            }
+
+            return type.IsValueType && library.FindByMembers(type.Name, isEnum: false, [.. GetInstanceFields(type).Select(GetFieldName)]) is not null;
         }
 
         // The type library that is exported from a referenced assembly: the one with the [Guid] of the assembly, if it
@@ -364,19 +383,23 @@ public sealed partial class GeneratedComAssemblyReader
             {
                 found = (exported, library);
             }
-            else if (_catalog.HasFiles)
+            else if (_catalog.HasFiles && !HasFrameworkName(assembly))
             {
+                // One interface is not enough: the interfaces of COM are often declared again in an assembly.
+                var interfaceIds = new List<Guid>();
                 foreach (Type type in assembly.GetTypes())
                 {
                     if (type.IsInterface && type.IsVisible && !(type.Namespace is { } @namespace && markers.Libraries.ContainsKey(@namespace))
-                        && IsGeneratedComInterface(type) && GetWellKnownInterface(type) is null && !IsSupportType(type)
-                        && GetGuid(type.GetCustomAttributesData()) is { } interfaceId
-                        && _catalog.FindFileWithInterface(interfaceId) is { } reference
-                        && _catalog.TryGetLibrary(reference, out library))
+                        && IsGeneratedComInterface(type) && GetWellKnownInterface(type) is null && !IsSupportType(type) && IsComVisible(type)
+                        && GetGuid(type.GetCustomAttributesData()) is { } interfaceId)
                     {
-                        found = (reference, library);
-                        break;
+                        interfaceIds.Add(interfaceId);
                     }
+                }
+
+                if (_catalog.FindFileWithInterfaces(interfaceIds) is { } file)
+                {
+                    found = (file.Reference, file);
                 }
             }
 
@@ -404,9 +427,16 @@ public sealed partial class GeneratedComAssemblyReader
         // A type of .NET, which is in no type library. The exported assembly can have such a name itself, and so can an
         // assembly whose type library has the type.
         private bool IsFrameworkType(Type type) =>
-            type.Assembly != _assembly && type.Assembly.GetName().Name is { } name
-            && (name is "mscorlib" or "netstandard" or "System" || name.StartsWith("System.", StringComparison.Ordinal) || name.StartsWith("Microsoft.", StringComparison.Ordinal))
-            && GetImportedLibrary(type) is null;
+            type.Assembly != _assembly && HasFrameworkName(type.Assembly) && GetImportedLibrary(type) is null;
+
+        private static bool HasFrameworkName(Assembly assembly) =>
+            assembly.GetName().Name is { } name
+            && (name is "mscorlib" or "netstandard" or "System" || name.StartsWith("System.", StringComparison.Ordinal) || name.StartsWith("Microsoft.", StringComparison.Ordinal));
+
+        // An interface that the library can have or refer to: one of the assembly, or one of a type library that is found.
+        // An interface of another assembly is not defined again in the library, where it would have the same identifier
+        // as in the library of that assembly.
+        private bool IsAvailableInterface(Type type) => type.Assembly == _assembly || GetImportedLibrary(type) is not null;
 
         private TypeDefinition GetOrCreateDefinition(Type type)
         {
@@ -584,6 +614,18 @@ public sealed partial class GeneratedComAssemblyReader
 
             // The bases of the other interfaces are implemented through them.
             interfaces.RemoveAll(i => interfaces.Any(other => other != i && other.GetInterfaces().Contains(i)));
+
+            // The interfaces of the support code are in no type library, and neither are those of an assembly whose type
+            // library is not found.
+            foreach (Type missing in interfaces.Where(i => GetWellKnownInterface(i) is null && !IsAvailableInterface(i)).ToList())
+            {
+                interfaces.Remove(missing);
+                if (!IsSupportType(missing))
+                {
+                    LogUnknownLibrary(missing.FullName ?? missing.Name, missing.Assembly.GetName().Name ?? string.Empty);
+                    LogUnresolvedInterface(missing.Name, definition.Name, "implemented");
+                }
+            }
             Type? defaultInterface = GetArgument<Type>(attributes, InteropNamespace + "ComDefaultInterfaceAttribute");
             if (defaultInterface is not null && !interfaces.Contains(defaultInterface))
             {
@@ -672,7 +714,7 @@ public sealed partial class GeneratedComAssemblyReader
         }
 
         private bool IsSourceInterface(Type type) =>
-            type.IsInterface ? IsGeneratedComInterface(type) && GetWellKnownInterface(type) is null : IsDispatchWrapper(type);
+            type.IsInterface ? IsGeneratedComInterface(type) && GetWellKnownInterface(type) is null && IsAvailableInterface(type) : IsDispatchWrapper(type);
 
         // Whether the interface derives from IDispatch, which makes it a dual interface.
         private static bool IsDispatchInterface(Type type) =>
