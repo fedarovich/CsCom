@@ -21,7 +21,17 @@ internal static class BuildState
     /// Gets the generated files if they are up to date, with the warnings of the generation that wrote them.
     /// </summary>
     /// <returns>The generated files, or <see langword="null"/> if the code has to be generated.</returns>
-    public static List<string>? ReadGeneratedFiles(string path, string hash, out List<string> warnings)
+    public static List<string>? ReadGeneratedFiles(string path, string hash, out List<string> warnings) =>
+        Read(path, hash, checkInputs: true, out warnings);
+
+    /// <summary>
+    /// Gets the files that the tool recorded for the request, after it ran. An input that was written while it ran is
+    /// recorded so that the next build runs it again, but the build that ran it has its files all the same.
+    /// </summary>
+    /// <returns>The files, or <see langword="null"/> if the tool recorded none for the request.</returns>
+    public static List<string>? ReadRecordedFiles(string path, string hash) => Read(path, hash, checkInputs: false, out _);
+
+    private static List<string>? Read(string path, string hash, bool checkInputs, out List<string> warnings)
     {
         warnings = [];
         if (!File.Exists(path))
@@ -57,7 +67,7 @@ internal static class BuildState
                 }
 
                 string input = GetPathOfThisProcess(line.Substring(separator + 1));
-                if (!File.Exists(input) || File.GetLastWriteTimeUtc(input).Ticks != ticks)
+                if (checkInputs && (!File.Exists(input) || File.GetLastWriteTimeUtc(input).Ticks != ticks))
                 {
                     return null;
                 }

@@ -32,6 +32,12 @@ same version. The versions up to 2.0.0 are not described here.
 - **Readmes:** the packages have a readme, which nuget.org shows on their pages: what the package is for, how it is used,
   and a link to the documentation.
 
+### Fixed
+
+- **A build failed when an input changed while the cscom tool ran:** when a type library or another file that CsCom.Build
+  reads was written while the tool generated the code, or had a time in the future, the build failed with `CsCom: the
+  cscom tool did not record the generated files`. The build now succeeds, and the next build generates the code again.
+
 ## 4.0.0 - 2026-11-20
 
 ### Added

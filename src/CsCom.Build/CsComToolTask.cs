@@ -73,7 +73,9 @@ public abstract class CsComToolTask : ToolTask
                 return null;
             }
 
-            files = BuildState.ReadGeneratedFiles(statePath, hash);
+            // Not ReadGeneratedFiles: an input that was written while the tool ran makes the next build run it again, and
+            // does not fail this one.
+            files = BuildState.ReadRecordedFiles(statePath, hash);
             if (files is null)
             {
                 Log.LogError("CsCom: the cscom tool did not record its result in '{0}'.", statePath);

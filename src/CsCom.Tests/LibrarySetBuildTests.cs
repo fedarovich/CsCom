@@ -86,10 +86,13 @@ public sealed class LibrarySetBuildTests
         File.WriteAllLines(state, lines[..(lines.Length / 2)]);
         Assert.IsNull(BuildState.ReadGeneratedFiles(state, "hash1"));
 
-        // An input written after the generation started may have been read before, so the code is generated again.
+        // An input written after the generation started may have been read before, so the code is generated again. The
+        // build that ran the generator has its files all the same.
         File.SetLastWriteTimeUtc(library, DateTime.UtcNow.AddMinutes(5));
-        Run(project, [new BuildReference { Source = "CsComTest.tlb" }]);
+        var generated = Run(project, [new BuildReference { Source = "CsComTest.tlb" }]);
         Assert.IsNull(BuildState.ReadGeneratedFiles(state, "hash1"));
+        CollectionAssert.AreEquivalent(generated.ToArray(), BuildState.ReadRecordedFiles(state, "hash1")!.ToArray());
+        Assert.IsNull(BuildState.ReadRecordedFiles(state, "hash2"), "The files of another request are not those of this one.");
     }
 
     [TestMethod]

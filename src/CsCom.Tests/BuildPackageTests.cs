@@ -370,8 +370,10 @@ public sealed class BuildPackageTests
         StringAssert.Contains(Build(project), "CsCom: the type library");
         Assert.AreEqual(written, File.GetLastWriteTimeUtc(exported));
 
-        // A type library that was read changes: the type library is exported again.
-        File.SetLastWriteTimeUtc(consulted, DateTime.UtcNow.AddSeconds(2));
+        // A type library that was read changes, here with a time after the start of the export, as when it is written
+        // while the export runs: the type library is exported again, and the build has it, although the next build will
+        // export it once more.
+        File.SetLastWriteTimeUtc(consulted, DateTime.UtcNow.AddMinutes(5));
         Build(project);
         Assert.IsGreaterThan(written, File.GetLastWriteTimeUtc(exported));
 
