@@ -39,5 +39,6 @@ With `<CsComExportTypeLibrary>true</CsComExportTypeLibrary>`, the package also e
 ## Documentation
 
 See [cscom.fedarovich.com](https://cscom.fedarovich.com/), starting with
-[Getting started](https://cscom.fedarovich.com/articles/getting-started.html) and
-[MSBuild integration](https://cscom.fedarovich.com/articles/msbuild.html).
+[Getting started](https://cscom.fedarovich.com/articles/getting-started.html),
+[MSBuild integration](https://cscom.fedarovich.com/articles/msbuild.html) and
+[Exporting type libraries](https://cscom.fedarovich.com/articles/exporting-type-libraries.html).

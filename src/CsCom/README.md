@@ -40,5 +40,6 @@ writes the type library of an assembly with `[GeneratedComInterface]` and `[Gene
 ## Documentation
 
 See [cscom.fedarovich.com](https://cscom.fedarovich.com/), starting with
-[Getting started](https://cscom.fedarovich.com/articles/getting-started.html) and
-[Commands](https://cscom.fedarovich.com/articles/commands.html).
+[Getting started](https://cscom.fedarovich.com/articles/getting-started.html),
+[Commands](https://cscom.fedarovich.com/articles/commands.html) and
+[Exporting type libraries](https://cscom.fedarovich.com/articles/exporting-type-libraries.html).

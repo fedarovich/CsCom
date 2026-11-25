@@ -94,7 +94,8 @@ public sealed partial class GeneratedComAssemblyReader
         }
 
         // The members of an interface of a type library have different names, which are not case-sensitive: the overloads
-        // of a method get the names that TlbExp gives them, M_2, M_3 and so on, in the order of their declarations.
+        // of a method get the names that TlbExp gives them, M_2, M_3 and so on, in the order of their declarations. Like
+        // TlbExp, the names of the base interfaces are not considered (see docs/known-issues.md).
         private void RenameOverloads(Type type, List<(MethodInfo Method, string Name, InvokeKind Kind)> read)
         {
             var used = new HashSet<string>(read.Select(static r => r.Name), StringComparer.OrdinalIgnoreCase);

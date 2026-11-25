@@ -11,6 +11,10 @@ namespace CsCom.TypeLibraries;
 /// identifiers, and otherwise in the registry. The reader of an assembly asks it which types these libraries have, and
 /// the writer refers to them.
 /// </summary>
+/// <remarks>
+/// The catalog does not release the libraries that it loads: their wrappers are shared with every other reader of the
+/// same library in the process, which <c>ComWrappers</c> caches, so releasing them would break those readers.
+/// </remarks>
 public sealed unsafe partial class TypeLibraryCatalog
 {
     private static readonly Guid StdOleLibraryId = new("00020430-0000-0000-C000-000000000046");

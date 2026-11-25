@@ -9,7 +9,8 @@ COM interop for .NET that works with trimming and Native AOT.
 CsCom produces COM interop code from type libraries or existing .NET interop assemblies, similar to TlbImp. Unlike TlbImp, it
 does not rely on the built-in COM interop of .NET: it generates C# code that uses the
 [source-generated COM interop](https://learn.microsoft.com/dotnet/standard/native-interop/comwrappers-source-generation)
-added in .NET 8, so the interop code can be trimmed and used with Native AOT.
+added in .NET 8, so the interop code can be trimmed and used with Native AOT. It also goes the other way, like TlbExp:
+it exports the type library of an assembly whose COM types are declared for source-generated COM interop.
 
 ```csharp
 IDictionary dictionary = Dictionary.Create();       // a COM object of scrrun.dll
@@ -36,14 +37,18 @@ foreach (object? key in dictionary)                 // _NewEnum, through IEnumVA
 The sources can be type library files, registered LIBIDs or ProgIDs, and .NET interop assemblies, also several of them
 generated together, see [Sources](articles/sources.md).
 
+The other way, `cscom typelib export` writes the type library of an assembly with `[GeneratedComInterface]` and
+`[GeneratedComClass]` types, and CsCom.Build exports it after the compilation, see
+[Exporting type libraries](articles/exporting-type-libraries.md).
+
 ## Packages
 
 The packages are released together, with the same version.
 
 | Package | |
 | --- | --- |
-| [![CsCom](https://img.shields.io/nuget/v/CsCom.svg?label=CsCom)](https://www.nuget.org/packages/CsCom) | The `cscom` .NET tool, which generates projects, assemblies and packages, lists type libraries and manages the `CsComReference` items of projects. |
-| [![CsCom.Build](https://img.shields.io/nuget/v/CsCom.Build.svg?label=CsCom.Build)](https://www.nuget.org/packages/CsCom.Build) | The [MSBuild integration](articles/msbuild.md), which generates the interop code during the build. |
+| [![CsCom](https://img.shields.io/nuget/v/CsCom.svg?label=CsCom)](https://www.nuget.org/packages/CsCom) | The `cscom` .NET tool, which generates projects, assemblies and packages, lists type libraries, manages the `CsComReference` items of projects and [exports type libraries](articles/exporting-type-libraries.md). |
+| [![CsCom.Build](https://img.shields.io/nuget/v/CsCom.Build.svg?label=CsCom.Build)](https://www.nuget.org/packages/CsCom.Build) | The [MSBuild integration](articles/msbuild.md), which generates the interop code during the build, and can export the type library of the project. |
 | [![CsCom.Runtime](https://img.shields.io/nuget/v/CsCom.Runtime.svg?label=CsCom.Runtime)](https://www.nuget.org/packages/CsCom.Runtime) | The [support code](articles/support-code.md) that the generated code uses: `IDispatch`, the marshallers of `VARIANT`s, `SAFEARRAY`s and `BSTR`s, the late-bound wrappers and the events. |
 | [![CsCom.Runtime.Dynamic](https://img.shields.io/nuget/v/CsCom.Runtime.Dynamic.svg?label=CsCom.Runtime.Dynamic)](https://www.nuget.org/packages/CsCom.Runtime.Dynamic) | [Late binding with C# `dynamic`](articles/dynamic.md). |
 

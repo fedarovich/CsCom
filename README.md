@@ -11,7 +11,8 @@ CsCom is a command line tool that produces COM interop code from type libraries 
 TlbImp, and an MSBuild package (CsCom.Build) that generates it during the build of a project. Unlike TlbImp, it does not rely
 on the built-in COM interop of .NET: it generates C# code that uses the
 [source-generated COM interop](https://learn.microsoft.com/dotnet/standard/native-interop/comwrappers-source-generation)
-added in .NET 8, so the interop code can be trimmed and used with Native AOT.
+added in .NET 8, so the interop code can be trimmed and used with Native AOT. It also goes the other way, like TlbExp:
+it exports the type library of an assembly whose COM types are declared for source-generated COM interop.
 
 **The documentation is at [cscom.fedarovich.com](https://cscom.fedarovich.com/)**, starting with
 [Getting started](https://cscom.fedarovich.com/articles/getting-started.html).
@@ -65,8 +66,8 @@ The four packages are released together, with the same version.
 
 | Package | Description |
 | --- | --- |
-| [CsCom](https://www.nuget.org/packages/CsCom) | The `cscom` .NET tool: generates projects, assemblies and packages, lists type libraries and manages the `CsComReference` items of projects. |
-| [CsCom.Build](https://www.nuget.org/packages/CsCom.Build) | The MSBuild integration, which generates the interop code during the build of a project. |
+| [CsCom](https://www.nuget.org/packages/CsCom) | The `cscom` .NET tool: generates projects, assemblies and packages, lists type libraries, manages the `CsComReference` items of projects and exports type libraries. |
+| [CsCom.Build](https://www.nuget.org/packages/CsCom.Build) | The MSBuild integration, which generates the interop code during the build of a project, and can export the type library of the project. |
 | [CsCom.Runtime](https://www.nuget.org/packages/CsCom.Runtime) | The support code that the generated code uses: `IDispatch`, the marshallers, the late-bound wrappers and the events. |
 | [CsCom.Runtime.Dynamic](https://www.nuget.org/packages/CsCom.Runtime.Dynamic) | Late binding with C# `dynamic`. |
 

@@ -153,3 +153,4 @@ instead, and `cscom assembly pack` packs it into a NuGet package. See [Commands]
 - [Configuration file](configuration.md): renaming types and members, marshalling options of single members, and more.
 - [Generated code](generated-code.md): what the generated C# looks like and how COM types are mapped.
 - [Migrating from TlbImp](migrating-from-tlbimp.md): what changes for code that used the built-in COM interop.
+- [Exporting type libraries](exporting-type-libraries.md): the type library of your own COM types, like TlbExp.

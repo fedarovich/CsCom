@@ -508,3 +508,49 @@ it is quoted with them. The same parsing serves `--config`, where trimming `"  "
 removes all the configuration files of a project on update. The error names the value in quotes, which shows the spaces.
 
 **Documented** at `GetLibraryValues`.
+
+## Type library export
+
+### An exported library cannot refer to a library of which the export has loaded two
+
+OLE Automation resolves the references of a type library by the identifiers of the libraries alone, not by their
+versions or files, to any library with that identifier that the process has loaded. With two of them loaded, a
+reference to a type of one can be resolved to the other, and the export failed with `TYPE_E_ELEMENTNOTFOUND` at random
+in tests. `TypeLibraryWriter` therefore rejects a reference to a library when the catalog has loaded another one with
+its identifier (`TypeLibraryCatalog.GetAmbiguousFile`): a second `--type-library` file, or another version of the
+library, e.g. MSXML 3.0 next to 6.0. Files that the exported library does not refer to are no obstacle.
+
+**Why it is not fixed:** `ICreateTypeLib` cannot tell OLE Automation which of the libraries a reference means. Specify
+only one of the files, or refer to the types of one version.
+
+**Documented** in [Exporting type libraries](articles/exporting-type-libraries.md), "Libraries with one identifier",
+and at `GetAmbiguousFile`.
+
+### The export keeps the type libraries that it reads loaded
+
+`TypeLibraryCatalog` does not release the type libraries that it loads, from its files or from the registry: they stay
+loaded until the garbage collector releases their wrappers.
+
+**Why it is not fixed:** the source-generated `ITypeLib` bindings get their wrappers from `ComWrappers`, which shares one
+wrapper per COM object in the process, and OLE Automation returns the same object for a library that it has loaded
+already. Releasing the wrapper in the catalog would break the other readers of the same library in the process. The
+tool exports one library per process, and CsCom.Build runs the export in a process of its own, which releases the
+libraries when it exits.
+
+**A fix** would give the libraries of the catalog unique wrappers (`CreateObjectFlags.UniqueInstance`), which it could
+release.
+
+**Documented** in `CLAUDE.md`, "The export of type libraries", and at `TypeLibraryCatalog`.
+
+### The overloads of a derived interface are numbered without its base interfaces (intended)
+
+`GeneratedComAssemblyReader.RenameOverloads` numbers the overloads of a method within each interface, `M`, `M_2`,
+`M_3`: a method of a derived interface with the name of a method of its base interface keeps that name, so the
+interface and its base both have a member with it.
+
+**Why it is intended:** TlbExp of the Windows SDK names them the same way, also over the base interfaces, so a program
+that late binds to the names of a library that TlbExp exported finds the same names. Rename the method of the derived
+interface to tell them apart.
+
+**Documented** in [Exporting type libraries](articles/exporting-type-libraries.md), "Names" of the interfaces, and at
+`RenameOverloads`.

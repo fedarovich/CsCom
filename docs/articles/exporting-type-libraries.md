@@ -204,8 +204,9 @@ public partial class Renderer : IShapeEventsVt // An interface and a dispinterfa
 - **Finding the type libraries:** the export reads the type libraries to refer to their types. A type library is found
   in the registry by its identifier and version, unless its file is specified with `--type-library`, a
   `CsComTypeLibraryReference` item or a `CsComReference` item that is a file. Of several files with the identifier,
-  the one with the version is taken, or else the first. When the exported library refers to it and it is also registered from another file, the
-  export tells so: the programs that load the exported library find the registered one.
+  the one with the version is taken, or else the first. When the exported library refers to it and it is also
+  registered from another file, the export tells so: the programs that load the exported library find the registered
+  one.
 - **Loading the exported library:** a type library names the libraries that it refers to by their identifiers and file
   names, without their directories. A program therefore only loads the types of a library that is not registered when
   the file of that library is in the current directory or on the path; the export tells when a library is not
@@ -238,4 +239,4 @@ public partial class Renderer : IShapeEventsVt // An interface and a dispinterfa
   the libraries alone, so the exported library cannot refer to the types of a library when the export has loaded two
   libraries with that identifier: two `--type-library` files, or two versions of a library, as those of MSXML. That
   is an error: specify only one of the files, or refer to one version. Such files are no obstacle as long as the
-  exported library does not refer to their types.
+  exported library does not refer to their types. See also [Known issues](../known-issues.md#type-library-export).

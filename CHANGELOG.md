@@ -19,12 +19,15 @@ same version. The versions up to 2.0.0 are not described here.
   `[GeneratedComClass]` classes with a `[Guid]`, and the enumerations and structures that they use. `[DispId]`,
   `[ComDefaultInterface]`, `[ComSourceInterfaces]`, `[TypeLibType]`, `[TypeLibFunc]`, `[ComVisible]` and `[Description]`
   are honoured, and the methods named `get_X`, `set_X` and `putref_X` are the accessors of a property. The library
-  refers to the types of the code that CsCom generated from type libraries instead of defining them again. The
-  options set the file, the name, the identifier, the version and the platform (`win32` or `win64`). See
+  refers to the types of the code that CsCom generated from type libraries, and to those of referenced assemblies
+  whose type libraries were exported before, instead of defining them again. The options set the file, the name, the
+  identifier, the version and the platform (`win32` or `win64`) of the library, the referenced assemblies
+  (`--reference-path`) and the files of the type libraries that it refers to (`--type-library`). See
   [Exporting type libraries](https://cscom.fedarovich.com/articles/exporting-type-libraries.html).
 - **Type library export during the build:** with `<CsComExportTypeLibrary>true</CsComExportTypeLibrary>`, CsCom.Build
   exports the type library of the project after the compilation and copies it to the output and publish directories,
-  again only when the assembly or what it refers to changed.
+  again only when the assembly or what it refers to changed. `CsComTypeLibraryReference` items name the type
+  libraries that are not registered, such as that of a referenced project.
 - **Icon:** the packages and the documentation site have an icon.
 - **Readmes:** the packages have a readme, which nuget.org shows on their pages: what the package is for, how it is used,
   and a link to the documentation.
