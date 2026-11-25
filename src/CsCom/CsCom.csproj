@@ -16,8 +16,8 @@
     <PackAsTool>true</PackAsTool>
     <ToolCommandName>cscom</ToolCommandName>
     <PackageId>CsCom</PackageId>
-    <Description>Generates COM interop assemblies and projects from type libraries using source-generated COM interop, so that they can be used with Native AOT.</Description>
-    <PackageTags>COM;interop;tlbimp;ComWrappers;NativeAOT</PackageTags>
+    <Description>Generates COM interop assemblies and projects from type libraries using source-generated COM interop, so that they can be used with Native AOT, and exports the type library of an assembly with source-generated COM types, like TlbExp.</Description>
+    <PackageTags>COM;interop;tlbimp;tlbexp;typelib;ComWrappers;NativeAOT</PackageTags>
   </PropertyGroup>
 
   <ItemGroup>
