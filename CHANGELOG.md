@@ -3,7 +3,7 @@
 The notable changes of CsCom, CsCom.Build, CsCom.Runtime and CsCom.Runtime.Dynamic, which are released together with the
 same version. The versions up to 2.0.0 are not described here.
 
-## Unreleased
+## 4.1.0 - 2026-11-24
 
 ### Changed
 
